@@ -1,0 +1,4 @@
+* compute 3d model bound during import
+* disallow moving bound min/max past each other
+* implement variance shadow mapping for directional light
+* implement point light
