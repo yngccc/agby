@@ -1,6 +1,8 @@
 @echo off
 echo. 
 
+call "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat" x64
+
 if not exist "%~dp0\build" mkdir "%~dp0\build"
 pushd "%~dp0\build"
 
