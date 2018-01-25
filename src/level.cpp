@@ -106,21 +106,6 @@ struct render_component {
 	float height_map_scale;
 };
 
-struct entity_components {
-	uint32 entity_flags[level_max_entity_count];
-	uint32 entity_flags_count;
-	entity_info entity_infos[level_max_entity_count];
-	uint32 entity_info_count;
-	transform_component transform_components[level_max_entity_count];
-	uint32 transform_component_count;
-	light_component light_components[level_max_entity_count];
-	uint32 light_component_count;
-	collision_component collision_components[level_max_entity_count];
-	uint32 collision_component_count;
-	render_component render_components[level_max_entity_count];
-	uint32 render_component_count;
-};
-
 struct mesh_render_data {
 	uint32 frame_uniforms_buffer_offset;
  	bool render_vertices_outline;
@@ -142,8 +127,31 @@ struct level_render_data {
 };
 
 struct level {
-	struct entity_components *entity_components;
-	struct entity_components *updated_entity_components;
+	uint32 *entity_flags;
+	entity_info *entity_infos;
+	transform_component *transform_components;
+	light_component *light_components;
+	collision_component *collision_components;
+	render_component *render_components;
+	uint32 entity_flag_count;
+	uint32 entity_info_count;
+	uint32 transform_component_count;
+	uint32 light_component_count;
+	uint32 collision_component_count;
+	uint32 render_component_count;
+
+	uint32 *new_entity_flags;
+	entity_info *new_entity_infos;
+	transform_component *new_transform_components;
+	light_component *new_light_components;
+	collision_component *new_collision_components;
+	render_component *new_render_components;
+	uint32 new_entity_flag_count;
+	uint32 new_entity_info_count;
+	uint32 new_transform_component_count;
+	uint32 new_light_component_count;
+	uint32 new_collision_component_count;
+	uint32 new_render_component_count;
 
 	model *models;
 	uint32 model_count;
@@ -163,26 +171,62 @@ struct level {
 	bool show_frame_stats;
 
 	memory_arena frame_memory_arena;
-	memory_arena entities_memory_arena;
+	memory_arena entity_components_memory_arena;
+	memory_arena new_entity_components_memory_arena;
 	memory_arena assets_memory_arena;
 
 	char *json_file;
 };
 
-bool entity_has_component(level *level, uint32 entity_index, component_flag component_flag) {
-	if (entity_index < level->entity_components->entity_flags_count) {
-		if (level->entity_components->entity_flags[entity_index] & component_flag) {
-			return true;
-		}
-	}
-	return false;	
+void level_initialize(level *level, vulkan *vulkan) {
+	level->frame_memory_arena = {};
+	level->frame_memory_arena.name = "frame";
+	level->frame_memory_arena.capacity = m_megabytes(4);
+	m_assert(allocate_virtual_memory(level->frame_memory_arena.capacity, &level->frame_memory_arena.memory));
+
+	level->entity_components_memory_arena = {};
+	level->entity_components_memory_arena.name = "entity_components";
+	level->entity_components_memory_arena.capacity = m_megabytes(8);
+	m_assert(allocate_virtual_memory(level->entity_components_memory_arena.capacity, &level->entity_components_memory_arena.memory));
+
+	level->new_entity_components_memory_arena = {};
+	level->new_entity_components_memory_arena.name = "new_entity_components";
+	level->new_entity_components_memory_arena.capacity = m_megabytes(8);
+	m_assert(allocate_virtual_memory(level->new_entity_components_memory_arena.capacity, &level->new_entity_components_memory_arena.memory));
+
+	level->assets_memory_arena = {};
+	level->assets_memory_arena.name = "assets";
+	level->assets_memory_arena.capacity = m_megabytes(16);
+	m_assert(allocate_virtual_memory(level->assets_memory_arena.capacity, &level->assets_memory_arena.memory));
+
+	level->model_capacity = 1024;
+	level->model_count = 0;
+	level->models = memory_arena_allocate<struct model>(&level->assets_memory_arena, level->model_capacity);
+
+	level->skybox_capacity = 16;
+	level->skybox_count = 0;
+	level->skyboxes = memory_arena_allocate<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
+
+	level->camera.position = vec3{10, 20, 20};
+	level->camera.view = vec3_normalize(-level->camera.position);
+	level->camera.up = vec3_normalize(vec3_cross(vec3_cross(level->camera.view, vec3{0, 1, 0}), level->camera.view));
+	level->camera.fovy = degree_to_radian(58);
+	level->camera.aspect = (float)vulkan->framebuffers.main_framebuffers[0].width / (float)vulkan->framebuffers.main_framebuffers[0].height;
+	level->camera.znear = 0.1f;
+	level->camera.zfar = 2500;
+	level->camera_zoom = 3;
+	level->camera_rotates[0] = degree_to_radian(30);
+	level->camera_rotates[1] = degree_to_radian(0);
+
+	vulkan->buffers.level_vertex_buffer_offset = 0;
+	vulkan->memories.level_images_memory.size = 0;
 }
 
 uint32 entity_get_component_index(level *level, uint32 entity_index, component_flag component_flag) {
-	m_assert(entity_index < level->entity_components->entity_flags_count);
+	m_assert(entity_index < level->entity_flag_count);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_components->entity_flags[i] & component_flag) {
+		if (level->entity_flags[i] & component_flag) {
 			index += 1;
 		}
 	}
@@ -190,57 +234,57 @@ uint32 entity_get_component_index(level *level, uint32 entity_index, component_f
 }
 
 transform_component *entity_get_transform_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_components->entity_flags_count);
-	m_assert(level->entity_components->entity_flags[entity_index] & component_flag_transform);
+	m_assert(entity_index < level->entity_flag_count);
+	m_assert(level->entity_flags[entity_index] & component_flag_transform);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_components->entity_flags[i] & component_flag_transform) {
+		if (level->entity_flags[i] & component_flag_transform) {
 			index += 1;
 		}
 	}
-	return &level->entity_components->transform_components[index];
+	return &level->transform_components[index];
 }
 
 light_component *entity_get_light_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_components->entity_flags_count);
-	m_assert(level->entity_components->entity_flags[entity_index] & component_flag_light);
+	m_assert(entity_index < level->entity_flag_count);
+	m_assert(level->entity_flags[entity_index] & component_flag_light);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_components->entity_flags[i] & component_flag_light) {
+		if (level->entity_flags[i] & component_flag_light) {
 			index += 1;
 		}
 	}
-	return &level->entity_components->light_components[index];
+	return &level->light_components[index];
 }
 
 collision_component *entity_get_collision_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_components->entity_flags_count);
-	m_assert(level->entity_components->entity_flags[entity_index] & component_flag_collision);
+	m_assert(entity_index < level->entity_flag_count);
+	m_assert(level->entity_flags[entity_index] & component_flag_collision);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_components->entity_flags[i] & component_flag_collision) {
+		if (level->entity_flags[i] & component_flag_collision) {
 			index += 1;
 		}
 	}
-	return &level->entity_components->collision_components[index];
+	return &level->collision_components[index];
 }
 
 render_component *entity_get_render_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_components->entity_flags_count);
-	m_assert(level->entity_components->entity_flags[entity_index] & component_flag_render);
+	m_assert(entity_index < level->entity_flag_count);
+	m_assert(level->entity_flags[entity_index] & component_flag_render);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_components->entity_flags[i] & component_flag_render) {
+		if (level->entity_flags[i] & component_flag_render) {
 			index += 1;
 		}
 	}
-	return &level->entity_components->render_components[index];
+	return &level->render_components[index];
 }
 
 uint32 level_get_entity_index(level *level, uint32 component_index, component_flag component_flag) {
 	uint32 index = 0;
-	for (uint32 i = 0; i < level->entity_components->entity_flags_count; i += 1) {
-		if (level->entity_components->entity_flags[i] & component_flag) {
+	for (uint32 i = 0; i < level->entity_flag_count; i += 1) {
+		if (level->entity_flags[i] & component_flag) {
 			if (index == component_index) {
 				return i;
 			}
@@ -249,29 +293,6 @@ uint32 level_get_entity_index(level *level, uint32 component_index, component_fl
 	}
 	m_assert(false);
 	return UINT32_MAX;
-}
-
-void level_delete_entity(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_components->entity_info_count);
-	uint32 entity_flags = level->entity_components->entity_flags[entity_index];
-	if (entity_flags & component_flag_transform) {
-		uint32 index = entity_get_component_index(level, entity_index, component_flag_transform);
-		array_remove(level->entity_components->transform_components, &level->entity_components->transform_component_count, index);
-	}
-	if (entity_flags & component_flag_collision) {
-		uint32 index = entity_get_component_index(level, entity_index, component_flag_collision);
-		array_remove(level->entity_components->collision_components, &level->entity_components->collision_component_count, index);
-	}
-	if (entity_flags & component_flag_light) {
-		uint32 index = entity_get_component_index(level, entity_index, component_flag_light);
-		array_remove(level->entity_components->light_components, &level->entity_components->light_component_count, index);
-	}
-	if (entity_flags & component_flag_render) {
-		uint32 index = entity_get_component_index(level, entity_index, component_flag_render);
-		array_remove(level->entity_components->render_components, &level->entity_components->render_component_count, index);
-	}
-	array_remove(level->entity_components->entity_flags, &level->entity_components->entity_flags_count, entity_index);
-	array_remove(level->entity_components->entity_infos, &level->entity_components->entity_info_count, entity_index);
 }
 
 uint32 level_get_model_index(level *level, const char *model_file_name) {
@@ -516,48 +537,6 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *file_name) {
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-}
-
-void level_initialize(level *level, vulkan *vulkan) {
-	level->frame_memory_arena = {};
-	level->frame_memory_arena.name = "frame";
-	level->frame_memory_arena.capacity = m_megabytes(4);
-	m_assert(allocate_virtual_memory(level->frame_memory_arena.capacity, &level->frame_memory_arena.memory));
-
-	level->entities_memory_arena = {};
-	level->entities_memory_arena.name = "entities";
-	level->entities_memory_arena.capacity = m_megabytes(16);
-	m_assert(allocate_virtual_memory(level->entities_memory_arena.capacity, &level->entities_memory_arena.memory));
-
-	level->assets_memory_arena = {};
-	level->assets_memory_arena.name = "assets";
-	level->assets_memory_arena.capacity = m_megabytes(16);
-	m_assert(allocate_virtual_memory(level->assets_memory_arena.capacity, &level->assets_memory_arena.memory));
-
-	level->entity_components = memory_arena_allocate<struct entity_components>(&level->entities_memory_arena, 1);
-	level->updated_entity_components = memory_arena_allocate<struct entity_components>(&level->entities_memory_arena, 1);
-
-	level->model_capacity = 1024;
-	level->model_count = 0;
-	level->models = memory_arena_allocate<struct model>(&level->assets_memory_arena, level->model_capacity);
-
-	level->skybox_capacity = 16;
-	level->skybox_count = 0;
-	level->skyboxes = memory_arena_allocate<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
-
-	level->camera.position = vec3{10, 20, 20};
-	level->camera.view = vec3_normalize(-level->camera.position);
-	level->camera.up = vec3_normalize(vec3_cross(vec3_cross(level->camera.view, vec3{0, 1, 0}), level->camera.view));
-	level->camera.fovy = degree_to_radian(58);
-	level->camera.aspect = (float)vulkan->framebuffers.main_framebuffers[0].width / (float)vulkan->framebuffers.main_framebuffers[0].height;
-	level->camera.znear = 0.1f;
-	level->camera.zfar = 2500;
-	level->camera_zoom = 3;
-	level->camera_rotates[0] = degree_to_radian(30);
-	level->camera_rotates[1] = degree_to_radian(0);
-
-	vulkan->buffers.level_vertex_buffer_offset = 0;
-	vulkan->memories.level_images_memory.size = 0;
 }
 
 template <typename T>

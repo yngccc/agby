@@ -867,7 +867,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				};
 				ImGui::Text("Memory Arenas");
 				imgui_render_memory(level.frame_memory_arena.size, level.frame_memory_arena.capacity, level.frame_memory_arena.name);
-				imgui_render_memory(level.entities_memory_arena.size, level.entities_memory_arena.capacity, level.entities_memory_arena.name);
+				imgui_render_memory(level.entity_components_memory_arena.size, level.entity_components_memory_arena.capacity, level.entity_components_memory_arena.name);
 				imgui_render_memory(level.assets_memory_arena.size, level.assets_memory_arena.capacity, level.assets_memory_arena.name);
 				ImGui::Text("Vulkan Memories");
 				imgui_render_memory(vulkan.memories.common_images_memory.size, vulkan.memories.common_images_memory.capacity, "common images");
