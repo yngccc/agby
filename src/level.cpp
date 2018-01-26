@@ -56,14 +56,15 @@ struct entity_info {
 };
 
 enum component_flag {
-	component_flag_transform = 1,
+	component_flag_render = 1,
 	component_flag_collision = 2,
 	component_flag_light = 4,
-	component_flag_render = 8
 };
 
-struct transform_component {
-	transform transform;
+struct render_component {
+	uint32 model_index;
+	vec2 uv_scale;
+	float height_map_scale;
 };
 
 struct collision_component {
@@ -100,12 +101,6 @@ struct light_component {
 	};
 };
 
-struct render_component {
-	uint32 model_index;
-	vec2 uv_scale;
-	float height_map_scale;
-};
-
 struct mesh_render_data {
 	uint32 frame_uniforms_buffer_offset;
  	bool render_vertices_outline;
@@ -129,29 +124,25 @@ struct level_render_data {
 struct level {
 	uint32 *entity_flags;
 	entity_info *entity_infos;
-	transform_component *transform_components;
-	light_component *light_components;
-	collision_component *collision_components;
+	transform *entity_transforms;
 	render_component *render_components;
-	uint32 entity_flag_count;
-	uint32 entity_info_count;
-	uint32 transform_component_count;
-	uint32 light_component_count;
-	uint32 collision_component_count;
+	collision_component *collision_components;
+	light_component *light_components;
+	uint32 entity_count;
 	uint32 render_component_count;
+	uint32 collision_component_count;
+	uint32 light_component_count;
 
 	uint32 *new_entity_flags;
 	entity_info *new_entity_infos;
-	transform_component *new_transform_components;
-	light_component *new_light_components;
-	collision_component *new_collision_components;
+	transform *new_entity_transforms;
 	render_component *new_render_components;
-	uint32 new_entity_flag_count;
-	uint32 new_entity_info_count;
-	uint32 new_transform_component_count;
-	uint32 new_light_component_count;
-	uint32 new_collision_component_count;
+	collision_component *new_collision_components;
+	light_component *new_light_components;
+	uint32 new_entity_count;
 	uint32 new_render_component_count;
+	uint32 new_collision_component_count;
+	uint32 new_light_component_count;
 
 	model *models;
 	uint32 model_count;
@@ -222,39 +213,16 @@ void level_initialize(level *level, vulkan *vulkan) {
 	vulkan->memories.level_images_memory.size = 0;
 }
 
-uint32 entity_get_component_index(level *level, uint32 entity_index, component_flag component_flag) {
+render_component *entity_get_render_component(level *level, uint32 entity_index) {
 	m_assert(entity_index < level->entity_flag_count);
+	m_assert(level->entity_flags[entity_index] & component_flag_render);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag) {
+		if (level->entity_flags[i] & component_flag_render) {
 			index += 1;
 		}
 	}
-	return index;
-}
-
-transform_component *entity_get_transform_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_flag_count);
-	m_assert(level->entity_flags[entity_index] & component_flag_transform);
-	uint32 index = 0;
-	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag_transform) {
-			index += 1;
-		}
-	}
-	return &level->transform_components[index];
-}
-
-light_component *entity_get_light_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_flag_count);
-	m_assert(level->entity_flags[entity_index] & component_flag_light);
-	uint32 index = 0;
-	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag_light) {
-			index += 1;
-		}
-	}
-	return &level->light_components[index];
+	return &level->render_components[index];
 }
 
 collision_component *entity_get_collision_component(level *level, uint32 entity_index) {
@@ -269,19 +237,19 @@ collision_component *entity_get_collision_component(level *level, uint32 entity_
 	return &level->collision_components[index];
 }
 
-render_component *entity_get_render_component(level *level, uint32 entity_index) {
+light_component *entity_get_light_component(level *level, uint32 entity_index) {
 	m_assert(entity_index < level->entity_flag_count);
-	m_assert(level->entity_flags[entity_index] & component_flag_render);
+	m_assert(level->entity_flags[entity_index] & component_flag_light);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag_render) {
+		if (level->entity_flags[i] & component_flag_light) {
 			index += 1;
 		}
 	}
-	return &level->render_components[index];
+	return &level->light_components[index];
 }
 
-uint32 level_get_entity_index(level *level, uint32 component_index, component_flag component_flag) {
+uint32 component_get_entity_index(level *level, uint32 component_index, component_flag component_flag) {
 	uint32 index = 0;
 	for (uint32 i = 0; i < level->entity_flag_count; i += 1) {
 		if (level->entity_flags[i] & component_flag) {
@@ -671,29 +639,59 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		level_add_skybox(level, vulkan, skyboxes[i].GetString());
 	}
 	rapidjson::Value::Array entities_json = json_doc["entities"].GetArray();
-	level->entity_components->entity_flags_count = entities_json.Size();
-	level->entity_components->entity_info_count = entities_json.Size();
+	level->entity_flag_count = entities_json.Size();
+	level->entity_info_count = entities_json.Size();
+	level->transform_component_count = 0;
+	level->light_component_count = 0;
+	level->collision_component_count = 0;
+	level->render_component_count = 0;
 	for (uint32 i = 0; i < entities_json.Size(); i += 1) {
 		rapidjson::Value::Object entity_json = entities_json[i].GetObject();
-		uint32 *entity_flags = &level->entity_components->entity_flags[i];
+		if (entity_json.HasMember("transform_component")) {
+			level->transform_component_count += 1;
+		}
+		if (entity_json.HasMember("collision_component")) {
+			level->collision_component_count += 1;
+		}
+		if (entity_json.HasMember("light_component")) {
+			level->light_component_count += 1;
+		}
+		if (entity_json.HasMember("render_component")) {
+			level->render_component_count += 1;
+		}
+	}
+	level->entity_flags = memory_arena_allocate<uint32>(&level->entity_components_memory_arena, level->entity_flag_count);
+	level->entity_infos = memory_arena_allocate<struct entity_info>(&level->entity_components_memory_arena, level->entity_info_count);
+	level->transform_components = memory_arena_allocate<struct transform_component>(&level->entity_components_memory_arena, level->transform_component_count);
+	level->collision_components = memory_arena_allocate<struct collision_component>(&level->entity_components_memory_arena, level->collision_component_count);
+	level->light_components = memory_arena_allocate<struct light_component>(&level->entity_components_memory_arena, level->light_component_count);
+	level->render_components = memory_arena_allocate<struct render_component>(&level->entity_components_memory_arena, level->render_component_count);
+
+	uint32 transform_component_index = 0;
+	uint32 light_component_index = 0;
+	uint32 collision_component_index = 0;
+	uint32 render_component_index = 0;
+	for (uint32 i = 0; i < entities_json.Size(); i += 1) {
+		rapidjson::Value::Object entity_json = entities_json[i].GetObject();
+		uint32 *entity_flags = &level->entity_flags[i];
+		entity_info *entity_info = &level->entity_infos[i];
 		*entity_flags = 0;
-		entity_info *entity_info = &level->entity_components->entity_infos[i];
 		m_assert(snprintf(entity_info->name, sizeof(entity_info->name), "%s", entity_json["name"].GetString()) < sizeof(entity_info->name));
 		if (entity_json.HasMember("transform_component")) {
 			*entity_flags = *entity_flags | component_flag_transform;
-			read_json_transform_component(entity_json["transform_component"].GetObject(), &level->entity_components->transform_components[level->entity_components->transform_component_count++]);
+			read_json_transform_component(entity_json["transform_component"].GetObject(), &level->transform_components[transform_component_index++]);
 		}
 		if (entity_json.HasMember("collision_component")) {
 			*entity_flags = *entity_flags | component_flag_collision;
-			read_json_collision_component(entity_json["collision_component"].GetObject(), &level->entity_components->collision_components[level->entity_components->collision_component_count++]);
+			read_json_collision_component(entity_json["collision_component"].GetObject(), &level->collision_components[collision_component_index++]);
 		}
 		if (entity_json.HasMember("light_component")) {
 			*entity_flags = *entity_flags | component_flag_light;
-			read_json_light_component(entity_json["light_component"].GetObject(), &level->entity_components->light_components[level->entity_components->light_component_count++]);
+			read_json_light_component(entity_json["light_component"].GetObject(), &level->light_components[light_component_index++]);
 		}
 		if (entity_json.HasMember("render_component")) {
 			*entity_flags = *entity_flags | component_flag_render;
-			read_json_render_component(entity_json["render_component"].GetObject(), &level->entity_components->render_components[level->entity_components->render_component_count++]);
+			read_json_render_component(entity_json["render_component"].GetObject(), &level->render_components[render_component_index++]);
 		}
 	}
 	extra_load(&json_doc);
@@ -861,31 +859,27 @@ void level_dump_json(level *level, const char *json_file_path, T extra_dump) {
 	writer.EndArray();
 	writer.Key("entities");
 	writer.StartArray();
-	for (uint32 i = 0; i < level->entity_components->entity_flags_count; i += 1) {
-		uint32 entity_flags = level->entity_components->entity_flags[i];
-		const char *entity_name = level->entity_components->entity_infos[i].name;
+	for (uint32 i = 0; i < level->entity_flag_count; i += 1) {
+		uint32 entity_flags = level->entity_flags[i];
+		const char *entity_name = level->entity_infos[i].name;
 		writer.StartObject();
 		writer.Key("name");
 		writer.String(entity_name);
 		if (entity_flags & component_flag_transform) {
 			writer.Key("transform_component");
-			uint32 component_index = entity_get_component_index(level, i, component_flag_transform);
-			write_json_transform_component(&level->entity_components->transform_components[component_index]);
+			write_json_transform_component(entity_get_transform_component(level, i));
 		}
 		if (entity_flags & component_flag_collision) {
 			writer.Key("collision_component");
-			uint32 component_index = entity_get_component_index(level, i, component_flag_collision);
-			write_json_collision_component(&level->entity_components->collision_components[component_index]);
+			write_json_collision_component(entity_get_collision_component(level, i));
 		}
 		if (entity_flags & component_flag_light) {
 			writer.Key("light_component");
-			uint32 component_index = entity_get_component_index(level, i, component_flag_light);
-			write_json_light_component(&level->entity_components->light_components[component_index]);
+			write_json_light_component(entity_get_light_component(level, i));
 		}
 		if (entity_flags & component_flag_render) {
 			writer.Key("render_component");
-			uint32 component_index = entity_get_component_index(level, i, component_flag_render);
-			write_json_render_component(&level->entity_components->render_components[component_index]);
+			write_json_render_component(entity_get_render_component(level, i));
 		}
 		writer.EndObject();
 	}
@@ -1020,17 +1014,17 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 	directional_light directional_light = {{0, 0, 0}, {1, 0, 0}};
 	point_light point_lights[level_max_point_light_count] = {};
 	uint32 point_light_count = 0;
-	for (uint32 i = 0; i < level->entity_components->light_component_count; i += 1) {
-		switch (level->entity_components->light_components[i].light_type) {
+	for (uint32 i = 0; i < level->light_component_count; i += 1) {
+		switch (level->light_components[i].light_type) {
 			case light_type_ambient: {
-				ambient_light = level->entity_components->light_components[i].ambient_light;
+				ambient_light = level->light_components[i].ambient_light;
 			} break;
 			case light_type_directional: {
-				directional_light = level->entity_components->light_components[i].directional_light;
+				directional_light = level->light_components[i].directional_light;
 			} break;
 			case light_type_point: {
 				m_assert(point_light_count < m_countof(point_lights));
-				point_lights[point_light_count++] = level->entity_components->light_components[i].point_light;
+				point_lights[point_light_count++] = level->light_components[i].point_light;
 			} break;
 		}
 	}
@@ -1081,7 +1075,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 	}
 	{ // models
 		vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
-		level->render_data.models = memory_arena_allocate<struct model_render_data>(&level->frame_memory_arena, level->entity_components->render_component_count);
+		level->render_data.models = memory_arena_allocate<struct model_render_data>(&level->frame_memory_arena, level->render_component_count);
 		level->render_data.model_count = 0;
 		auto add_model_render_data = [level, vulkan, uniform_alignment](render_component *render_component, mat4 transform) {
 			model_render_data *model_render_data = &level->render_data.models[level->render_data.model_count++];
@@ -1110,13 +1104,13 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 				vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] += uniforms_size;
 			}
 		};
-		for (uint32 i = 0; i < level->entity_components->entity_flags_count; i += 1) {
-			uint32 entity_flags = level->entity_components->entity_flags[i];
+		for (uint32 i = 0; i < level->entity_flag_count; i += 1) {
+			uint32 entity_flags = level->entity_flags[i];
 			if (entity_flags & component_flag_render) {
-				render_component *render_component = &level->entity_components->render_components[entity_get_component_index(level, i, component_flag_render)];
+				render_component *render_component = entity_get_render_component(level, i);
 				struct transform transform = transform_identity();
 				if (entity_flags & component_flag_transform) {
-					transform_component *transform_component = &level->entity_components->transform_components[entity_get_component_index(level, i, component_flag_transform)];
+					transform_component *transform_component = entity_get_transform_component(level, i);
 					transform = transform_component->transform;
 				}
 				add_model_render_data(render_component, transform_to_mat4(transform));
