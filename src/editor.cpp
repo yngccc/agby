@@ -59,7 +59,6 @@ struct editor {
 	aa_bound entity_bound;
 	bool new_entity;
 	char new_entity_name[32];
-	char entity_rename_name[32];	
 	bool new_component;
 	uint32 new_component_index;
 	uint32 new_component_light_type;
@@ -319,7 +318,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		}
 		ImGui::NewFrame();
 		{ // entity operations
-			if (editor.entity_index < level.entity_info_count) {
+			if (editor.entity_index < level.entity_count) {
 				if (ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyShift && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
 					uint32 entity_flag = level.entity_flags[editor.entity_index];
 					if (entity_flag & component_flag_render) {
@@ -329,11 +328,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						ray ray = {editor.camera.position, vec3_normalize(mouse_world_position - editor.camera.position), editor.camera.zfar};
 						render_component *render_component = entity_get_render_component(&level, editor.entity_index);
 						model *model = &level.models[render_component->model_index];
-						mat4 entity_transform = mat4_identity();
-						if (entity_flag & component_flag_transform) {
-							transform_component *transform_component = entity_get_transform_component(&level, editor.entity_index);
-							entity_transform = transform_to_mat4(transform_component->transform);
-						}
+						mat4 entity_transform = transform_to_mat4(level.entity_transforms[editor.entity_index]);
 						uint32 mesh_index = UINT32_MAX;
 						float min_distance = editor.camera.zfar;
 						for (uint32 i = 0; i < model->mesh_count; i += 1) {
@@ -523,9 +518,9 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			if (ImGui::Begin("Entity##entity_window")) {
 				ImGui::PushID("entitiy_window");
 				m_scope_exit(ImGui::PopID());
-				const char *entity_combo_name = editor.entity_index < level.entity_info_count ? level.entity_infos[editor.entity_index].name : nullptr;
+				const char *entity_combo_name = editor.entity_index < level.entity_count ? level.entity_infos[editor.entity_index].name : nullptr;
 				if (ImGui::BeginCombo("entities##entities_combo", entity_combo_name)) {
-					for (uint32 i = 0; i < level.entity_info_count; i += 1) {
+					for (uint32 i = 0; i < level.entity_count; i += 1) {
 						if (ImGui::Selectable(level.entity_infos[i].name, editor.entity_index == i)) {
 							editor.entity_index = i;
 						}
@@ -544,7 +539,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					if (ImGui::Button("ok##new_entity_popup_ok")) {
 						if (strcmp(editor.new_entity_name, "")) {
-							for (uint32 i = 0; i < level.entity_info_count; i += 1) {
+							for (uint32 i = 0; i < level.entity_count; i += 1) {
 								if (!strcmp(level.entity_infos[i].name, editor.new_entity_name)) {
 									show_duplicate_name_error = true;
 									break;
@@ -564,27 +559,24 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					ImGui::EndPopup();
 				}
-				if (editor.entity_index >= 0 && editor.entity_index < level.entity_info_count) {
+				if (editor.entity_index < level.entity_count) {
 					ImGui::Separator();
-					uint32 *entity_flags = &level.entity_flags[editor.entity_index];
-					if (*entity_flags & component_flag_transform) {
-						if (ImGui::CollapsingHeader("Transform Component##transforms_component_collapsing_header")) {
-							transform_component *transform_component = entity_get_transform_component(&level, editor.entity_index);
-							transform *transform = &transform_component->transform;
-							ImGui::RadioButton("##transform_translate_gizmo", &editor.entity_gizmo, transform_translate_gizmo);
-							ImGui::SameLine();
-							ImGui::InputFloat3("translate##transform_translation_field", transform->translate.e, 3);
-							ImGui::RadioButton("##transform_rotation_gizmo", &editor.entity_gizmo, transform_rotate_gizmo);
-							ImGui::SameLine();
-							if (ImGui::InputFloat4("rotate##transform_rotation_field", transform->rotate.e, 3)) {
-								transform->rotate = quat_normalize(transform->rotate);
-							}
-							ImGui::RadioButton("##transform_scaling_gizmo", &editor.entity_gizmo, transform_scale_gizmo);
-							ImGui::SameLine();
-							ImGui::InputFloat3("scale##transform_scaling_field", transform->scale.e, 3);
+					uint32 *entity_flag = &level.entity_flags[editor.entity_index];
+					transform *entity_transform = &level.entity_transforms[editor.entity_index];
+					if (ImGui::CollapsingHeader("Basic Properties##basic_properties_collapsing_header")) {
+						ImGui::RadioButton("##transform_translate_gizmo", &editor.entity_gizmo, transform_translate_gizmo);
+						ImGui::SameLine();
+						ImGui::InputFloat3("translate##transform_translation_field", entity_transform->translate.e, 3);
+						ImGui::RadioButton("##transform_rotation_gizmo", &editor.entity_gizmo, transform_rotate_gizmo);
+						ImGui::SameLine();
+						if (ImGui::InputFloat4("rotate##transform_rotation_field", entity_transform->rotate.e, 3)) {
+							entity_transform->rotate = quat_normalize(entity_transform->rotate);
 						}
+						ImGui::RadioButton("##transform_scaling_gizmo", &editor.entity_gizmo, transform_scale_gizmo);
+						ImGui::SameLine();
+						ImGui::InputFloat3("scale##transform_scaling_field", entity_transform->scale.e, 3);
 					}
-					if (*entity_flags & component_flag_collision) {
+					if (*entity_flag & component_flag_collision) {
 						if (ImGui::CollapsingHeader("Collision Component##collision_component_collapsing_header")) {
 							collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
 							ImGui::RadioButton("##bound_translate_min_gizmo", &editor.entity_gizmo, bound_translate_min_gizmo);
@@ -594,7 +586,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							ImGui::SameLine();
 							ImGui::InputFloat3("max##bound_max_field", collision_component->bound.max.e, 3);
 							if (ImGui::Button("reset##bound_reset_button")) {
-								if (*entity_flags & component_flag_render) {
+								if (*entity_flag & component_flag_render) {
 									render_component *render_component = entity_get_render_component(&level, editor.entity_index);
 									if (render_component->model_index < level.model_count) {
 										model *model = &level.models[render_component->model_index];
@@ -626,7 +618,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							}
 						}
 					}
-					if (*entity_flags & component_flag_light) {
+					if (*entity_flag & component_flag_light) {
 						if (ImGui::CollapsingHeader("Light Component##light_component_collapsing_header")) {
 							light_component *light_component = entity_get_light_component(&level, editor.entity_index);
 							if (light_component->light_type == light_type_ambient) {
@@ -657,7 +649,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							}
 						}
 					}
-					if (*entity_flags & component_flag_render) {
+					if (*entity_flag & component_flag_render) {
 						if (ImGui::CollapsingHeader("Render Component##render_component_collapsing_header")) {
 							render_component *render_component = entity_get_render_component(&level, editor.entity_index);
 							const char *model_combo_name = (render_component->model_index < level.model_count) ? level.models[render_component->model_index].file_name : nullptr;
@@ -694,7 +686,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					if (ImGui::BeginPopupModal("##new_component_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 						static bool show_duplicate_component_error = false;
-						const char *component_combo_names[] = {"transform", "collision", "light", "render"};
+						const char *component_combo_names[] = {"render", "collision", "light"};
 						const char *component_combo_name = component_combo_names[editor.new_component_index];
 						if (ImGui::BeginCombo("component##new_component_popup_component_combo", component_combo_name)) {
 							for (uint32 i = 0; i < m_countof(component_combo_names); i += 1) {
@@ -720,10 +712,9 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							ImGui::TextColored({1, 0, 0, 1}, "error: component already exist");
 						}
 						if (ImGui::Button("ok##new_component_popup_ok")) {
-							if ((editor.new_component_index == 0 && *entity_flags & component_flag_transform) ||
-								  (editor.new_component_index == 1 && *entity_flags & component_flag_collision) ||
-								  (editor.new_component_index == 2 && *entity_flags & component_flag_light) ||
-								  (editor.new_component_index == 3 && *entity_flags & component_flag_render)) {
+							if ((editor.new_component_index == 0 && *entity_flag & component_flag_render) ||
+								  (editor.new_component_index == 1 && *entity_flag & component_flag_collision) ||
+								  (editor.new_component_index == 2 && *entity_flag & component_flag_light)) {
 								show_duplicate_component_error = true;
 							}
 							else {
@@ -742,39 +733,32 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				}
 			}
 			ImGui::End();
-			if (editor.entity_index < level.entity_info_count) {
-				uint32 *entity_flags = &level.entity_flags[editor.entity_index];
+			if (editor.entity_index < level.entity_count) {
+				uint32 *entity_flag = &level.entity_flags[editor.entity_index];
+				transform *entity_transform = &level.entity_transforms[editor.entity_index];
 				mat4 camera_view_mat = camera_view_mat4(editor.camera);
 				mat4 camera_proj_mat = camera_projection_mat4(editor.camera);
 				if (editor.entity_gizmo == transform_translate_gizmo || editor.entity_gizmo == transform_rotate_gizmo || editor.entity_gizmo == transform_scale_gizmo) {
-					if (level.entity_flags[editor.entity_index] & component_flag_transform) {
-						ImGuizmo::BeginFrame();
-						transform_component *transform_component = entity_get_transform_component(&level, editor.entity_index);
-						mat4 transform_mat = transform_to_mat4(transform_component->transform);
-						if (editor.entity_gizmo == transform_translate_gizmo) {
-							ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-							transform_component->transform.translate = mat4_get_translation(transform_mat);
-						}
-						else if (editor.entity_gizmo == transform_rotate_gizmo) {
-							ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::ROTATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-							transform_component->transform.rotate = mat4_get_rotation(transform_mat);
-						}
-						else if (editor.entity_gizmo == transform_scale_gizmo) {
-							ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::SCALE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-							transform_component->transform.scale = mat4_get_scaling(transform_mat);
-						}
+					ImGuizmo::BeginFrame();
+					mat4 transform_mat = transform_to_mat4(*entity_transform);
+					if (editor.entity_gizmo == transform_translate_gizmo) {
+						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+						entity_transform->translate = mat4_get_translation(transform_mat);
+					}
+					else if (editor.entity_gizmo == transform_rotate_gizmo) {
+						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::ROTATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+						entity_transform->rotate = mat4_get_rotation(transform_mat);
+					}
+					else if (editor.entity_gizmo == transform_scale_gizmo) {
+						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::SCALE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+						entity_transform->scale = mat4_get_scaling(transform_mat);
 					}
 				}
 				else if (editor.entity_gizmo == bound_translate_min_gizmo || editor.entity_gizmo == bound_translate_max_gizmo) {
-					if (level.entity_flags[editor.entity_index] & component_flag_collision) {
+					if (*entity_flag & component_flag_collision) {
 						ImGuizmo::BeginFrame();
 						collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
-						struct transform transform = transform_identity();
-						if (*entity_flags & component_flag_transform) {
-							transform_component *transform_component = entity_get_transform_component(&level, editor.entity_index);
-							transform = transform_component->transform;
-						}
-						aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(collision_component->bound, transform.scale), transform.translate);
+						aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(collision_component->bound, entity_transform->scale), entity_transform->translate);
 						if (editor.entity_gizmo == bound_translate_min_gizmo) {
 							mat4 transform_mat = mat4_from_translation(transformed_bound.min);
 							ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
@@ -795,7 +779,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				else if (editor.entity_gizmo == directional_light_rotate_gizmo) {
-					if (level.entity_flags[editor.entity_index] & component_flag_light) {
+					if (*entity_flag & component_flag_light) {
 						light_component *light_component = entity_get_light_component(&level, editor.entity_index);
 						if (light_component->light_type == light_type_directional) {
 							ImGuizmo::BeginFrame();
@@ -826,7 +810,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				else if (editor.entity_gizmo == point_light_translate_gizmo) {
-					if (level.entity_flags[editor.entity_index] & component_flag_light) {
+					if (*entity_flag & component_flag_light) {
 						light_component *light_component = entity_get_light_component(&level, editor.entity_index);
 						if (light_component->light_type == light_type_point) {
 							ImGuizmo::BeginFrame();
@@ -902,10 +886,10 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
 		// if (editor.new_entity) {
 		// 	level.entity_flags[level.entity_flag_count] = 0;
-		// 	memcpy(level.entity_infos[level.entity_info_count].name, editor.new_entity_name, sizeof(editor.new_entity_name));
+		// 	memcpy(level.entity_infos[level.entity_count].name, editor.new_entity_name, sizeof(editor.new_entity_name));
 		// 	level.entity_flag_count += 1;
-		// 	level.entity_info_count += 1;
-		// 	editor.entity_index = level.entity_info_count - 1;
+		// 	level.entity_count += 1;
+		// 	editor.entity_index = level.entity_count - 1;
 		// 	editor.new_entity = false;
 		// }
 		// if (editor.new_component) {
@@ -983,7 +967,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index] += sizeof(bound_points);
 			}
 			{ // entity mesh outline
-				if (editor.entity_index < level.entity_info_count && level.entity_flags[editor.entity_index] & component_flag_render) {
+				if (editor.entity_index < level.entity_count && level.entity_flags[editor.entity_index] & component_flag_render) {
 					render_component *render_component = entity_get_render_component(&level, editor.entity_index);
 					if (render_component->model_index < level.model_count && editor.entity_mesh_index < level.models[render_component->model_index].mesh_count) {
 						for (uint32 i = 0; i < level.render_data.model_count; i += 1) {

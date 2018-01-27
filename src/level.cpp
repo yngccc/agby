@@ -214,7 +214,7 @@ void level_initialize(level *level, vulkan *vulkan) {
 }
 
 render_component *entity_get_render_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_flag_count);
+	m_assert(entity_index < level->entity_count);
 	m_assert(level->entity_flags[entity_index] & component_flag_render);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
@@ -226,7 +226,7 @@ render_component *entity_get_render_component(level *level, uint32 entity_index)
 }
 
 collision_component *entity_get_collision_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_flag_count);
+	m_assert(entity_index < level->entity_count);
 	m_assert(level->entity_flags[entity_index] & component_flag_collision);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
@@ -238,7 +238,7 @@ collision_component *entity_get_collision_component(level *level, uint32 entity_
 }
 
 light_component *entity_get_light_component(level *level, uint32 entity_index) {
-	m_assert(entity_index < level->entity_flag_count);
+	m_assert(entity_index < level->entity_count);
 	m_assert(level->entity_flags[entity_index] & component_flag_light);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
@@ -251,7 +251,7 @@ light_component *entity_get_light_component(level *level, uint32 entity_index) {
 
 uint32 component_get_entity_index(level *level, uint32 component_index, component_flag component_flag) {
 	uint32 index = 0;
-	for (uint32 i = 0; i < level->entity_flag_count; i += 1) {
+	for (uint32 i = 0; i < level->entity_count; i += 1) {
 		if (level->entity_flags[i] & component_flag) {
 			if (index == component_index) {
 				return i;
@@ -520,49 +520,20 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	m_assert(json_parse_result);
 	m_assert(!json_doc.HasParseError());
 
-	auto read_json_transform_object = [](rapidjson::Value::Object json_transform) -> transform {
-		rapidjson::Value::Array json_transform_scaling = json_transform["scaling"].GetArray();
-		rapidjson::Value::Array json_transform_rotation = json_transform["rotation"].GetArray();
-		rapidjson::Value::Array json_transform_translation = json_transform["translation"].GetArray();
-		transform transform = {};
-		transform.scale.x = json_transform_scaling[0].GetFloat();
-		transform.scale.y = json_transform_scaling[1].GetFloat();
-		transform.scale.z = json_transform_scaling[2].GetFloat();
-		transform.rotate.x = json_transform_rotation[0].GetFloat();
-		transform.rotate.y = json_transform_rotation[1].GetFloat();
-		transform.rotate.z = json_transform_rotation[2].GetFloat();
-		transform.rotate.w = json_transform_rotation[3].GetFloat();
-		transform.translate.x = json_transform_translation[0].GetFloat();
-		transform.translate.y = json_transform_translation[1].GetFloat();
-		transform.translate.z = json_transform_translation[2].GetFloat();
-		return transform;
-	};
-	auto read_json_bound_object = [](rapidjson::Value::Object json_bound) -> aa_bound {
-		rapidjson::Value::Array json_bound_min = json_bound["min"].GetArray();
-		rapidjson::Value::Array json_bound_max = json_bound["max"].GetArray();
-		aa_bound bound = {};
-		bound.min.x = json_bound_min[0].GetFloat();
-		bound.min.y = json_bound_min[1].GetFloat();
-		bound.min.z = json_bound_min[2].GetFloat();
-		bound.max.x = json_bound_max[0].GetFloat();
-		bound.max.y = json_bound_max[1].GetFloat();
-		bound.max.z = json_bound_max[2].GetFloat();
-		return bound;
-	};
-	auto read_json_transform_component = [](rapidjson::Value::Object transform_component_json, transform_component *transform_component) {
-		rapidjson::Value::Array scaling = transform_component_json["scale"].GetArray();
-		rapidjson::Value::Array rotation = transform_component_json["rotate"].GetArray();
-		rapidjson::Value::Array translation = transform_component_json["translate"].GetArray();
-		transform_component->transform.scale.x = scaling[0].GetFloat();
-		transform_component->transform.scale.y = scaling[1].GetFloat();
-		transform_component->transform.scale.z = scaling[2].GetFloat();
-		transform_component->transform.rotate.x = rotation[0].GetFloat();
-		transform_component->transform.rotate.y = rotation[1].GetFloat();
-		transform_component->transform.rotate.z = rotation[2].GetFloat();
-		transform_component->transform.rotate.w = rotation[3].GetFloat();
-		transform_component->transform.translate.x = translation[0].GetFloat();
-		transform_component->transform.translate.y = translation[1].GetFloat();
-		transform_component->transform.translate.z = translation[2].GetFloat();
+	auto read_json_transform_object = [](rapidjson::Value::Object json_transform, transform *transform) {
+		rapidjson::Value::Array json_transform_scaling = json_transform["scale"].GetArray();
+		rapidjson::Value::Array json_transform_rotation = json_transform["rotate"].GetArray();
+		rapidjson::Value::Array json_transform_translation = json_transform["translate"].GetArray();
+		transform->scale.x = json_transform_scaling[0].GetFloat();
+		transform->scale.y = json_transform_scaling[1].GetFloat();
+		transform->scale.z = json_transform_scaling[2].GetFloat();
+		transform->rotate.x = json_transform_rotation[0].GetFloat();
+		transform->rotate.y = json_transform_rotation[1].GetFloat();
+		transform->rotate.z = json_transform_rotation[2].GetFloat();
+		transform->rotate.w = json_transform_rotation[3].GetFloat();
+		transform->translate.x = json_transform_translation[0].GetFloat();
+		transform->translate.y = json_transform_translation[1].GetFloat();
+		transform->translate.z = json_transform_translation[2].GetFloat();
 	};
 	auto read_json_collision_component = [](rapidjson::Value::Object collision_component_json, collision_component *collision_component) {
 		rapidjson::Value::Array bound_min = collision_component_json["bound_min"].GetArray();
@@ -639,59 +610,54 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		level_add_skybox(level, vulkan, skyboxes[i].GetString());
 	}
 	rapidjson::Value::Array entities_json = json_doc["entities"].GetArray();
-	level->entity_flag_count = entities_json.Size();
-	level->entity_info_count = entities_json.Size();
-	level->transform_component_count = 0;
-	level->light_component_count = 0;
-	level->collision_component_count = 0;
+	level->entity_count = entities_json.Size();
 	level->render_component_count = 0;
+	level->collision_component_count = 0;
+	level->light_component_count = 0;
 	for (uint32 i = 0; i < entities_json.Size(); i += 1) {
 		rapidjson::Value::Object entity_json = entities_json[i].GetObject();
-		if (entity_json.HasMember("transform_component")) {
-			level->transform_component_count += 1;
-		}
-		if (entity_json.HasMember("collision_component")) {
-			level->collision_component_count += 1;
+		if (entity_json.HasMember("render_component")) {
+			level->render_component_count += 1;
 		}
 		if (entity_json.HasMember("light_component")) {
 			level->light_component_count += 1;
 		}
-		if (entity_json.HasMember("render_component")) {
-			level->render_component_count += 1;
+		if (entity_json.HasMember("collision_component")) {
+			level->collision_component_count += 1;
 		}
 	}
-	level->entity_flags = memory_arena_allocate<uint32>(&level->entity_components_memory_arena, level->entity_flag_count);
-	level->entity_infos = memory_arena_allocate<struct entity_info>(&level->entity_components_memory_arena, level->entity_info_count);
-	level->transform_components = memory_arena_allocate<struct transform_component>(&level->entity_components_memory_arena, level->transform_component_count);
+	level->entity_flags = memory_arena_allocate<uint32>(&level->entity_components_memory_arena, level->entity_count);
+	level->entity_infos = memory_arena_allocate<struct entity_info>(&level->entity_components_memory_arena, level->entity_count);
+	level->entity_transforms = memory_arena_allocate<struct transform>(&level->entity_components_memory_arena, level->entity_count);
+	level->render_components = memory_arena_allocate<struct render_component>(&level->entity_components_memory_arena, level->render_component_count);
 	level->collision_components = memory_arena_allocate<struct collision_component>(&level->entity_components_memory_arena, level->collision_component_count);
 	level->light_components = memory_arena_allocate<struct light_component>(&level->entity_components_memory_arena, level->light_component_count);
-	level->render_components = memory_arena_allocate<struct render_component>(&level->entity_components_memory_arena, level->render_component_count);
 
-	uint32 transform_component_index = 0;
-	uint32 light_component_index = 0;
-	uint32 collision_component_index = 0;
 	uint32 render_component_index = 0;
+	uint32 collision_component_index = 0;
+	uint32 light_component_index = 0;
 	for (uint32 i = 0; i < entities_json.Size(); i += 1) {
 		rapidjson::Value::Object entity_json = entities_json[i].GetObject();
-		uint32 *entity_flags = &level->entity_flags[i];
+		uint32 *entity_flag = &level->entity_flags[i];
 		entity_info *entity_info = &level->entity_infos[i];
-		*entity_flags = 0;
+		transform *entity_transform = &level->entity_transforms[i];
+		*entity_flag = 0;
+		*entity_transform = transform_identity();
 		m_assert(snprintf(entity_info->name, sizeof(entity_info->name), "%s", entity_json["name"].GetString()) < sizeof(entity_info->name));
-		if (entity_json.HasMember("transform_component")) {
-			*entity_flags = *entity_flags | component_flag_transform;
-			read_json_transform_component(entity_json["transform_component"].GetObject(), &level->transform_components[transform_component_index++]);
+		if (entity_json.HasMember("transform")) {
+			read_json_transform_object(entity_json["transform"].GetObject(), entity_transform);
+		}
+		if (entity_json.HasMember("render_component")) {
+			*entity_flag = *entity_flag | component_flag_render;
+			read_json_render_component(entity_json["render_component"].GetObject(), &level->render_components[render_component_index++]);
 		}
 		if (entity_json.HasMember("collision_component")) {
-			*entity_flags = *entity_flags | component_flag_collision;
+			*entity_flag = *entity_flag | component_flag_collision;
 			read_json_collision_component(entity_json["collision_component"].GetObject(), &level->collision_components[collision_component_index++]);
 		}
 		if (entity_json.HasMember("light_component")) {
-			*entity_flags = *entity_flags | component_flag_light;
+			*entity_flag = *entity_flag | component_flag_light;
 			read_json_light_component(entity_json["light_component"].GetObject(), &level->light_components[light_component_index++]);
-		}
-		if (entity_json.HasMember("render_component")) {
-			*entity_flags = *entity_flags | component_flag_render;
-			read_json_render_component(entity_json["render_component"].GetObject(), &level->render_components[render_component_index++]);
 		}
 	}
 	extra_load(&json_doc);
@@ -707,20 +673,20 @@ void level_dump_json(level *level, const char *json_file_path, T extra_dump) {
 	auto write_json_transform_object = [&writer](transform transform) {
 		writer.Key("transform");
 		writer.StartObject();
-		writer.Key("scaling");
+		writer.Key("scale");
 		writer.StartArray();
 		writer.Double(transform.scale.x);
 		writer.Double(transform.scale.y);
 		writer.Double(transform.scale.z);
 		writer.EndArray();
-		writer.Key("rotation");
+		writer.Key("rotate");
 		writer.StartArray();
 		writer.Double(transform.rotate.x);
 		writer.Double(transform.rotate.y);
 		writer.Double(transform.rotate.z);
 		writer.Double(transform.rotate.w);
 		writer.EndArray();
-		writer.Key("translation");
+		writer.Key("translate");
 		writer.StartArray();
 		writer.Double(transform.translate.x);
 		writer.Double(transform.translate.y);
@@ -742,29 +708,6 @@ void level_dump_json(level *level, const char *json_file_path, T extra_dump) {
 		writer.Double(bound.max.x);
 		writer.Double(bound.max.y);
 		writer.Double(bound.max.z);
-		writer.EndArray();
-		writer.EndObject();
-	};
-	auto write_json_transform_component = [&writer](transform_component *component) {
-		writer.StartObject();
-		writer.Key("scale");
-		writer.StartArray();
-		writer.Double(component->transform.scale.x);
-		writer.Double(component->transform.scale.y);
-		writer.Double(component->transform.scale.z);
-		writer.EndArray();
-		writer.Key("rotate");
-		writer.StartArray();
-		writer.Double(component->transform.rotate.x);
-		writer.Double(component->transform.rotate.y);
-		writer.Double(component->transform.rotate.z);
-		writer.Double(component->transform.rotate.w);
-		writer.EndArray();
-		writer.Key("translate");
-		writer.StartArray();
-		writer.Double(component->transform.translate.x);
-		writer.Double(component->transform.translate.y);
-		writer.Double(component->transform.translate.z);
 		writer.EndArray();
 		writer.EndObject();
 	};
@@ -859,25 +802,24 @@ void level_dump_json(level *level, const char *json_file_path, T extra_dump) {
 	writer.EndArray();
 	writer.Key("entities");
 	writer.StartArray();
-	for (uint32 i = 0; i < level->entity_flag_count; i += 1) {
-		uint32 entity_flags = level->entity_flags[i];
+	for (uint32 i = 0; i < level->entity_count; i += 1) {
+		uint32 entity_flag = level->entity_flags[i];
+		transform entity_transform = level->entity_transforms[i];
 		const char *entity_name = level->entity_infos[i].name;
 		writer.StartObject();
 		writer.Key("name");
 		writer.String(entity_name);
-		if (entity_flags & component_flag_transform) {
-			writer.Key("transform_component");
-			write_json_transform_component(entity_get_transform_component(level, i));
-		}
-		if (entity_flags & component_flag_collision) {
+		writer.Key("transform");
+		write_json_transform_object(entity_transform);
+		if (entity_flag & component_flag_collision) {
 			writer.Key("collision_component");
 			write_json_collision_component(entity_get_collision_component(level, i));
 		}
-		if (entity_flags & component_flag_light) {
+		if (entity_flag & component_flag_light) {
 			writer.Key("light_component");
 			write_json_light_component(entity_get_light_component(level, i));
 		}
-		if (entity_flags & component_flag_render) {
+		if (entity_flag & component_flag_render) {
 			writer.Key("render_component");
 			write_json_render_component(entity_get_render_component(level, i));
 		}
@@ -1104,16 +1046,11 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 				vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] += uniforms_size;
 			}
 		};
-		for (uint32 i = 0; i < level->entity_flag_count; i += 1) {
-			uint32 entity_flags = level->entity_flags[i];
-			if (entity_flags & component_flag_render) {
+		for (uint32 i = 0; i < level->entity_count; i += 1) {
+			uint32 entity_flag = level->entity_flags[i];
+			if (entity_flag & component_flag_render) {
 				render_component *render_component = entity_get_render_component(level, i);
-				struct transform transform = transform_identity();
-				if (entity_flags & component_flag_transform) {
-					transform_component *transform_component = entity_get_transform_component(level, i);
-					transform = transform_component->transform;
-				}
-				add_model_render_data(render_component, transform_to_mat4(transform));
+				add_model_render_data(render_component, transform_to_mat4(level->entity_transforms[i]));
 			}
 		}
 	}
