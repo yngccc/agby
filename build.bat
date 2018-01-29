@@ -3,11 +3,20 @@ echo.
 
 call "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat" x64
 
+where /q ctags
+if ERRORLEVEL 0 (
+pushd "%~dp0\src"
+	start /b ctags -e ^
+	assets.cpp codegen.cpp common.cpp editor.cpp game.cpp import.cpp level.cpp lightmap.cpp math.cpp platform_windows.cpp test.cpp vulkan.cpp ^
+	../vendor/include/imgui/imgui.h %VULKAN_SDK%/include/vulkan/vulkan.h
+popd	
+)
+
 if not exist "%~dp0\build" mkdir "%~dp0\build"
 pushd "%~dp0\build"
 
 set flags=/nologo /Od /W3 /Zo /Z7 /EHa /FC /D_CRT_SECURE_NO_WARNINGS /D "_ITERATOR_DEBUG_LEVEL=0"
-set dirs=/I ..\vendor\include /I ..\vendor\include\fbx /I %VULKAN_SDK%\include /link /LIBPATH:..\vendor\lib\windows
+set dirs=/I ..\vendor\include\fbx /I %VULKAN_SDK%\include /link /LIBPATH:..\vendor\lib\windows
 set libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib
 
 rem cl ..\src\codegen.cpp %flags% %libs%

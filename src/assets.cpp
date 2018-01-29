@@ -4,6 +4,12 @@
 
 #pragma once
 
+#define RAPIDJSON_SSE2
+#define RAPIDJSON_ASSERT(x) m_assert(x)
+#include "../vendor/include/rapidjson/document.h"
+#include "../vendor/include/rapidjson/prettywriter.h"
+#include "../vendor/include/rapidjson/error/en.h"
+
 // vertex attribute sizes:
 //   position                     12   32/32/32
 //   uv                           8    32/32

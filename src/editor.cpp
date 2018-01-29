@@ -5,21 +5,14 @@
 #include "platform_windows.cpp"
 #include "math.cpp"
 #include "vulkan.cpp"
+#include "assets.cpp"
+#include "level.cpp"
 
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "../vendor/include/imgui/imgui_draw.cpp"
 #include "../vendor/include/imgui/imgui.cpp"
 #include "../vendor/include/imgui/ImGuizmo.cpp"
 #undef snprintf
-
-#define RAPIDJSON_SSE2
-#define RAPIDJSON_ASSERT(x) m_assert(x)
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/error/en.h"
-
-#include "assets.cpp"
-#include "level.cpp"
 
 const int32 transform_translate_gizmo = 0;
 const int32 transform_rotate_gizmo = 1;
@@ -57,9 +50,7 @@ struct editor {
 	int32 entity_gizmo;
 	uint32 entity_mesh_index;
 	aa_bound entity_bound;
-	bool new_entity;
 	char new_entity_name[32];
-	bool new_component;
 	uint32 new_component_index;
 	uint32 new_component_light_type;
 	
@@ -201,9 +192,12 @@ bool editor_initialize(editor *editor, vulkan *vulkan) {
 		editor->entity_index = UINT32_MAX;
 		editor->entity_mesh_index= UINT32_MAX;
 
-		m_array_set_str(editor->new_level_file, "agby_assets\\levels\\level_new.json");
-		m_array_set_str(editor->load_level_file, "agby_assets\\levels\\level_load.json");
-		m_array_set_str(editor->save_level_file, "agby_assets\\levels\\level_save.json");
+		char new_level_file[] = "agby_assets\\levels\\level_new.json";
+		char load_level_file[] = "agby_assets\\levels\\level_load.json";
+		char save_level_file[] = "agby_assets\\levels\\level_save.json";
+		array_copy(editor->new_level_file, new_level_file);
+		array_copy(editor->load_level_file, load_level_file);
+		array_copy(editor->save_level_file, save_level_file);
 	}
 	return true;
 }
@@ -316,6 +310,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				} break;
 			}
 		}
+
 		ImGui::NewFrame();
 		{ // entity operations
 			if (editor.entity_index < level.entity_count) {
@@ -356,8 +351,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				if (ImGui::IsKeyPressed(keycode_backspace)) {
-					// level_delete_entity(&level, editor.entity_index);
-					// editor.entity_index = UINT32_MAX;
+					level.entity_modifications[editor.entity_index].remove = true;
 				}
 			}
 		}
@@ -546,8 +540,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 								}
 							}
 							if (!show_duplicate_name_error) {
+								entity_addition *entity_addition = memory_arena_allocate<struct entity_addition>(&level.frame_memory_arena, 1);
+								array_copy(entity_addition->info.name, editor.new_entity_name);
+								entity_addition->transform = transform_identity();
+								list_prepend(&level.entity_addition, entity_addition);
 								show_duplicate_name_error = false;
-								editor.new_entity = true;
 								ImGui::CloseCurrentPopup();
 							}
 						}
@@ -562,8 +559,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				if (editor.entity_index < level.entity_count) {
 					ImGui::Separator();
 					uint32 *entity_flag = &level.entity_flags[editor.entity_index];
-					transform *entity_transform = &level.entity_transforms[editor.entity_index];
 					if (ImGui::CollapsingHeader("Basic Properties##basic_properties_collapsing_header")) {
+						transform *entity_transform = &level.entity_transforms[editor.entity_index];
 						ImGui::RadioButton("##transform_translate_gizmo", &editor.entity_gizmo, transform_translate_gizmo);
 						ImGui::SameLine();
 						ImGui::InputFloat3("translate##transform_translation_field", entity_transform->translate.e, 3);
@@ -575,6 +572,38 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						ImGui::RadioButton("##transform_scaling_gizmo", &editor.entity_gizmo, transform_scale_gizmo);
 						ImGui::SameLine();
 						ImGui::InputFloat3("scale##transform_scaling_field", entity_transform->scale.e, 3);
+					}
+					if (*entity_flag & component_flag_render) {
+						if (ImGui::CollapsingHeader("Render Component##render_component_collapsing_header")) {
+							render_component *render_component = entity_get_render_component(&level, editor.entity_index);
+							const char *model_combo_name = (render_component->model_index < level.model_count) ? level.models[render_component->model_index].file_name : nullptr;
+							if (ImGui::BeginCombo("models##models_combo", model_combo_name)) {
+								for (uint32 i = 0; i < level.model_count; i += 1) {
+									if (ImGui::Selectable(level.models[i].file_name, render_component->model_index == i)) {
+										render_component->model_index = i;
+										editor.entity_mesh_index = UINT32_MAX;
+									}
+								}
+								ImGui::EndCombo();
+							}
+							if (render_component->model_index < level.model_count) {
+								model *model = &level.models[render_component->model_index];
+								const char *mesh_combo_name = (editor.entity_mesh_index < model->mesh_count) ? model->meshes[editor.entity_mesh_index].name : nullptr;
+								if (ImGui::BeginCombo("meshes##model_meshes_combo", mesh_combo_name)) {
+									for (uint32 i = 0; i < model->mesh_count; i += 1) {
+										if (ImGui::Selectable(model->meshes[i].name, editor.entity_mesh_index == i)) {
+											editor.entity_mesh_index = i;
+										}
+									}
+									ImGui::EndCombo();
+								}
+							}
+							if (render_component->model_index < level.model_count) {
+								ImGui::SliderFloat("uv scale u##material_uv_scale_u", &render_component->uv_scale[0], 1.0f, 10.0f);
+								ImGui::SliderFloat("uv scale v##material_uv_scale_v", &render_component->uv_scale[1], 1.0f, 10.0f);
+								ImGui::SliderFloat("height map scale##material_height_map_scale", &render_component->height_map_scale, 0.0f, 0.2f);
+							}
+						}
 					}
 					if (*entity_flag & component_flag_collision) {
 						if (ImGui::CollapsingHeader("Collision Component##collision_component_collapsing_header")) {
@@ -649,38 +678,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							}
 						}
 					}
-					if (*entity_flag & component_flag_render) {
-						if (ImGui::CollapsingHeader("Render Component##render_component_collapsing_header")) {
-							render_component *render_component = entity_get_render_component(&level, editor.entity_index);
-							const char *model_combo_name = (render_component->model_index < level.model_count) ? level.models[render_component->model_index].file_name : nullptr;
-							if (ImGui::BeginCombo("models##models_combo", model_combo_name)) {
-								for (uint32 i = 0; i < level.model_count; i += 1) {
-									if (ImGui::Selectable(level.models[i].file_name, render_component->model_index == i)) {
-										render_component->model_index = i;
-										editor.entity_mesh_index = UINT32_MAX;
-									}
-								}
-								ImGui::EndCombo();
-							}
-							if (render_component->model_index < level.model_count) {
-								model *model = &level.models[render_component->model_index];
-								const char *mesh_combo_name = (editor.entity_mesh_index < model->mesh_count) ? model->meshes[editor.entity_mesh_index].name : nullptr;
-								if (ImGui::BeginCombo("meshes##model_meshes_combo", mesh_combo_name)) {
-									for (uint32 i = 0; i < model->mesh_count; i += 1) {
-										if (ImGui::Selectable(model->meshes[i].name, editor.entity_mesh_index == i)) {
-											editor.entity_mesh_index = i;
-										}
-									}
-									ImGui::EndCombo();
-								}
-							}
-							if (render_component->model_index < level.model_count) {
-								ImGui::SliderFloat("uv scale u##material_uv_scale_u", &render_component->uv_scale[0], 1.0f, 10.0f);
-								ImGui::SliderFloat("uv scale v##material_uv_scale_v", &render_component->uv_scale[1], 1.0f, 10.0f);
-								ImGui::SliderFloat("height map scale##material_height_map_scale", &render_component->height_map_scale, 0.0f, 0.2f);
-							}
-						}
-					}
 					if (ImGui::Button("New##new_component_button")) {
 						ImGui::OpenPopup("##new_component_popup");
 					}
@@ -718,8 +715,42 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 								show_duplicate_component_error = true;
 							}
 							else {
-								editor.new_component = true;
 								show_duplicate_component_error = false;
+								if (editor.new_component_index == 0) {
+									uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
+									*entity_flag = level.entity_flags[editor.entity_index] | component_flag_render;
+									render_component *render_component = memory_arena_allocate<struct render_component>(&level.frame_memory_arena, 1);
+									render_component->uv_scale = {1, 1};
+									level.entity_modifications[editor.entity_index].flag = entity_flag;
+									level.entity_modifications[editor.entity_index].render_component = render_component;
+								}
+								else if (editor.new_component_index == 1) {
+									uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
+									*entity_flag = level.entity_flags[editor.entity_index] | component_flag_collision;
+									collision_component *collision_component = memory_arena_allocate<struct collision_component>(&level.frame_memory_arena, 1);
+									collision_component->bound = aa_bound{{-1, -1, -1}, {1, 1, 1}};
+									level.entity_modifications[editor.entity_index].flag = entity_flag;
+									level.entity_modifications[editor.entity_index].collision_component = collision_component;
+								}
+								else if (editor.new_component_index == 2) {
+									uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
+									*entity_flag = level.entity_flags[editor.entity_index] | component_flag_light;
+									light_component *light_component = memory_arena_allocate<struct light_component>(&level.frame_memory_arena, 1);
+									if (editor.new_component_light_type == 0) {
+										light_component->light_type = {light_type_ambient};
+										light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
+									}
+									else if (editor.new_component_light_type == 1) {
+										light_component->light_type = {light_type_directional};
+										light_component->directional_light = directional_light{{0.1f, 0.1f, 0.1f}, {0, -1, 0}};
+									}
+									else if (editor.new_component_light_type == 2) {
+										light_component->light_type = {light_type_point};
+										light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
+									}
+									level.entity_modifications[editor.entity_index].flag = entity_flag;
+									level.entity_modifications[editor.entity_index].light_component = light_component;
+								}
 								ImGui::CloseCurrentPopup();
 							}
 						}
@@ -853,8 +884,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					ImGui::Text(memory_name);
 				};
 				ImGui::Text("Memory Arenas");
-				imgui_render_memory(level.frame_memory_arena.size, level.frame_memory_arena.capacity, level.frame_memory_arena.name);
-				imgui_render_memory(level.entity_components_memory_arena.size, level.entity_components_memory_arena.capacity, level.entity_components_memory_arena.name);
+				memory_arena *entity_components_memory_arena = &level.entity_components_memory_arenas[level.entity_components_memory_arena_index];
+				imgui_render_memory(entity_components_memory_arena->size, entity_components_memory_arena->capacity, entity_components_memory_arena->name);
 				imgui_render_memory(level.assets_memory_arena.size, level.assets_memory_arena.capacity, level.assets_memory_arena.name);
 				ImGui::Text("Vulkan Memories");
 				imgui_render_memory(vulkan.memories.common_images_memory.size, vulkan.memories.common_images_memory.capacity, "common images");
@@ -862,7 +893,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				imgui_render_memory(vulkan.buffers.level_vertex_buffer_offset, vulkan.buffers.level_vertex_buffer.capacity, "level vertices");
 				imgui_render_memory(vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index], vulkan.buffers.frame_vertex_buffers[vulkan.frame_index].capacity, "frame vertices");
 				imgui_render_memory(vulkan.buffers.frame_uniform_buffer_offsets[vulkan.frame_index], vulkan.buffers.frame_uniform_buffers[vulkan.frame_index].capacity, "frame uniforms");
-				level.frame_memory_arena.size = 0;
 			}
 			ImGui::End();
 		}
@@ -883,58 +913,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			}
 		}
 		ImGui::Render();
-
-		// if (editor.new_entity) {
-		// 	level.entity_flags[level.entity_flag_count] = 0;
-		// 	memcpy(level.entity_infos[level.entity_count].name, editor.new_entity_name, sizeof(editor.new_entity_name));
-		// 	level.entity_flag_count += 1;
-		// 	level.entity_count += 1;
-		// 	editor.entity_index = level.entity_count - 1;
-		// 	editor.new_entity = false;
-		// }
-		// if (editor.new_component) {
-		// 	if (editor.new_component_index == 0) {
-		// 		uint32 component_index = entity_get_component_index(&level, editor.entity_index, component_flag_transform);
-		// 		transform_component component = {transform_identity()};
-		// 		array_insert(level.transform_components, &level.transform_component_count, component, component_index);
-		// 		level.entity_flags[editor.entity_index] |= component_flag_transform;
-		// 	}
-		// 	if (editor.new_component_index == 1) {
-		// 		uint32 component_index = entity_get_component_index(&level, editor.entity_index, component_flag_collision);
-		// 		collision_component component = {aa_bound{{-1, -1, -1}, {1, 1, 1}}};
-		// 		array_insert(level.collision_components, &level.collision_component_count, component, component_index);
-		// 		level.entity_flags[editor.entity_index] |= component_flag_collision;
-		// 	}
-		// 	if (editor.new_component_index == 2) {
-		// 		uint32 component_index = entity_get_component_index(&level, editor.entity_index, component_flag_light);
-		// 		light_component component = {};
-		// 		if (editor.new_component_light_type == 0) {
-		// 			component.light_type = {light_type_ambient};
-		// 			component.ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
-		// 		}
-		// 		else if (editor.new_component_light_type == 1) {
-		// 			component.light_type = {light_type_directional};
-		// 			component.directional_light = directional_light{{0.1f, 0.1f, 0.1f}, {0, -1, 0}};
-		// 		}
-		// 		else if (editor.new_component_light_type == 2) {
-		// 			component.light_type = {light_type_point};
-		// 			component.point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
-		// 		}
-		// 		else {
-		// 			m_assert(false);
-		// 		}
-		// 		array_insert(level.light_components, &level.light_component_count, component, component_index);
-		// 		level.entity_flags[editor.entity_index] |= component_flag_light;
-		// 	}
-		// 	if (editor.new_component_index == 3) {
-		// 		uint32 component_index = entity_get_component_index(&level, editor.entity_index, component_flag_render);
-		// 		render_component component = {};
-		// 		component.uv_scale = {1, 1};
-		// 		array_insert(level.render_components, &level.render_component_count, component, component_index);
-		// 		level.entity_flags[editor.entity_index] |= component_flag_render;
-		// 	}
-		// 	editor.new_component = false;
-		// }
 
 		auto generate_editor_render_data = [&] {
 			editor.render_data = {};
@@ -1054,5 +1032,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		level_generate_render_commands(&level, &vulkan, editor.camera, extra_main_render_pass_render_commands, extra_swap_chain_render_commands);
 		bool screen_shot = ImGui::IsKeyReleased(keycode_print_screen);
 		vulkan_end_render(&vulkan, screen_shot);
+
+		level_update_entity_component(&level);
+		level.frame_memory_arena.size = 0;
 	}
 }

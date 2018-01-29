@@ -10,9 +10,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "../vendor/include/stb/stb_image.h"
 #define FBXSDK_SHARED
-#include <fbx/fbxsdk.h>
+#include "../vendor/include/fbx/fbxsdk.h"
 #define NVTT_SHARED 1
-#include <nvtt/nvtt.h>
+#include "../vendor/include/nvtt/nvtt.h"
 
 template <typename T>
 bool traverse_fbx_nodes(FbxNode *node, T node_func) {
@@ -439,7 +439,7 @@ void import_fbx_model(gpk_import_cmd_line cmdl) {
 			mesh_headers[i].index_size = 2;
 			mesh_headers[i].index_count = meshes[i].index_count;
 			mesh_headers[i].material_index = meshes[i].material_index;
-			m_array_copy(mesh_headers[i].name, meshes[i].name);
+			array_copy(mesh_headers[i].name, meshes[i].name);
 			model_total_size += mesh_headers[i].indices_offset + mesh_headers[i].index_size * mesh_headers[i].index_count;
 		}
 		model_header.material_count = material_count;

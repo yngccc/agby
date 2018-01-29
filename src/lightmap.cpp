@@ -5,9 +5,9 @@
 #include "platform_windows.cpp"
 #include "math.cpp"
 
-#include <uvatlas/uvatlas.h>
 #include <initguid.h>
-#include <directxmesh/directxmesh.h>
+#include "../vendor/include/uvatlas/uvatlas.h"
+#include "../vendor/include/directxmesh/directxmesh.h"
 
 #define ASSETS_IMPORT_STRUCT_ONLY
 #include "assets.cpp"

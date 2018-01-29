@@ -12,6 +12,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#define _USE_MATH_DEFINES
+#include <math.h>
+#include <float.h>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -34,25 +37,27 @@ typedef unsigned long long ullong;
 #define m_unpack3(array) (array)[0], (array)[1], (array)[2]
 #define m_unpack4(array) (array)[0], (array)[1], (array)[2], (array)[3]
 
-#define m_array_set(array, value)                     \
-	for (uint32 i = 0; i < m_countof(array); i += 1) {  \
-    array[i] = value;                                 \
-  }
-
-#define m_array_set_str(dst_array, str_literal)                  \
-  {                                                              \
-    static_assert(sizeof(dst_array) >= sizeof(str_literal), ""); \
-    char src_array[sizeof(str_literal)] = str_literal;           \
-    memcpy(dst_array, src_array, sizeof(src_array));             \
-  }
-
-#define m_array_copy(dst_array, src_array)                         \
-  static_assert(sizeof(dst_array) == sizeof(src_array), "");       \
-  static_assert(m_countof(dst_array) == m_countof(src_array), ""); \
-  memcpy(dst_array, src_array, sizeof(src_array));
-
 #define m_concat_macros(t1, t2) t1##t2
 #define m_concat_macros_2(t1, t2) m_concat_macros(t1, t2)
+
+#ifdef _WIN32
+#define m_assert(expr) if (!(expr)) { _wassert(_CRT_WIDE(#expr), _CRT_WIDE(__FILE__), (unsigned)(__LINE__)); };
+#ifdef NO_DEBUG_ASSERT
+#define m_debug_assert(expr) (void(0))
+#else
+#define m_debug_assert(expr) if (!(expr)) { _wassert(_CRT_WIDE(#expr), _CRT_WIDE(__FILE__), (unsigned)(__LINE__)); };
+#endif
+#endif
+
+template <typename F>
+struct scope_exit {
+	F func;
+	scope_exit(F f) : func(f) {}
+	~scope_exit() { func(); }
+};
+template <typename F> scope_exit<F> scope_exit_create(F f) { return scope_exit<F>(f); }
+#define m_scope_exit(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit_create([&] {code;})
+#define m_scope_exit_copy(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit_create([=] {code;})
 
 template <typename T>
 T max(T a, T b) {
@@ -109,91 +114,17 @@ uint64 next_pow_2(uint64 n) {
 	return n;
 }
 
-template <typename F>
-struct scope_exit {
-	F func;
-	scope_exit(F f) : func(f) {}
-	~scope_exit() { func(); }
-};
-template <typename F> scope_exit<F> scope_exit_create(F f) { return scope_exit<F>(f); }
-#define m_scope_exit(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit_create([&] {code;})
-#define m_scope_exit_copy(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit_create([=] {code;})
-
-#ifdef _WIN32
-#define m_assert(expr) if (!(expr)) { _wassert(_CRT_WIDE(#expr), _CRT_WIDE(__FILE__), (unsigned)(__LINE__)); };
-#ifdef NO_DEBUG_ASSERT
-#define m_debug_assert(expr) (void(0))
-#else
-#define m_debug_assert(expr) if (!(expr)) { _wassert(_CRT_WIDE(#expr), _CRT_WIDE(__FILE__), (unsigned)(__LINE__)); };
-#endif
-#endif
-
-struct memory_arena {
-	void *memory;
-	uint64 size;
-	uint64 capacity;
-	const char *name;
-};
-
-template <typename T>
-T *memory_arena_allocate(memory_arena *memory_arena, uint64 num_t, uint64 alignment = alignof(T)) {
-	m_debug_assert(is_pow_2(alignment));
-	uint8 *memory = (uint8 *)memory_arena->memory + memory_arena->size;
-	uint64 remainder = (uintptr_t)memory % alignment;
-	uint64 offset = (remainder == 0) ? 0 : (alignment - remainder);
-	uint64 new_arena_size = memory_arena->size + offset + num_t * sizeof(T);
-	m_assert(new_arena_size <= memory_arena->capacity);
-	memory_arena->size = new_arena_size;
-	memset(memory + offset, 0, num_t * sizeof(T));
-	return (T *)(memory + offset);
+template <typename T, uint32 N>
+void array_set(T (&array)[N], const T &value) {
+	for (uint32 i = 0; i < N; i += 1) {
+    array[i] = value;
+  }
 }
 
-#define m_memory_arena_undo_allocations_at_scope_exit(memory_arena)         \
-  const uint64 memory_arena_size_to_restore__ = (memory_arena)->size;       \
-  m_scope_exit_copy((memory_arena)->size = memory_arena_size_to_restore__);
-
-struct memory_pool {
-	void *free_block;
-	uint64 free_block_count;
-	uint64 block_count;
-	uint64 block_size;
-	void *memory;
-	const char *name;
-};
-
-bool memory_pool_initialize(memory_pool *pool, void *memory, uint64 memory_size, uint64 block_size, uint64 block_count, const char *name) {
-	m_assert(memory && (uintptr_t)memory % 16 == 0);
-	m_assert(block_size >= sizeof(void*) && is_pow_2(block_size));
-	m_assert(block_count > 0);
-	m_assert(block_size * block_count <= memory_size);
-
-	char *free_block = (char *)memory;
-	for (uint64 i = 0; i < (block_count - 1); i += 1) {
-		*(void **)free_block = free_block + block_size;
-		free_block = free_block + block_size;
-	}
-	*(void **)free_block = nullptr;
-	pool->free_block = memory;
-	pool->free_block_count = block_count;
-	pool->block_count = block_count;
-	pool->block_size = block_size;
-	pool->memory = memory;
-	pool->name = name;
-	return true;
-}
-
-void *memory_pool_allocate(memory_pool *memory_pool) {
-	m_assert(memory_pool->free_block && memory_pool->free_block_count > 0);
-	void *block = memory_pool->free_block;
-	memory_pool->free_block = *(void **)memory_pool->free_block;
-	memory_pool->free_block_count -= 1;
-	return block;
-}
-
-void memory_pool_free(memory_pool *memory_pool, void *block) {
-	*(void **)block = memory_pool->free_block;
-	memory_pool->free_block = block;
-	memory_pool->free_block_count += 1;
+template <typename T, uint32 dst_size, uint32 src_size>
+void array_copy(T(&dst_array)[dst_size], T(&src_array)[src_size]) {
+  static_assert(src_size <= dst_size, "");
+  memcpy(dst_array, src_array, src_size);
 }
 
 template <typename T>
@@ -210,6 +141,52 @@ void array_remove_swap_end(T *array, uint32 *array_size, uint32 index) {
 	*array_size -= 1;
 }
 
+template <typename T>
+void array_insert(T *array, uint32 *array_size, const T &elem, uint32 insert_index) {
+	m_assert(insert_index <= *array_size);
+	memmove(array + insert_index + 1, array + insert_index, (*array_size - insert_index) * sizeof(T));
+	array[insert_index] = elem;
+	*array_size += 1;
+}
+
+template <typename T>
+void list_prepend(T **list_head, T *new_head) {
+	new_head->next = *list_head;
+	*list_head = new_head;
+}
+
+template <typename T>
+void list_append(T **list_head, T *new_tail) {
+	if (!*list_head) {
+		*list_head = new_tail;
+	}
+	else {
+		T *node = *list_head;
+		while (node->next) {
+			node = node->next;
+		}
+		node->next = new_tail;
+	}
+	new_tail->next = nullptr;
+}
+
+template <typename T>
+void list_remove(T **list_head, T *node) {
+	T *list_node = *list_head;
+	if (list_node == node) {
+		*list_head = node->next;
+	}
+	else {
+		while (list_node->next != node) {
+			list_node = list_node->next;
+			if (!list_node) {
+				return;
+			}
+		}
+		list_node->next = node->next;
+	}
+}
+
 struct string {
 	char *buf;
 	uint64 len;
@@ -217,7 +194,7 @@ struct string {
 };
 
 template <uint32 N>
-string string_from_array(char(&array)[N]) {
+string string_from_array(char (&array)[N]) {
 	return string{array, (uint32)strlen(array), N};
 }
 
@@ -287,50 +264,72 @@ void string_pop_back(string *str, char c1, char c2) {
 	}
 }
 
-template <typename T>
-void array_insert(T *array, uint32 *array_size, const T &elem, uint32 insert_index) {
-	m_assert(insert_index <= *array_size);
-	memmove(array + insert_index + 1, array + insert_index, (*array_size - insert_index) * sizeof(T));
-	array[insert_index] = elem;
-	*array_size += 1;
-}
+struct memory_arena {
+	void *memory;
+	uint64 size;
+	uint64 capacity;
+	const char *name;
+};
 
 template <typename T>
-void sllist_prepend(T **list_head, T *new_head) {
-	new_head->next = *list_head;
-	*list_head = new_head;
+T *memory_arena_allocate(memory_arena *memory_arena, uint64 num_t, uint64 alignment = alignof(T)) {
+	m_debug_assert(is_pow_2(alignment));
+	uint8 *memory = (uint8 *)memory_arena->memory + memory_arena->size;
+	uint64 remainder = (uintptr_t)memory % alignment;
+	uint64 offset = (remainder == 0) ? 0 : (alignment - remainder);
+	uint64 new_arena_size = memory_arena->size + offset + num_t * sizeof(T);
+	m_assert(new_arena_size <= memory_arena->capacity);
+	memory_arena->size = new_arena_size;
+	memset(memory + offset, 0, num_t * sizeof(T));
+	return (T *)(memory + offset);
 }
 
-template <typename T>
-void sllist_append(T **list_head, T *new_tail) {
-	if (!*list_head) {
-		*list_head = new_tail;
+#define m_memory_arena_undo_allocations_at_scope_exit(memory_arena)         \
+  const uint64 memory_arena_size_to_restore__ = (memory_arena)->size;       \
+  m_scope_exit_copy((memory_arena)->size = memory_arena_size_to_restore__);
+
+struct memory_pool {
+	void *free_block;
+	uint64 free_block_count;
+	uint64 block_count;
+	uint64 block_size;
+	void *memory;
+	const char *name;
+};
+
+bool memory_pool_initialize(memory_pool *pool, void *memory, uint64 memory_size, uint64 block_size, uint64 block_count, const char *name) {
+	m_assert(memory && (uintptr_t)memory % 16 == 0);
+	m_assert(block_size >= sizeof(void*) && is_pow_2(block_size));
+	m_assert(block_count > 0);
+	m_assert(block_size * block_count <= memory_size);
+
+	char *free_block = (char *)memory;
+	for (uint64 i = 0; i < (block_count - 1); i += 1) {
+		*(void **)free_block = free_block + block_size;
+		free_block = free_block + block_size;
 	}
-	else {
-		T *node = *list_head;
-		while (node->next) {
-			node = node->next;
-		}
-		node->next = new_tail;
-	}
-	new_tail->next = nullptr;
+	*(void **)free_block = nullptr;
+	pool->free_block = memory;
+	pool->free_block_count = block_count;
+	pool->block_count = block_count;
+	pool->block_size = block_size;
+	pool->memory = memory;
+	pool->name = name;
+	return true;
 }
 
-template <typename T>
-void sllist_remove(T **list_head, T *node) {
-	T *list_node = *list_head;
-	if (list_node == node) {
-		*list_head = node->next;
-	}
-	else {
-		while (list_node->next != node) {
-			list_node = list_node->next;
-			if (!list_node) {
-				return;
-			}
-		}
-		list_node->next = node->next;
-	}
+void *memory_pool_allocate(memory_pool *memory_pool) {
+	m_assert(memory_pool->free_block && memory_pool->free_block_count > 0);
+	void *block = memory_pool->free_block;
+	memory_pool->free_block = *(void **)memory_pool->free_block;
+	memory_pool->free_block_count -= 1;
+	return block;
+}
+
+void memory_pool_free(memory_pool *memory_pool, void *block) {
+	*(void **)block = memory_pool->free_block;
+	memory_pool->free_block = block;
+	memory_pool->free_block_count += 1;
 }
 
 // struct profiler_code_frame {

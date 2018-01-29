@@ -4,10 +4,6 @@
 
 #pragma once
 
-#define _USE_MATH_DEFINES
-#include <math.h>
-#include <float.h>
-
 #include "common.cpp"
 
 float degree_to_radian(float degree) {
@@ -660,8 +656,8 @@ transform transform_identity() {
 	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, vec3{0, 0, 0}};
 }
 
-transform transform_from_translation(vec3 translation) {
-	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, translation};
+transform transform_from_translation(const vec3 &t) {
+	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, t};
 }
 
 mat4 transform_to_mat4(const transform &t) {
@@ -700,7 +696,7 @@ mat4 camera_billboard_mat4(const camera &camera) {
 	};
 }
 
-mat4 camera_shadow_map_projection_mat4(camera camera, vec3 directional_light) {
+mat4 camera_shadow_map_projection_mat4(const camera &camera, vec3 directional_light) {
 	// directional_light = vec3_normalize(directional_light);
 
 	// vec3 camera_right = vec3_cross(camera.view, camera.up);
@@ -746,13 +742,14 @@ mat4 camera_shadow_map_projection_mat4(camera camera, vec3 directional_light) {
 	return mat4_orthographic_projection(-50, 50, -50, 50, 0, 100) * light_view_mat4;
 }
 
-struct frustum {
-	vec4 left_plane;
-	vec4 right_plane;
-	vec4 top_plane;
-	vec4 bottom_plane;
-	vec4 near_plane;
-	vec4 far_plane;
+struct plane {
+	vec3 normal;
+	float distance;
+};
+
+struct sphere {
+	vec3 center;
+	float radius;
 };
 
 struct aa_bound {

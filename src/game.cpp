@@ -8,9 +8,9 @@
 
 #define RAPIDJSON_SSE2
 #define RAPIDJSON_ASSERT(x) m_assert(x)
-#include "rapidjson/document.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/error/en.h"
+#include "../vendor/include/rapidjson/document.h"
+#include "../vendor/include/rapidjson/prettywriter.h"
+#include "../vendor/include/rapidjson/error/en.h"
 
 #include "assets.cpp"
 #include "level.cpp"
