@@ -68,11 +68,12 @@ struct render_component {
 };
 
 struct collision_component {
-	aa_bound bound;
 	plane *planes;
 	sphere *spheres;
+	aa_bound *bound;
 	uint32 plane_count;
 	uint32 sphere_count;
+	uint32 bound_count;
 };
 
 enum light_type {
@@ -692,14 +693,17 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		transform->translate.z = json_transform_translation[2].GetFloat();
 	};
 	auto read_json_collision_component = [](rapidjson::Value::Object collision_component_json, collision_component *collision_component) {
-		rapidjson::Value::Array bound_min = collision_component_json["bound_min"].GetArray();
-		rapidjson::Value::Array bound_max = collision_component_json["bound_max"].GetArray();
-		collision_component->bound.min.x = bound_min[0].GetFloat();
-		collision_component->bound.min.y = bound_min[1].GetFloat();
-		collision_component->bound.min.z = bound_min[2].GetFloat();
-		collision_component->bound.max.x = bound_max[0].GetFloat();
-		collision_component->bound.max.y = bound_max[1].GetFloat();
-		collision_component->bound.max.z = bound_max[2].GetFloat();
+		if (collision_component_json.HasMember("bounds")) {
+			rapidjson::Value::Array bounds = collision_component_json["bounds"].GetArray();
+			for (uint32 i = 0; i < bounds.Size(); i += 1) {
+				// collision_component->bound.min.x = bound_min[0].GetFloat();
+				// collision_component->bound.min.y = bound_min[1].GetFloat();
+				// collision_component->bound.min.z = bound_min[2].GetFloat();
+				// collision_component->bound.max.x = bound_max[0].GetFloat();
+				// collision_component->bound.max.y = bound_max[1].GetFloat();
+				// collision_component->bound.max.z = bound_max[2].GetFloat();
+			}
+		}
 	};
 	auto read_json_light_component = [](rapidjson::Value::Object light_component_json, light_component *light_component) {
 		const char *light_type = light_component_json["light_type"].GetString();
@@ -871,18 +875,18 @@ void level_dump_json(level *level, const char *json_file_path, T extra_dump) {
 	};
 	auto write_json_collision_component = [&writer](collision_component *component) {
 		writer.StartObject();
-		writer.Key("bound_min");
-		writer.StartArray();
-		writer.Double(component->bound.min.x);
-		writer.Double(component->bound.min.y);
-		writer.Double(component->bound.min.z);
-		writer.EndArray();
-		writer.Key("bound_max");
-		writer.StartArray();
-		writer.Double(component->bound.max.x);
-		writer.Double(component->bound.max.y);
-		writer.Double(component->bound.max.z);
-		writer.EndArray();
+		// writer.Key("bound_min");
+		// writer.StartArray();
+		// writer.Double(component->bound.min.x);
+		// writer.Double(component->bound.min.y);
+		// writer.Double(component->bound.min.z);
+		// writer.EndArray();
+		// writer.Key("bound_max");
+		// writer.StartArray();
+		// writer.Double(component->bound.max.x);
+		// writer.Double(component->bound.max.y);
+		// writer.Double(component->bound.max.z);
+		// writer.EndArray();
 		writer.EndObject();
 	};
 	auto write_json_light_component = [&writer](light_component *component) {

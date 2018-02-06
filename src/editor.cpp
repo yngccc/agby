@@ -607,44 +607,44 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					if (*entity_flag & component_flag_collision) {
 						if (ImGui::CollapsingHeader("Collision Component##collision_component_collapsing_header")) {
-							collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
-							ImGui::RadioButton("##bound_translate_min_gizmo", &editor.entity_gizmo, bound_translate_min_gizmo);
-							ImGui::SameLine();
-							ImGui::InputFloat3("min##bound_min_field", collision_component->bound.min.e, 3);
-							ImGui::RadioButton("##bound_translate_max_gizmo", &editor.entity_gizmo, bound_translate_max_gizmo);
-							ImGui::SameLine();
-							ImGui::InputFloat3("max##bound_max_field", collision_component->bound.max.e, 3);
-							if (ImGui::Button("reset##bound_reset_button")) {
-								if (*entity_flag & component_flag_render) {
-									render_component *render_component = entity_get_render_component(&level, editor.entity_index);
-									if (render_component->model_index < level.model_count) {
-										model *model = &level.models[render_component->model_index];
-										aa_bound bound = {};
-										for (uint32 i = 0; i < model->mesh_count; i += 1) {
-											model_mesh *mesh = &model->meshes[i];
-											for (uint32 i = 0; i < mesh->instance_count; i += 1) {
-												bound.min.x = min(bound.min.x, mesh->instances[i].bound.min.x);
-												bound.min.y = min(bound.min.y, mesh->instances[i].bound.min.y);
-												bound.min.z = min(bound.min.z, mesh->instances[i].bound.min.z);
-												bound.max.x = max(bound.max.x, mesh->instances[i].bound.max.x);
-												bound.max.y = max(bound.max.y, mesh->instances[i].bound.max.y);
-												bound.max.z = max(bound.max.z, mesh->instances[i].bound.max.z);
-											}
-										}
-										collision_component->bound = bound;
-									}
-									else {
-										ImGui::OpenPopup("##bound_reset_popup");
-									}
-								}
-							}
-							if (ImGui::BeginPopupModal("##bound_reset_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-								ImGui::Text("bound reset failed, entity has no model reference");
-								if (ImGui::Button("ok##bound_reset_popup_ok")) {
-									ImGui::CloseCurrentPopup();
-								}
-								ImGui::EndPopup();
-							}
+							// collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
+							// ImGui::RadioButton("##bound_translate_min_gizmo", &editor.entity_gizmo, bound_translate_min_gizmo);
+							// ImGui::SameLine();
+							// ImGui::InputFloat3("min##bound_min_field", collision_component->bound.min.e, 3);
+							// ImGui::RadioButton("##bound_translate_max_gizmo", &editor.entity_gizmo, bound_translate_max_gizmo);
+							// ImGui::SameLine();
+							// ImGui::InputFloat3("max##bound_max_field", collision_component->bound.max.e, 3);
+							// if (ImGui::Button("reset##bound_reset_button")) {
+							// 	if (*entity_flag & component_flag_render) {
+							// 		render_component *render_component = entity_get_render_component(&level, editor.entity_index);
+							// 		if (render_component->model_index < level.model_count) {
+							// 			model *model = &level.models[render_component->model_index];
+							// 			aa_bound bound = {};
+							// 			for (uint32 i = 0; i < model->mesh_count; i += 1) {
+							// 				model_mesh *mesh = &model->meshes[i];
+							// 				for (uint32 i = 0; i < mesh->instance_count; i += 1) {
+							// 					bound.min.x = min(bound.min.x, mesh->instances[i].bound.min.x);
+							// 					bound.min.y = min(bound.min.y, mesh->instances[i].bound.min.y);
+							// 					bound.min.z = min(bound.min.z, mesh->instances[i].bound.min.z);
+							// 					bound.max.x = max(bound.max.x, mesh->instances[i].bound.max.x);
+							// 					bound.max.y = max(bound.max.y, mesh->instances[i].bound.max.y);
+							// 					bound.max.z = max(bound.max.z, mesh->instances[i].bound.max.z);
+							// 				}
+							// 			}
+							// 			collision_component->bound = bound;
+							// 		}
+							// 		else {
+							// 			ImGui::OpenPopup("##bound_reset_popup");
+							// 		}
+							// 	}
+							// }
+							// if (ImGui::BeginPopupModal("##bound_reset_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+							// 	ImGui::Text("bound reset failed, entity has no model reference");
+							// 	if (ImGui::Button("ok##bound_reset_popup_ok")) {
+							// 		ImGui::CloseCurrentPopup();
+							// 	}
+							// 	ImGui::EndPopup();
+							// }
 						}
 					}
 					if (*entity_flag & component_flag_light) {
@@ -728,7 +728,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 									uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
 									*entity_flag = level.entity_flags[editor.entity_index] | component_flag_collision;
 									collision_component *collision_component = memory_arena_allocate<struct collision_component>(&level.frame_memory_arena, 1);
-									collision_component->bound = aa_bound{{-1, -1, -1}, {1, 1, 1}};
 									level.entity_modifications[editor.entity_index].flag = entity_flag;
 									level.entity_modifications[editor.entity_index].collision_component = collision_component;
 								}
@@ -786,28 +785,28 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				else if (editor.entity_gizmo == bound_translate_min_gizmo || editor.entity_gizmo == bound_translate_max_gizmo) {
-					if (*entity_flag & component_flag_collision) {
-						ImGuizmo::BeginFrame();
-						collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
-						aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(collision_component->bound, entity_transform->scale), entity_transform->translate);
-						if (editor.entity_gizmo == bound_translate_min_gizmo) {
-							mat4 transform_mat = mat4_from_translation(transformed_bound.min);
-							ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-							collision_component->bound.min += mat4_get_translation(transform_mat) - transformed_bound.min;
-							collision_component->bound.min.x = min(collision_component->bound.min.x, collision_component->bound.max.x);
-							collision_component->bound.min.y = min(collision_component->bound.min.y, collision_component->bound.max.y);
-							collision_component->bound.min.z = min(collision_component->bound.min.z, collision_component->bound.max.z);
-						}
-						else if (editor.entity_gizmo == bound_translate_max_gizmo) {
-							mat4 transform_mat = mat4_from_translation(transformed_bound.max);
-							ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-							collision_component->bound.max += mat4_get_translation(transform_mat) - transformed_bound.max;
-							collision_component->bound.max.x = max(collision_component->bound.max.x, collision_component->bound.min.x);
-							collision_component->bound.max.y = max(collision_component->bound.max.y, collision_component->bound.min.y);
-							collision_component->bound.max.z = max(collision_component->bound.max.z, collision_component->bound.min.z);
-						}
-						editor.entity_bound = transformed_bound;
-					}
+					// if (*entity_flag & component_flag_collision) {
+					// 	ImGuizmo::BeginFrame();
+					// 	collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
+					// 	aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(collision_component->bound, entity_transform->scale), entity_transform->translate);
+					// 	if (editor.entity_gizmo == bound_translate_min_gizmo) {
+					// 		mat4 transform_mat = mat4_from_translation(transformed_bound.min);
+					// 		ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+					// 		collision_component->bound.min += mat4_get_translation(transform_mat) - transformed_bound.min;
+					// 		collision_component->bound.min.x = min(collision_component->bound.min.x, collision_component->bound.max.x);
+					// 		collision_component->bound.min.y = min(collision_component->bound.min.y, collision_component->bound.max.y);
+					// 		collision_component->bound.min.z = min(collision_component->bound.min.z, collision_component->bound.max.z);
+					// 	}
+					// 	else if (editor.entity_gizmo == bound_translate_max_gizmo) {
+					// 		mat4 transform_mat = mat4_from_translation(transformed_bound.max);
+					// 		ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+					// 		collision_component->bound.max += mat4_get_translation(transform_mat) - transformed_bound.max;
+					// 		collision_component->bound.max.x = max(collision_component->bound.max.x, collision_component->bound.min.x);
+					// 		collision_component->bound.max.y = max(collision_component->bound.max.y, collision_component->bound.min.y);
+					// 		collision_component->bound.max.z = max(collision_component->bound.max.z, collision_component->bound.min.z);
+					// 	}
+					// 	editor.entity_bound = transformed_bound;
+					// }
 				}
 				else if (editor.entity_gizmo == directional_light_rotate_gizmo) {
 					if (*entity_flag & component_flag_light) {
