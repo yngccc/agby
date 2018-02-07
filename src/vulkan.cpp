@@ -115,12 +115,12 @@ const uint32 vulkan_swap_chain_image_count = 2;
 
 struct vulkan_device {
 	VkDevice device;
+	VkInstance instance;
 	VkQueue queue;
 	uint32 queue_family_index;
 	VkPhysicalDevice physical_device;
 	VkPhysicalDeviceProperties physical_device_properties;
 	VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
-	VkInstance instance;
 };
 
 struct vulkan_swap_chain {
@@ -682,7 +682,7 @@ void vulkan_swap_chain_initialize(window window, bool vsync_on, vulkan *vulkan) 
 		m_vk_assert(vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->device.physical_device, vulkan->swap_chain.surface, &surface_present_modes_count, nullptr));
 		VkPresentModeKHR *surface_present_modes = memory_arena_allocate<VkPresentModeKHR>(&memory_arena, surface_present_modes_count);
 		m_vk_assert(vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->device.physical_device, vulkan->swap_chain.surface, &surface_present_modes_count, surface_present_modes));
-		string_catf(&info_str, "Present Modes: ");
+		string_catf(&info_str, "Swapchain Present Modes: ");
 		const char *present_mode_strs[4] = {"Immediate", "Mailbox", "FIFO", "FIFO_Relaxed"};
 		for (uint32 i = 0; i < surface_present_modes_count; i += 1) {
 			string_catf(&info_str, "\"%s\" ", present_mode_strs[surface_present_modes[i]]);
@@ -711,7 +711,7 @@ void vulkan_swap_chain_initialize(window window, bool vsync_on, vulkan *vulkan) 
 				vulkan->swap_chain.present_mode = VK_PRESENT_MODE_FIFO_KHR;
 			}
 		}
-		string_catf(&info_str, "\nUsing Present Mode: \"%s\"\n", present_mode_strs[vulkan->swap_chain.present_mode]);
+		string_catf(&info_str, "\nUsing: \"%s\"\n", present_mode_strs[vulkan->swap_chain.present_mode]);
 	}
 	{ // create swap chain, swap chain images
 		VkSwapchainCreateInfoKHR swap_chain_create_info = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
@@ -744,6 +744,7 @@ void vulkan_swap_chain_initialize(window window, bool vsync_on, vulkan *vulkan) 
 		}
 		vulkan->swap_chain.image_width = swap_chain_create_info.imageExtent.width;
 		vulkan->swap_chain.image_height = swap_chain_create_info.imageExtent.height;
+		string_catf(&info_str, "\nSwapchain Image Size: %dx%d\n", vulkan->swap_chain.image_width, vulkan->swap_chain.image_height);
 	}
 }
 
@@ -2677,7 +2678,7 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 	}
 }
 
-void vulkan_initialize(vulkan *vulkan, window window) {
+void vulkan_initialize(vulkan *vulkan, const window &window) {
 	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
 	bool vsync_on = false;
 	*vulkan = {};

@@ -70,7 +70,7 @@ struct render_component {
 struct collision_component {
 	plane *planes;
 	sphere *spheres;
-	aa_bound *bound;
+	aa_bound *bounds;
 	uint32 plane_count;
 	uint32 sphere_count;
 	uint32 bound_count;
@@ -692,16 +692,41 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		transform->translate.y = json_transform_translation[1].GetFloat();
 		transform->translate.z = json_transform_translation[2].GetFloat();
 	};
-	auto read_json_collision_component = [](rapidjson::Value::Object collision_component_json, collision_component *collision_component) {
+	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, collision_component *collision_component) {
+		if (collision_component_json.HasMember("planes")) {
+			rapidjson::Value::Array planes = collision_component_json["planes"].GetArray();
+			if (planes.Size() > 0) {
+				collision_component->planes = memory_arena_allocate<plane>(&level->entity_components_memory_arenas[level->entity_components_memory_arena_index], planes.Size());
+				collision_component->plane_count = planes.Size();
+				for (uint32 i = 0; i < planes.Size(); i += 1) {
+				}
+			}
+		}
+		if (collision_component_json.HasMember("spheres")) {
+			rapidjson::Value::Array spheres = collision_component_json["spheres"].GetArray();
+			if (spheres.Size() > 0) {
+				collision_component->spheres = memory_arena_allocate<sphere>(&level->entity_components_memory_arenas[level->entity_components_memory_arena_index], spheres.Size());
+				collision_component->sphere_count = spheres.Size();
+				for (uint32 i = 0; i < spheres.Size(); i += 1) {
+				}
+			}
+		}
 		if (collision_component_json.HasMember("bounds")) {
 			rapidjson::Value::Array bounds = collision_component_json["bounds"].GetArray();
-			for (uint32 i = 0; i < bounds.Size(); i += 1) {
-				// collision_component->bound.min.x = bound_min[0].GetFloat();
-				// collision_component->bound.min.y = bound_min[1].GetFloat();
-				// collision_component->bound.min.z = bound_min[2].GetFloat();
-				// collision_component->bound.max.x = bound_max[0].GetFloat();
-				// collision_component->bound.max.y = bound_max[1].GetFloat();
-				// collision_component->bound.max.z = bound_max[2].GetFloat();
+			if (bounds.Size() > 0) {
+				collision_component->bounds = memory_arena_allocate<aa_bound>(&level->entity_components_memory_arenas[level->entity_components_memory_arena_index], bounds.Size());
+				collision_component->bound_count = bounds.Size();
+				for (uint32 i = 0; i < bounds.Size(); i += 1) {
+					rapidjson::Value::Object bound = bounds[i].GetObject();
+					rapidjson::Value::Array min = bound["min"].GetArray();
+					rapidjson::Value::Array max = bound["max"].GetArray();
+					collision_component->bounds[i].min.x = min[0].GetFloat();
+					collision_component->bounds[i].min.y = min[1].GetFloat();
+					collision_component->bounds[i].min.z = min[2].GetFloat();
+					collision_component->bounds[i].max.x = max[0].GetFloat();
+					collision_component->bounds[i].max.y = max[1].GetFloat();
+					collision_component->bounds[i].max.z = max[2].GetFloat();
+				}
 			}
 		}
 	};

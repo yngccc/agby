@@ -59,7 +59,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	show_command_prompt();
 
 	struct window window = {};
-	m_assert(window_initialize(&window));
+	m_assert(initialize_window(&window));
 	show_window(window);
 
 	struct vulkan vulkan = {};
@@ -113,7 +113,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		);
 		window.raw_mouse_dx = 0;
 		window.raw_mouse_dy = 0;
-		while (peek_window_message(&window)) {
+		while (peek_window_message(window)) {
 			switch (window.msg_type) {
 				case window_message_type_destroy:
 				case window_message_type_close:

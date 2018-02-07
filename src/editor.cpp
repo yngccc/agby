@@ -91,7 +91,7 @@ bool editor_initialize(editor *editor, vulkan *vulkan) {
 		ImGuizmo::SetRect(0, 0, imgui_io->DisplaySize.x, imgui_io->DisplaySize.y);
 		imgui_io->IniFilename = ".imgui.ini";
 		imgui_io->MousePos = {-1, -1};
-		imgui_io->FontGlobalScale = 1.25;
+		imgui_io->FontGlobalScale = 1.5;
 
 		m_assert(ImGui::GetIO().Fonts->AddFontFromFileTTF("assets\\fonts\\Roboto-Medium.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 180.0f));
 		uint8* font_atlas_image = nullptr;
@@ -208,8 +208,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	assets_import_issue_jobs();
 
 	struct window window = {};
-	m_assert(window_initialize(&window));
-	show_window(window);
+	m_assert(initialize_window(&window));
+	// set_window_fullscreen(&window, true);
 
 	struct vulkan vulkan = {};
 	vulkan_initialize(&vulkan, window);
@@ -247,6 +247,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	double last_frame_time_sec = 0;
 	bool program_running = true;
 
+	show_window(window);
+
 	while (program_running) {
 		LARGE_INTEGER performance_counters[2];
 		QueryPerformanceCounter(&performance_counters[0]);
@@ -259,7 +261,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		window.raw_mouse_dx = 0;
 		window.raw_mouse_dy = 0;
 
-		while (peek_window_message(&window)) {
+		while (peek_window_message(window)) {
 			switch (window.msg_type) {
 				case window_message_type_destroy:
 				case window_message_type_close:
@@ -312,6 +314,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		}
 
 		ImGui::NewFrame();
+		{ // miscs
+			if (ImGui::GetIO().KeyAlt && ImGui::IsKeyPressed(keycode_f4)) {
+				program_running = false;
+			}
+		}
 		{ // entity operations
 			if (editor.entity_index < level.entity_count) {
 				if (ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyShift && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
@@ -1035,4 +1042,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		level_update_entity_component(&level);
 		level.frame_memory_arena.size = 0;
 	}
+
+	ImGui::Shutdown();
 }

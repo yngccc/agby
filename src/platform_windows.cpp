@@ -301,6 +301,7 @@ const uint16 keycode_media_play = VK_MEDIA_PLAY_PAUSE;
 
 struct window {
 	HWND handle;
+
 	window_message_type msg_type;
 	uint32 keycode;
 	uint16 input_char;
@@ -309,12 +310,14 @@ struct window {
 	float mouse_wheel;
 	int32 raw_mouse_dx;
 	int32 raw_mouse_dy;
+
+	bool fullscreen;
+	WINDOWPLACEMENT placement;
 };
 
-bool window_initialize(window *window) {
-	auto window_callback = [](HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
-		struct window *window = (struct window *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
-		switch (msg) {
+LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+	struct window *window = (struct window *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+	switch (msg) {
 		case WM_CREATE: {
 			struct window *window = (struct window *)(((LPCREATESTRUCT)lparam)->lpCreateParams);
 			SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)window);
@@ -404,16 +407,17 @@ bool window_initialize(window *window) {
 			// }
 			return DefWindowProcA(hwnd, msg, wparam, lparam);
 		} break;
-		}
-		LRESULT result = 0;
-		return result;
-	};
+	}
+	LRESULT result = 0;
+	return result;
+};
 
+bool initialize_window(window *window) {
 	SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE);
 	HMODULE instance_handle = GetModuleHandle(nullptr);
 	WNDCLASSA window_class = {};
 	window_class.style = CS_HREDRAW | CS_VREDRAW;
-	window_class.lpfnWndProc = window_callback;
+	window_class.lpfnWndProc = window_message_callback;
 	window_class.hInstance = instance_handle;
 	window_class.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
 	window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -427,7 +431,7 @@ bool window_initialize(window *window) {
 	int32 window_y = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.15);
 	int32 window_width = (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.64);
 	int32 window_height = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.7);
-	DWORD window_style = WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+	DWORD window_style = WS_OVERLAPPEDWINDOW;
 	char window_title[128];
 	snprintf(window_title, sizeof(window_title), "AGBY %dx%d", window_width, window_height);
 	HWND window_handle = CreateWindowExA(0, window_class.lpszClassName, window_title, window_style, window_x, window_y, window_width, window_height, nullptr, nullptr, instance_handle, window);
@@ -444,37 +448,36 @@ bool window_initialize(window *window) {
 
 	*window = {};
 	window->handle = window_handle;
+	window->placement = {sizeof(WINDOWPLACEMENT)};
 	return true;
 };
 
-void show_window(window window) {
+void show_window(const window &window) {
 	ShowWindow(window.handle, SW_SHOW);
 }
 
-void toggle_window_fullscreen() {
-	static WINDOWPLACEMENT win32_window_placement = {sizeof(win32_window_placement)};
-	HWND hwnd = GetActiveWindow();
-	if (!hwnd) {
-		return;
-	}
+void set_window_fullscreen(window *window, bool fullscreen) {
+	HWND hwnd = window->handle;
 	DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
-	if (dwStyle & WS_OVERLAPPEDWINDOW) {
+	if (fullscreen && !window->fullscreen) {
 		MONITORINFO mi = {sizeof(mi)};
-		if (GetWindowPlacement(hwnd, &win32_window_placement) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+		if (GetWindowPlacement(hwnd, &window->placement) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
 			SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
 			SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+			window->fullscreen = true;
 		}
 	}
-	else {
+	else if (!fullscreen && window->fullscreen) {
 		SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
-		SetWindowPlacement(hwnd, &win32_window_placement);
+		SetWindowPlacement(hwnd, &window->placement);
 		SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+		window->fullscreen = false;
 	}
 }
 
-bool peek_window_message(window *window) {
+bool peek_window_message(const window &window) {
 	MSG msg;
-	if (PeekMessage(&msg, window->handle, 0, 0, PM_REMOVE)) {
+	if (PeekMessage(&msg, window.handle, 0, 0, PM_REMOVE)) {
 		TranslateMessage(&msg);
 		DispatchMessageA(&msg);
 		return true;
