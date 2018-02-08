@@ -350,6 +350,26 @@ void level_update_entity_component(level *level) {
 	collision_component *new_collision_components = memory_arena_allocate<collision_component>(entity_components_memory_arena, new_collision_component_count);
 	light_component *new_light_components = memory_arena_allocate<light_component>(entity_components_memory_arena, new_light_component_count);
 
+	auto deep_copy_collision_component = [entity_components_memory_arena](collision_component *cc) -> collision_component {
+		collision_component collision_component = *cc;
+		if (collision_component.plane_count > 0) {
+			plane *planes = memory_arena_allocate<struct plane>(entity_components_memory_arena, collision_component.plane_count);
+			memcpy(planes, collision_component.planes, collision_component.plane_count * sizeof(struct plane));
+			collision_component.planes = planes;
+		}
+		if (collision_component.sphere_count > 0) {
+			sphere *spheres = memory_arena_allocate<struct sphere>(entity_components_memory_arena, collision_component.sphere_count);
+			memcpy(spheres, collision_component.spheres, collision_component.sphere_count * sizeof(struct sphere));
+			collision_component.spheres = spheres;
+		}
+		if (collision_component.bound_count > 0) {
+			aa_bound *bounds = memory_arena_allocate<struct aa_bound>(entity_components_memory_arena, collision_component.bound_count);
+			memcpy(bounds, collision_component.bounds, collision_component.bound_count * sizeof(struct aa_bound));
+			collision_component.bounds = bounds;
+		}
+		return collision_component;
+	};
+	
 	uint32 entity_index = 0;
 	uint32 render_component_index = 0;
 	uint32 collision_component_index = 0;
@@ -361,27 +381,18 @@ void level_update_entity_component(level *level) {
 			new_entity_infos[entity_index] = em->info ? *em->info : level->entity_infos[i];
 			new_entity_transforms[entity_index] = em->transform ? *em->transform : level->entity_transforms[i];
 			if (!em->remove_render_component) {
-				if (level->entity_flags[i] & component_flag_render) {
+				if (level->entity_flags[i] & component_flag_render || em->render_component) {
 					new_render_components[render_component_index++] = em->render_component ? *em->render_component : *entity_get_render_component(level, i);
-				}
-				else if (em->render_component) {
-					new_render_components[render_component_index++] = *em->render_component;
 				}
 			}
 			if (!em->remove_collision_component) {
-				if (level->entity_flags[i] & component_flag_collision) {
-					new_collision_components[collision_component_index++] = em->collision_component ? *em->collision_component : *entity_get_collision_component(level, i);
-				}
-				else if (em->collision_component) {
-					new_collision_components[collision_component_index++] = *em->collision_component;
+				if (level->entity_flags[i] & component_flag_collision || em->collision_component) {
+					new_collision_components[collision_component_index++] = deep_copy_collision_component(em->collision_component ? em->collision_component : entity_get_collision_component(level, i));
 				}
 			}
 			if (!em->remove_light_component) {
-				if (level->entity_flags[i] & component_flag_light) {
+				if (level->entity_flags[i] & component_flag_light || em->light_component) {
 					new_light_components[light_component_index++] = em->light_component ? *em->light_component : *entity_get_light_component(level, i);
-				}
-				else if (em->light_component) {
-					new_light_components[light_component_index++] = *em->light_component;
 				}
 			}
 			entity_index += 1;
@@ -396,7 +407,7 @@ void level_update_entity_component(level *level) {
 			new_render_components[render_component_index++] = *ea->render_component;
 		}
 		if (ea->collision_component) {
-			new_collision_components[collision_component_index++] = *ea->collision_component;
+			new_collision_components[collision_component_index++] = deep_copy_collision_component(ea->collision_component);
 		}
 		if (ea->light_component) {
 			new_light_components[light_component_index++] = *ea->light_component;
@@ -693,10 +704,11 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		transform->translate.z = json_transform_translation[2].GetFloat();
 	};
 	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, collision_component *collision_component) {
+		memory_arena *memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
 		if (collision_component_json.HasMember("planes")) {
 			rapidjson::Value::Array planes = collision_component_json["planes"].GetArray();
 			if (planes.Size() > 0) {
-				collision_component->planes = memory_arena_allocate<plane>(&level->entity_components_memory_arenas[level->entity_components_memory_arena_index], planes.Size());
+				collision_component->planes = memory_arena_allocate<plane>(memory_arena, planes.Size());
 				collision_component->plane_count = planes.Size();
 				for (uint32 i = 0; i < planes.Size(); i += 1) {
 				}
@@ -705,7 +717,7 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		if (collision_component_json.HasMember("spheres")) {
 			rapidjson::Value::Array spheres = collision_component_json["spheres"].GetArray();
 			if (spheres.Size() > 0) {
-				collision_component->spheres = memory_arena_allocate<sphere>(&level->entity_components_memory_arenas[level->entity_components_memory_arena_index], spheres.Size());
+				collision_component->spheres = memory_arena_allocate<sphere>(memory_arena, spheres.Size());
 				collision_component->sphere_count = spheres.Size();
 				for (uint32 i = 0; i < spheres.Size(); i += 1) {
 				}
@@ -714,7 +726,7 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		if (collision_component_json.HasMember("bounds")) {
 			rapidjson::Value::Array bounds = collision_component_json["bounds"].GetArray();
 			if (bounds.Size() > 0) {
-				collision_component->bounds = memory_arena_allocate<aa_bound>(&level->entity_components_memory_arenas[level->entity_components_memory_arena_index], bounds.Size());
+				collision_component->bounds = memory_arena_allocate<aa_bound>(memory_arena, bounds.Size());
 				collision_component->bound_count = bounds.Size();
 				for (uint32 i = 0; i < bounds.Size(); i += 1) {
 					rapidjson::Value::Object bound = bounds[i].GetObject();
