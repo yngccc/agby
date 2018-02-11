@@ -52,9 +52,6 @@ struct editor {
 	uint32 entity_collision_component_sphere_index;
 	uint32 entity_collision_component_bound_index;
 	uint32 entity_mesh_index;
-	char new_entity_name[32];
-	uint32 new_component_index;
-	uint32 new_component_light_type;
 	
 	editor_render_data render_data;
 
@@ -241,10 +238,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			}
 		}
 	};
-	level_load_json(&level, &vulkan, "agby_assets\\levels\\level_save.json", editor_load_level_setting, true);
+	level_read_json(&level, &vulkan, "agby_assets\\levels\\level_save.json", editor_load_level_setting, true);
 
 	LARGE_INTEGER performance_frequency = {};
 	QueryPerformanceFrequency(&performance_frequency);
+	LARGE_INTEGER performance_counters[2] = {};
 	uint64 last_frame_time_microsec = 0;
 	double last_frame_time_sec = 0;
 	bool program_running = true;
@@ -252,13 +250,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	show_window(window);
 
 	while (program_running) {
-		LARGE_INTEGER performance_counters[2];
 		QueryPerformanceCounter(&performance_counters[0]);
-		m_scope_exit(
-			QueryPerformanceCounter(&performance_counters[1]);
-			last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;
-			last_frame_time_sec = (double)last_frame_time_microsec / 1000000;
-		);
+
 		ImGui::GetIO().DeltaTime = (float)last_frame_time_sec;
 		window.raw_mouse_dx = 0;
 		window.raw_mouse_dy = 0;
@@ -359,9 +352,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						editor.entity_mesh_index = mesh_index;
 					}
 				}
-				if (ImGui::IsKeyPressed(keycode_backspace)) {
-					level.entity_modifications[editor.entity_index].remove = true;
-				}
 			}
 		}
 		{ // move camera
@@ -402,7 +392,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				editor.camera.up = vec3_normalize(vec3_cross(vec3_cross(editor.camera.view, vec3{0, 1, 0}), editor.camera.view));
 			}
 		}
-		{ // main menu menu
+		{ // main menu
 			bool new_level_popup = false;
 			bool load_level_popup = false;
 			bool save_level_popup = false;
@@ -432,7 +422,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			if (ImGui::BeginPopupModal("##load_level_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 				ImGui::InputText("file##load_level_popup_file", editor.load_level_file, sizeof(editor.load_level_file));
 				if (ImGui::Button("load##load_level_popup_load")) {
-					level_load_json(&level, &vulkan, editor.load_level_file, editor_load_level_setting, true);
+					level_read_json(&level, &vulkan, editor.load_level_file, editor_load_level_setting, true);
 					ImGui::CloseCurrentPopup();
 				}
 				ImGui::SameLine();
@@ -487,7 +477,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						ImGui::OpenPopup("##save_level_popup_file_exists_popup");
 					}
 					else {
-						level_dump_json(&level, editor.save_level_file, editor_dump_level_setting);
+						level_write_json(&level, editor.save_level_file, editor_dump_level_setting);
 						ImGui::CloseCurrentPopup();
 					}
 				}
@@ -500,7 +490,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					ImGui::Text("file \"%s\" already exists, replace?", editor.save_level_file);
 					ImGui::Separator();
 					if (ImGui::Button("yes##save_level_popup_file_exists_popup_yes")) {
-						level_dump_json(&level, editor.save_level_file, editor_dump_level_setting);
+						level_write_json(&level, editor.save_level_file, editor_dump_level_setting);
 						ImGui::CloseCurrentPopup();
 						close_popup = true;
 					}
@@ -519,7 +509,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		{ // entity window, gizmo
 			if (ImGui::Begin("Entity##entity_window")) {
 				ImGui::PushID("entitiy_window");
-				m_scope_exit(ImGui::PopID());
 				const char *entity_combo_name = editor.entity_index < level.entity_count ? level.entity_infos[editor.entity_index].name : nullptr;
 				if (ImGui::BeginCombo("##entities_combo", entity_combo_name)) {
 					for (uint32 i = 0; i < level.entity_count; i += 1) {
@@ -535,21 +524,22 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				}
 				if (ImGui::BeginPopupModal("##new_entity_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 					static bool show_duplicate_name_error = false;
-					ImGui::InputText("name##new_entity_popup_name", editor.new_entity_name, sizeof(editor.new_entity_name));
+					static char entity_name_buf[sizeof(entity_info::name)] = {};
+					ImGui::InputText("name##new_entity_popup_name", entity_name_buf, sizeof(entity_name_buf));
 					if (show_duplicate_name_error) {
 						ImGui::TextColored({1, 0, 0, 1}, "error: entity name already exist");
 					}
 					if (ImGui::Button("ok##new_entity_popup_ok")) {
-						if (strcmp(editor.new_entity_name, "")) {
+						if (strcmp(entity_name_buf, "")) {
 							for (uint32 i = 0; i < level.entity_count; i += 1) {
-								if (!strcmp(level.entity_infos[i].name, editor.new_entity_name)) {
+								if (!strcmp(level.entity_infos[i].name, entity_name_buf)) {
 									show_duplicate_name_error = true;
 									break;
 								}
 							}
 							if (!show_duplicate_name_error) {
 								entity_addition *entity_addition = memory_arena_allocate<struct entity_addition>(&level.frame_memory_arena, 1);
-								array_copy(entity_addition->info.name, editor.new_entity_name);
+								array_copy(entity_addition->info.name, entity_name_buf);
 								entity_addition->transform = transform_identity();
 								list_prepend(&level.entity_addition, entity_addition);
 								show_duplicate_name_error = false;
@@ -564,217 +554,280 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					ImGui::EndPopup();
 				}
-				if (editor.entity_index < level.entity_count) {
-					ImGui::Separator();
-					uint32 *entity_flag = &level.entity_flags[editor.entity_index];
-					if (ImGui::CollapsingHeader("Basic Properties##basic_properties_collapsing_header")) {
-						transform *entity_transform = &level.entity_transforms[editor.entity_index];
-						ImGui::RadioButton("##transform_translate_gizmo", &editor.entity_gizmo, transform_translate_gizmo);
-						ImGui::SameLine();
-						ImGui::InputFloat3("translate##transform_translation_field", entity_transform->translate.e, 3);
-						ImGui::RadioButton("##transform_rotation_gizmo", &editor.entity_gizmo, transform_rotate_gizmo);
-						ImGui::SameLine();
-						if (ImGui::InputFloat4("rotate##transform_rotation_field", entity_transform->rotate.e, 3)) {
-							entity_transform->rotate = quat_normalize(entity_transform->rotate);
-						}
-						ImGui::RadioButton("##transform_scaling_gizmo", &editor.entity_gizmo, transform_scale_gizmo);
-						ImGui::SameLine();
-						ImGui::InputFloat3("scale##transform_scaling_field", entity_transform->scale.e, 3);
+				ImGui::Separator();
+				if (editor.entity_index >= level.entity_count) {
+					goto entity_window_skip_components_label;
+				}
+				uint32 *entity_flag = &level.entity_flags[editor.entity_index];
+				if (ImGui::CollapsingHeader("Basic Properties##basic_properties_collapsing_header")) {
+					transform *entity_transform = &level.entity_transforms[editor.entity_index];
+					ImGui::RadioButton("##transform_translate_gizmo", &editor.entity_gizmo, transform_translate_gizmo);
+					ImGui::SameLine();
+					ImGui::InputFloat3("translate##transform_translation_field", entity_transform->translate.e, 3);
+					ImGui::RadioButton("##transform_rotation_gizmo", &editor.entity_gizmo, transform_rotate_gizmo);
+					ImGui::SameLine();
+					if (ImGui::InputFloat4("rotate##transform_rotation_field", entity_transform->rotate.e, 3)) {
+						entity_transform->rotate = quat_normalize(entity_transform->rotate);
 					}
-					if (*entity_flag & component_flag_render) {
-						if (ImGui::CollapsingHeader("Render Component##render_component_collapsing_header")) {
-							render_component *render_component = entity_get_render_component(&level, editor.entity_index);
-							const char *model_combo_name = (render_component->model_index < level.model_count) ? level.models[render_component->model_index].file_name : nullptr;
-							if (ImGui::BeginCombo("models##models_combo", model_combo_name)) {
-								for (uint32 i = 0; i < level.model_count; i += 1) {
-									if (ImGui::Selectable(level.models[i].file_name, render_component->model_index == i)) {
-										render_component->model_index = i;
-										editor.entity_mesh_index = UINT32_MAX;
-									}
-								}
-								ImGui::EndCombo();
-							}
-							if (render_component->model_index < level.model_count) {
-								model *model = &level.models[render_component->model_index];
-								const char *mesh_combo_name = (editor.entity_mesh_index < model->mesh_count) ? model->meshes[editor.entity_mesh_index].name : nullptr;
-								if (ImGui::BeginCombo("meshes##model_meshes_combo", mesh_combo_name)) {
-									for (uint32 i = 0; i < model->mesh_count; i += 1) {
-										if (ImGui::Selectable(model->meshes[i].name, editor.entity_mesh_index == i)) {
-											editor.entity_mesh_index = i;
-										}
-									}
-									ImGui::EndCombo();
-								}
-							}
-							if (render_component->model_index < level.model_count) {
-								ImGui::SliderFloat("uv scale u##material_uv_scale_u", &render_component->uv_scale[0], 1.0f, 10.0f);
-								ImGui::SliderFloat("uv scale v##material_uv_scale_v", &render_component->uv_scale[1], 1.0f, 10.0f);
-								ImGui::SliderFloat("height map scale##material_height_map_scale", &render_component->height_map_scale, 0.0f, 0.2f);
-							}
-						}
-					}
-					if (*entity_flag & component_flag_collision) {
-						if (ImGui::CollapsingHeader("Collision Component##collision_component_collapsing_header")) {
-							collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
-							const char *plane_combo_name = (editor.entity_collision_component_plane_index < collision_component->plane_count) ? "placeholder" : nullptr;
-							if (ImGui::BeginCombo("planes##collision_planes_combo", plane_combo_name)) {
-								for (uint32 i = 0; i < collision_component->plane_count; i += 1) {
-									if (ImGui::Selectable("placeholder", editor.entity_collision_component_plane_index == i)) {
-										editor.entity_collision_component_plane_index = i;
-									}
-								}
-								ImGui::EndCombo();
-							}
-							if (editor.entity_collision_component_plane_index < collision_component->plane_count) {
-								plane *plane = &collision_component->planes[editor.entity_collision_component_plane_index];
-								ImGui::InputFloat3("normal##plane_normal_field", plane->normal.e, 3);
-								ImGui::InputFloat("distance##plane_distance_field", &plane->distance, 3);
-							}
-							const char *sphere_combo_name = (editor.entity_collision_component_sphere_index < collision_component->sphere_count) ? "placeholder" : nullptr;
-							if (ImGui::BeginCombo("spheres##collision_spheres_combo", sphere_combo_name)) {
-								for (uint32 i = 0; i < collision_component->sphere_count; i += 1) {
-									if (ImGui::Selectable("placeholder", editor.entity_collision_component_sphere_index == i)) {
-										editor.entity_collision_component_sphere_index = i;
-									}
-								}
-								ImGui::EndCombo();
-							}
-							if (editor.entity_collision_component_sphere_index < collision_component->sphere_count) {
-								sphere *sphere = &collision_component->spheres[editor.entity_collision_component_sphere_index];
-								ImGui::InputFloat3("center##sphere_center_field", sphere->center.e, 3);
-								ImGui::InputFloat("radius##sphere_radius_field", &sphere->radius, 3);
-							}
-							const char *bound_combo_name = (editor.entity_collision_component_bound_index < collision_component->bound_count) ? "placeholder" : nullptr;
-							if (ImGui::BeginCombo("bounds##collision_bounds_combo", bound_combo_name)) {
-								for (uint32 i = 0; i < collision_component->bound_count; i += 1) {
-									if (ImGui::Selectable("placeholder", editor.entity_collision_component_bound_index == i)) {
-										editor.entity_collision_component_bound_index = i;
-									}
-								}
-								ImGui::EndCombo();
-							}
-							if (editor.entity_collision_component_bound_index < collision_component->bound_count) {
-								aa_bound *bound = &collision_component->bounds[editor.entity_collision_component_bound_index];
-								ImGui::InputFloat3("min##bound_min_field", bound->min.e, 3);
-								ImGui::InputFloat3("max##bound_max_field", bound->max.e, 3);
-							}
-						}
-					}
-					if (*entity_flag & component_flag_light) {
-						if (ImGui::CollapsingHeader("Light Component##light_component_collapsing_header")) {
-							light_component *light_component = entity_get_light_component(&level, editor.entity_index);
-							if (light_component->light_type == light_type_ambient) {
-								ImGui::ColorEdit3("color##ambient_light_color", light_component->ambient_light.color.e);
-							}
-							else if (light_component->light_type == light_type_directional) {
-								ImGui::RadioButton("##directional_light_rotate", &editor.entity_gizmo, directional_light_rotate_gizmo);
-								ImVec2 radio_button_size = ImGui::GetItemRectSize();
-								ImGui::SameLine();
-								if (ImGui::InputFloat3("direction##directional_light_direction_field", light_component->directional_light.direction.e, 3)) {
-									light_component->directional_light.direction = vec3_normalize(light_component->directional_light.direction);
-								}
-								ImGui::Dummy(radio_button_size);
-								ImGui::SameLine();
-								ImGui::ColorEdit3("color##directional_light_color", light_component->directional_light.color.e);
-							}
-							else if (light_component->light_type == light_type_point) {
-								ImGui::RadioButton("##point_light_translate", &editor.entity_gizmo, point_light_translate_gizmo);
-								ImVec2 radio_button_size = ImGui::GetItemRectSize();
-								ImGui::SameLine();
-								ImGui::InputFloat3("position##point_light_position_field", light_component->point_light.position.e, 3);
-								ImGui::Dummy(radio_button_size);
-								ImGui::SameLine();
-								ImGui::InputFloat("attenuation##point_light_attenuation_field", &light_component->point_light.attenuation);
-								ImGui::Dummy(radio_button_size);
-								ImGui::SameLine();
-								ImGui::ColorEdit3("color##point_light_color_field", light_component->point_light.color.e);
-							}
-						}
-					}
-					ImGui::Dummy({0, 16});
-					if (ImGui::Button("New Component##new_component_button")) {
-						ImGui::OpenPopup("##new_component_popup");
-					}
-					if (ImGui::BeginPopupModal("##new_component_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-						static bool show_duplicate_component_error = false;
-						const char *component_combo_names[] = {"render", "collision", "light"};
-						const char *component_combo_name = component_combo_names[editor.new_component_index];
-						if (ImGui::BeginCombo("component##new_component_popup_component_combo", component_combo_name)) {
-							for (uint32 i = 0; i < m_countof(component_combo_names); i += 1) {
-								if (ImGui::Selectable(component_combo_names[i], editor.new_component_index == i)) {
-									editor.new_component_index = i;
+					ImGui::RadioButton("##transform_scaling_gizmo", &editor.entity_gizmo, transform_scale_gizmo);
+					ImGui::SameLine();
+					ImGui::InputFloat3("scale##transform_scaling_field", entity_transform->scale.e, 3);
+				}
+				if (*entity_flag & component_flag_render) {
+					ImGui::PushID("render_component");
+					if (ImGui::CollapsingHeader("Render Component##collapsing_header")) {
+						render_component *render_component = entity_get_render_component(&level, editor.entity_index);
+						const char *model_combo_name = (render_component->model_index < level.model_count) ? level.models[render_component->model_index].file_name : nullptr;
+						if (ImGui::BeginCombo("models##models_combo", model_combo_name)) {
+							for (uint32 i = 0; i < level.model_count; i += 1) {
+								if (ImGui::Selectable(level.models[i].file_name, render_component->model_index == i)) {
+									render_component->model_index = i;
+									editor.entity_mesh_index = UINT32_MAX;
 								}
 							}
 							ImGui::EndCombo();
 						}
-						if (editor.new_component_index == 2) {
-							const char *light_combo_types[] = {"ambient", "directional", "point"};
-							const char *light_combo_type = light_combo_types[editor.new_component_light_type];
-							if (ImGui::BeginCombo("type##new_component_popup_light_type_combo", light_combo_type)) {
-								for (uint32 i = 0; i < m_countof(light_combo_types); i += 1) {
-									if (ImGui::Selectable(light_combo_types[i], editor.new_component_light_type == i)) {
-										editor.new_component_light_type = i;
+						if (render_component->model_index < level.model_count) {
+							model *model = &level.models[render_component->model_index];
+							const char *mesh_combo_name = (editor.entity_mesh_index < model->mesh_count) ? model->meshes[editor.entity_mesh_index].name : nullptr;
+							if (ImGui::BeginCombo("meshes##model_meshes_combo", mesh_combo_name)) {
+								for (uint32 i = 0; i < model->mesh_count; i += 1) {
+									if (ImGui::Selectable(model->meshes[i].name, editor.entity_mesh_index == i)) {
+										editor.entity_mesh_index = i;
 									}
 								}
 								ImGui::EndCombo();
 							}
 						}
-						if (show_duplicate_component_error) {
-							ImGui::TextColored({1, 0, 0, 1}, "error: component already exist");
+						if (render_component->model_index < level.model_count) {
+							ImGui::SliderFloat("uv scale u##material_uv_scale_u", &render_component->uv_scale[0], 1.0f, 10.0f);
+							ImGui::SliderFloat("uv scale v##material_uv_scale_v", &render_component->uv_scale[1], 1.0f, 10.0f);
+							ImGui::SliderFloat("height map scale##material_height_map_scale", &render_component->height_map_scale, 0.0f, 0.2f);
 						}
-						if (ImGui::Button("ok##new_component_popup_ok")) {
-							if ((editor.new_component_index == 0 && *entity_flag & component_flag_render) ||
-								  (editor.new_component_index == 1 && *entity_flag & component_flag_collision) ||
-								  (editor.new_component_index == 2 && *entity_flag & component_flag_light)) {
-								show_duplicate_component_error = true;
+					}
+					ImGui::PopID();
+				}
+				if (*entity_flag & component_flag_collision) {
+					ImGui::PushID("collision_component");
+					if (ImGui::CollapsingHeader("Collision Component##collapsing_header")) {
+						collision_component *collision_component = entity_get_collision_component(&level, editor.entity_index);
+						const char *plane_combo_name = (editor.entity_collision_component_plane_index < collision_component->plane_count) ? "placeholder" : nullptr;
+						if (ImGui::BeginCombo("planes##planes_combo", plane_combo_name)) {
+							for (uint32 i = 0; i < collision_component->plane_count; i += 1) {
+								if (ImGui::Selectable("placeholder", editor.entity_collision_component_plane_index == i)) {
+									editor.entity_collision_component_plane_index = i;
+								}
 							}
-							else {
-								show_duplicate_component_error = false;
-								if (editor.new_component_index == 0) {
-									uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
-									*entity_flag = level.entity_flags[editor.entity_index] | component_flag_render;
-									render_component *render_component = memory_arena_allocate<struct render_component>(&level.frame_memory_arena, 1);
-									render_component->uv_scale = {1, 1};
-									level.entity_modifications[editor.entity_index].flag = entity_flag;
-									level.entity_modifications[editor.entity_index].render_component = render_component;
+							ImGui::EndCombo();
+						}
+						if (editor.entity_collision_component_plane_index < collision_component->plane_count) {
+							plane *plane = &collision_component->planes[editor.entity_collision_component_plane_index];
+							ImGui::InputFloat3("normal##plane_normal_field", plane->normal.e, 3);
+							ImGui::InputFloat("distance##plane_distance_field", &plane->distance, 3);
+						}
+						const char *sphere_combo_name = (editor.entity_collision_component_sphere_index < collision_component->sphere_count) ? "placeholder" : nullptr;
+						if (ImGui::BeginCombo("spheres##spheres_combo", sphere_combo_name)) {
+							for (uint32 i = 0; i < collision_component->sphere_count; i += 1) {
+								if (ImGui::Selectable("placeholder", editor.entity_collision_component_sphere_index == i)) {
+									editor.entity_collision_component_sphere_index = i;
 								}
-								else if (editor.new_component_index == 1) {
-									uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
-									*entity_flag = level.entity_flags[editor.entity_index] | component_flag_collision;
-									collision_component *collision_component = memory_arena_allocate<struct collision_component>(&level.frame_memory_arena, 1);
-									level.entity_modifications[editor.entity_index].flag = entity_flag;
-									level.entity_modifications[editor.entity_index].collision_component = collision_component;
-								}
-								else if (editor.new_component_index == 2) {
-									uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
-									*entity_flag = level.entity_flags[editor.entity_index] | component_flag_light;
-									light_component *light_component = memory_arena_allocate<struct light_component>(&level.frame_memory_arena, 1);
-									if (editor.new_component_light_type == 0) {
-										light_component->light_type = {light_type_ambient};
-										light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
-									}
-									else if (editor.new_component_light_type == 1) {
-										light_component->light_type = {light_type_directional};
-										light_component->directional_light = directional_light{{0.1f, 0.1f, 0.1f}, {0, -1, 0}};
-									}
-									else if (editor.new_component_light_type == 2) {
-										light_component->light_type = {light_type_point};
-										light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
-									}
-									level.entity_modifications[editor.entity_index].flag = entity_flag;
-									level.entity_modifications[editor.entity_index].light_component = light_component;
-								}
-								ImGui::CloseCurrentPopup();
 							}
+							ImGui::EndCombo();
+						}
+						if (editor.entity_collision_component_sphere_index < collision_component->sphere_count) {
+							sphere *sphere = &collision_component->spheres[editor.entity_collision_component_sphere_index];
+							ImGui::InputFloat3("center##sphere_center_field", sphere->center.e, 3);
+							ImGui::InputFloat("radius##sphere_radius_field", &sphere->radius, 3);
+						}
+						const char *bound_combo_name = (editor.entity_collision_component_bound_index < collision_component->bound_count) ? "placeholder" : nullptr;
+						if (ImGui::BeginCombo("bounds##bounds_combo", bound_combo_name)) {
+							for (uint32 i = 0; i < collision_component->bound_count; i += 1) {
+								if (ImGui::Selectable("placeholder", editor.entity_collision_component_bound_index == i)) {
+									editor.entity_collision_component_bound_index = i;
+								}
+							}
+							ImGui::EndCombo();
 						}
 						ImGui::SameLine();
-						if (ImGui::Button("cancel##new_component_popup_cancel")) {
+						if (editor.entity_collision_component_bound_index < collision_component->bound_count) {
+							aa_bound *bound = &collision_component->bounds[editor.entity_collision_component_bound_index];
+							ImGui::InputFloat3("min##bound_min_field", bound->min.e, 3);
+							ImGui::InputFloat3("max##bound_max_field", bound->max.e, 3);
+						}
+					}
+					ImGui::PopID();
+				}
+				if (*entity_flag & component_flag_light) {
+					ImGui::PushID("light_component");
+					if (ImGui::CollapsingHeader("Light Component##collapsing_header")) {
+						light_component *light_component = entity_get_light_component(&level, editor.entity_index);
+						if (light_component->light_type == light_type_ambient) {
+							ImGui::ColorEdit3("color##ambient_light_color", light_component->ambient_light.color.e);
+						}
+						else if (light_component->light_type == light_type_directional) {
+							ImGui::RadioButton("##directional_light_rotate", &editor.entity_gizmo, directional_light_rotate_gizmo);
+							ImVec2 radio_button_size = ImGui::GetItemRectSize();
+							ImGui::SameLine();
+							if (ImGui::InputFloat3("direction##directional_light_direction_field", light_component->directional_light.direction.e, 3)) {
+								light_component->directional_light.direction = vec3_normalize(light_component->directional_light.direction);
+							}
+							ImGui::Dummy(radio_button_size);
+							ImGui::SameLine();
+							ImGui::ColorEdit3("color##directional_light_color", light_component->directional_light.color.e);
+						}
+						else if (light_component->light_type == light_type_point) {
+							ImGui::RadioButton("##point_light_translate", &editor.entity_gizmo, point_light_translate_gizmo);
+							ImVec2 radio_button_size = ImGui::GetItemRectSize();
+							ImGui::SameLine();
+							ImGui::InputFloat3("position##point_light_position_field", light_component->point_light.position.e, 3);
+							ImGui::Dummy(radio_button_size);
+							ImGui::SameLine();
+							ImGui::InputFloat("attenuation##point_light_attenuation_field", &light_component->point_light.attenuation);
+							ImGui::Dummy(radio_button_size);
+							ImGui::SameLine();
+							ImGui::ColorEdit3("color##point_light_color_field", light_component->point_light.color.e);
+						}
+					}
+					ImGui::PopID();
+				}
+				if (*entity_flag & component_flag_physics) {
+					ImGui::PushID("physics_component");
+					if (ImGui::CollapsingHeader("Physics Component##collapsing_header")) {
+						physics_component *physics_component = entity_get_physics_component(&level, editor.entity_index);
+						ImGui::InputFloat3("velocity##velocity_field", physics_component->velocity.e);
+					}
+					ImGui::PopID();
+				}
+				ImGui::Dummy({0, 16});
+				if (ImGui::Button("New Component##new_component_button")) {
+					ImGui::OpenPopup("##new_component_popup");
+				}
+				if (ImGui::BeginPopupModal("##new_component_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+					static const char *component_types[] = {"render", "collision", "light", "physics"};
+					static const char *light_types[] = {"ambient", "directional", "point"};
+					static uint32 component_type_index = 0;
+					static uint32 light_type_index = 0;
+					static bool show_duplicate_component_error = false;
+
+					const char *component_combo_name = component_types[component_type_index];
+					if (ImGui::BeginCombo("component##new_component_popup_component_combo", component_combo_name)) {
+						for (uint32 i = 0; i < m_countof(component_types); i += 1) {
+							if (ImGui::Selectable(component_types[i], component_type_index == i)) {
+								component_type_index = i;
+							}
+						}
+						ImGui::EndCombo();
+					}
+					if (component_type_index == 2) {
+						const char *light_combo_type = light_types[light_type_index];
+						if (ImGui::BeginCombo("type##new_component_popup_light_type_combo", light_combo_type)) {
+							for (uint32 i = 0; i < m_countof(light_types); i += 1) {
+								if (ImGui::Selectable(light_types[i], light_type_index == i)) {
+									light_type_index = i;
+								}
+							}
+							ImGui::EndCombo();
+						}
+					}
+					if (show_duplicate_component_error) {
+						ImGui::TextColored({1, 0, 0, 1}, "error: component already exist");
+					}
+					if (ImGui::Button("ok##new_component_popup_ok")) {
+						if ((component_type_index == 0 && *entity_flag & component_flag_render) ||
+								(component_type_index == 1 && *entity_flag & component_flag_collision) ||
+								(component_type_index == 2 && *entity_flag & component_flag_light) ||
+								(component_type_index == 3 && *entity_flag & component_flag_physics)) {
+							show_duplicate_component_error = true;
+						}
+						else {
 							show_duplicate_component_error = false;
+							if (component_type_index == 0) {
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
+								*entity_flag = level.entity_flags[editor.entity_index] | component_flag_render;
+								render_component *render_component = memory_arena_allocate<struct render_component>(&level.frame_memory_arena, 1);
+								render_component->uv_scale = {1, 1};
+								level.entity_modifications[editor.entity_index].flag = entity_flag;
+								level.entity_modifications[editor.entity_index].render_component = render_component;
+							}
+							else if (component_type_index == 1) {
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
+								*entity_flag = level.entity_flags[editor.entity_index] | component_flag_collision;
+								collision_component *collision_component = memory_arena_allocate<struct collision_component>(&level.frame_memory_arena, 1);
+								level.entity_modifications[editor.entity_index].flag = entity_flag;
+								level.entity_modifications[editor.entity_index].collision_component = collision_component;
+							}
+							else if (component_type_index == 2) {
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
+								*entity_flag = level.entity_flags[editor.entity_index] | component_flag_light;
+								light_component *light_component = memory_arena_allocate<struct light_component>(&level.frame_memory_arena, 1);
+								if (light_type_index == 0) {
+									light_component->light_type = {light_type_ambient};
+									light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
+								}
+								else if (light_type_index == 1) {
+									light_component->light_type = {light_type_directional};
+									light_component->directional_light = directional_light{{0.1f, 0.1f, 0.1f}, {0, -1, 0}};
+								}
+								else if (light_type_index == 2) {
+									light_component->light_type = {light_type_point};
+									light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
+								}
+								level.entity_modifications[editor.entity_index].flag = entity_flag;
+								level.entity_modifications[editor.entity_index].light_component = light_component;
+							}
+							else if (component_type_index == 3) {
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
+								*entity_flag = level.entity_flags[editor.entity_index] | component_flag_physics;
+								physics_component *physics_component = memory_arena_allocate<struct physics_component>(&level.frame_memory_arena, 1);
+								level.entity_modifications[editor.entity_index].flag = entity_flag;
+								level.entity_modifications[editor.entity_index].physics_component = physics_component;
+							}
 							ImGui::CloseCurrentPopup();
 						}
-						ImGui::EndPopup();
 					}
+					ImGui::SameLine();
+					if (ImGui::Button("cancel##new_component_popup_cancel")) {
+						show_duplicate_component_error = false;
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
 				}
+				if (ImGui::Button("Rename##rename_button")) {
+					ImGui::OpenPopup("##rename_popup");
+				}
+				if (ImGui::BeginPopupModal("##rename_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+					static bool show_duplicate_name_error = false;
+					static char name_buf[sizeof(entity_info::name)] = {};
+					ImGui::InputText("new name##rename_pop_up_new_name", name_buf, sizeof(name_buf));
+					if (show_duplicate_name_error) {
+						ImGui::TextColored({1, 0, 0, 1}, "error: entity name already exist");
+					}
+					if (ImGui::Button("ok##rename_popup_ok")) {
+						for (uint32 i = 0; i < level.entity_count; i += 1) {
+							if (!strcmp(level.entity_infos[i].name, name_buf)) {
+								show_duplicate_name_error = true;
+								break;
+							}
+						}
+						if (!show_duplicate_name_error) {
+							strcpy(level.entity_infos[editor.entity_index].name, name_buf);
+							array_set(name_buf, '\0');
+							ImGui::CloseCurrentPopup();
+						}
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("cancel##rename_popup_cancel")) {
+						show_duplicate_name_error = false;
+						array_set(name_buf, '\0');
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
+				}
+				if (ImGui::Button("Delete##delete_button")) {
+					level.entity_modifications[editor.entity_index].remove = true;
+				}
+			entity_window_skip_components_label:
+				ImGui::PopID();
 			}
 			ImGui::End();
 			if (editor.entity_index < level.entity_count) {
@@ -1046,9 +1099,12 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		bool screen_shot = ImGui::IsKeyReleased(keycode_print_screen);
 		vulkan_end_render(&vulkan, screen_shot);
 
-		level_update_entity_component(&level);
+		level_entity_component_end_frame(&level);
 		level.frame_memory_arena.size = 0;
+	
+		QueryPerformanceCounter(&performance_counters[1]);
+		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;
+		last_frame_time_sec = (double)last_frame_time_microsec / 1000000;
 	}
-
 	ImGui::Shutdown();
 }

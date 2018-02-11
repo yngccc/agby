@@ -418,7 +418,7 @@ bool vulkan_allocate_image(vulkan_device *vulkan_device, VkImageCreateInfo image
 
 void vulkan_device_initialize(vulkan_device *vulkan_device) {
 	bool enable_validation_layer = true;
-	bool enable_renderdoc_layer = true;
+	bool enable_renderdoc_layer = false;
 	bool enable_nsight_layer = false;
 
 	struct memory_arena memory_arena = {};
@@ -2707,7 +2707,7 @@ void vulkan_begin_render(vulkan *vulkan) {
 	m_vk_assert(vkBeginCommandBuffer(vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index], &cmd_buffer_begin_info));
 }
 
-void vulkan_end_render(vulkan *vulkan, bool screen_shot) {
+void vulkan_end_render(vulkan *vulkan, bool screen_shot = false) {
 	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
 
 	VkDeviceMemory screen_shot_staging_memory = {};

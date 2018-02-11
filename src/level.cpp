@@ -56,9 +56,10 @@ struct entity_info {
 };
 
 enum component_flag {
-	component_flag_render = 1,
-	component_flag_collision = 2,
-	component_flag_light = 4,
+	component_flag_render    = 1 << 0,
+	component_flag_collision = 1 << 1,
+	component_flag_light     = 1 << 2,
+	component_flag_physics   = 1 << 3
 };
 
 struct render_component {
@@ -106,17 +107,23 @@ struct light_component {
 	};
 };
 
+struct physics_component {
+	vec3 velocity;
+};
+
 struct entity_modification {
 	bool remove;
 	bool remove_render_component;
 	bool remove_collision_component;
 	bool remove_light_component;
+	bool remove_physics_component;
 	uint32 *flag;
 	entity_info *info;
 	transform *transform;
 	render_component *render_component;
 	collision_component *collision_component;
 	light_component *light_component;
+	physics_component *physics_component;
 };
 
 struct entity_addition {
@@ -126,6 +133,7 @@ struct entity_addition {
 	render_component *render_component;
 	collision_component *collision_component;
 	light_component *light_component;
+	physics_component *physics_component;
 	entity_addition *next;
 };
 
@@ -150,20 +158,25 @@ struct level_render_data {
 };
 
 struct level {
+	vec3 player_position;
+	vec3 player_velocity;
+	
 	uint32 *entity_flags;
 	entity_info *entity_infos;
 	transform *entity_transforms;
-	entity_modification *entity_modifications;
 	uint32 entity_count;
-
-	entity_addition *entity_addition;
 
 	render_component *render_components;
 	collision_component *collision_components;
 	light_component *light_components;
+	physics_component *physics_components;
 	uint32 render_component_count;
 	uint32 collision_component_count;
 	uint32 light_component_count;
+	uint32 physics_component_count;
+
+	entity_modification *entity_modifications;
+	entity_addition *entity_addition;
 
 	model *models;
 	uint32 model_count;
@@ -173,11 +186,6 @@ struct level {
 	uint32 skybox_count;
 	uint32 skybox_capacity;
 	uint32 skybox_index;
-
-	camera camera;
-	float camera_zoom;
-	float camera_rotates[2];
-	bool camera_moving;
 
 	level_render_data render_data;
 	bool show_frame_stats;
@@ -214,17 +222,6 @@ void level_initialize(level *level, vulkan *vulkan) {
 	level->skybox_capacity = 16;
 	level->skybox_count = 0;
 	level->skyboxes = memory_arena_allocate<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
-
-	level->camera.position = vec3{10, 20, 20};
-	level->camera.view = vec3_normalize(-level->camera.position);
-	level->camera.up = vec3_normalize(vec3_cross(vec3_cross(level->camera.view, vec3{0, 1, 0}), level->camera.view));
-	level->camera.fovy = degree_to_radian(58);
-	level->camera.aspect = (float)vulkan->framebuffers.main_framebuffers[0].width / (float)vulkan->framebuffers.main_framebuffers[0].height;
-	level->camera.znear = 0.1f;
-	level->camera.zfar = 2500;
-	level->camera_zoom = 3;
-	level->camera_rotates[0] = degree_to_radian(30);
-	level->camera_rotates[1] = degree_to_radian(0);
 
 	vulkan->buffers.level_vertex_buffer_offset = 0;
 	vulkan->memories.level_images_memory.size = 0;
@@ -266,6 +263,18 @@ light_component *entity_get_light_component(level *level, uint32 entity_index) {
 	return &level->light_components[index];
 }
 
+physics_component *entity_get_physics_component(level *level, uint32 entity_index) {
+	m_assert(entity_index < level->entity_count);
+	m_assert(level->entity_flags[entity_index] & component_flag_physics);
+	uint32 index = 0;
+	for (uint32 i = 0; i < entity_index; i += 1) {
+		if (level->entity_flags[i] & component_flag_physics) {
+			index += 1;
+		}
+	}
+	return &level->physics_components[index];
+}
+
 uint32 component_get_entity_index(level *level, uint32 component_index, component_flag component_flag) {
 	uint32 index = 0;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
@@ -280,11 +289,12 @@ uint32 component_get_entity_index(level *level, uint32 component_index, componen
 	return UINT32_MAX;
 }
 
-void level_update_entity_component(level *level) {
+void level_entity_component_end_frame(level *level) {
 	uint32 new_entity_count = level->entity_count;
 	uint32 new_render_component_count = level->render_component_count;
 	uint32 new_collision_component_count = level->collision_component_count;
 	uint32 new_light_component_count = level->light_component_count;
+	uint32 new_physics_component_count = level->physics_component_count;
 	{
 		for (uint32 i = 0; i < level->entity_count; i += 1) {
 			uint32 entity_flag = level->entity_flags[i];
@@ -299,6 +309,9 @@ void level_update_entity_component(level *level) {
 				}
 				if (entity_flag & component_flag_light) {
 					new_light_component_count -= 1;
+				}
+				if (entity_flag & component_flag_physics) {
+					new_physics_component_count -= 1;
 				}
 			}
 			else {
@@ -320,6 +333,12 @@ void level_update_entity_component(level *level) {
 				else if (em->light_component && !(entity_flag & component_flag_light)) {
 					new_light_component_count += 1;
 				}
+				if (em->remove_physics_component) {
+					new_physics_component_count -= 1;
+				}
+				else if (em->physics_component && !(entity_flag & component_flag_physics)) {
+					new_physics_component_count += 1;
+				}
 			}
 		}
 		entity_addition *ea = level->entity_addition;
@@ -333,6 +352,9 @@ void level_update_entity_component(level *level) {
 			}
 			if (ea->light_component) {
 				new_light_component_count += 1;
+			}
+			if (ea->physics_component) {
+				new_physics_component_count += 1;
 			}
 			ea = ea->next;
 		}
@@ -349,6 +371,7 @@ void level_update_entity_component(level *level) {
 	render_component *new_render_components = memory_arena_allocate<render_component>(entity_components_memory_arena, new_render_component_count);
 	collision_component *new_collision_components = memory_arena_allocate<collision_component>(entity_components_memory_arena, new_collision_component_count);
 	light_component *new_light_components = memory_arena_allocate<light_component>(entity_components_memory_arena, new_light_component_count);
+	physics_component *new_physics_components = memory_arena_allocate<physics_component>(entity_components_memory_arena, new_physics_component_count);
 
 	auto deep_copy_collision_component = [entity_components_memory_arena](collision_component *cc) -> collision_component {
 		collision_component collision_component = *cc;
@@ -374,6 +397,7 @@ void level_update_entity_component(level *level) {
 	uint32 render_component_index = 0;
 	uint32 collision_component_index = 0;
 	uint32 light_component_index = 0;
+	uint32 physics_component_index = 0;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
 		entity_modification *em = &level->entity_modifications[i];
 		if (!em->remove) {
@@ -393,6 +417,11 @@ void level_update_entity_component(level *level) {
 			if (!em->remove_light_component) {
 				if (level->entity_flags[i] & component_flag_light || em->light_component) {
 					new_light_components[light_component_index++] = em->light_component ? *em->light_component : *entity_get_light_component(level, i);
+				}
+			}
+			if (!em->remove_physics_component) {
+				if (level->entity_flags[i] & component_flag_physics || em->physics_component) {
+					new_physics_components[physics_component_index++] = em->physics_component ? *em->physics_component : *entity_get_physics_component(level, i);
 				}
 			}
 			entity_index += 1;
@@ -676,7 +705,7 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *file_name) {
 }
 
 template <typename T>
-void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, T extra_load, bool store_vertices = false) {
+void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, T extra_load, bool store_vertices = false) {
 	file_mapping level_json_file_mapping = {};
 	m_assert(open_file_mapping(level_json_file, &level_json_file_mapping));
 	m_scope_exit(close_file_mapping(level_json_file_mapping));
@@ -702,6 +731,24 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		transform->translate.x = json_transform_translation[0].GetFloat();
 		transform->translate.y = json_transform_translation[1].GetFloat();
 		transform->translate.z = json_transform_translation[2].GetFloat();
+	};
+	auto read_json_render_component = [level](rapidjson::Value::Object render_component_json, render_component *render_component) {
+		render_component->model_index = level_get_model_index(level, render_component_json["model_file_name"].GetString());
+		if (render_component_json.HasMember("uv_scale")) {
+			rapidjson::Value::Array uv_scale = render_component_json["uv_scale"].GetArray();
+			render_component->uv_scale[0] = uv_scale[0].GetFloat();
+			render_component->uv_scale[1] = uv_scale[1].GetFloat();
+		}
+		else {
+			render_component->uv_scale[0] = 1;
+			render_component->uv_scale[1] = 1;
+		}
+		if (render_component_json.HasMember("height_map_scale")) {
+			render_component->height_map_scale = render_component_json["height_map_scale"].GetFloat();
+		}
+		else {
+			render_component->height_map_scale = 0;
+		}
 	};
 	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, collision_component *collision_component) {
 		memory_arena *memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
@@ -779,25 +826,22 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			fatal("invalid json light type");
 		}
 	};
-	auto read_json_render_component = [level](rapidjson::Value::Object render_component_json, render_component *render_component) {
-		render_component->model_index = level_get_model_index(level, render_component_json["model_file_name"].GetString());
-		if (render_component_json.HasMember("uv_scale")) {
-			rapidjson::Value::Array uv_scale = render_component_json["uv_scale"].GetArray();
-			render_component->uv_scale[0] = uv_scale[0].GetFloat();
-			render_component->uv_scale[1] = uv_scale[1].GetFloat();
-		}
-		else {
-			render_component->uv_scale[0] = 1;
-			render_component->uv_scale[1] = 1;
-		}
-		if (render_component_json.HasMember("height_map_scale")) {
-			render_component->height_map_scale = render_component_json["height_map_scale"].GetFloat();
-		}
-		else {
-			render_component->height_map_scale = 0;
+	auto read_json_physics_component = [level](rapidjson::Value::Object physics_component_json, physics_component *physics_component) {
+		if (physics_component_json.HasMember("velocity")) {
+			rapidjson::Value::Array velocity = physics_component_json["velocity"].GetArray();
+			physics_component->velocity.x = velocity[0].GetFloat();
+			physics_component->velocity.y = velocity[1].GetFloat();
+			physics_component->velocity.z = velocity[2].GetFloat();
 		}
 	};
 
+	rapidjson::Value::Object player = json_doc["player"].GetObject();
+	{
+		rapidjson::Value::Array spawn = player["spawn"].GetArray();
+		level->player_position = {spawn[0].GetFloat(), spawn[1].GetFloat(), spawn[2].GetFloat()};
+		rapidjson::Value::Array velocity = player["velocity"].GetArray();
+		level->player_velocity = {velocity[0].GetFloat(), velocity[1].GetFloat(), velocity[2].GetFloat()};
+	}
 	rapidjson::Value::Array models = json_doc["models"].GetArray();
 	for (uint32 i = 0; i < models.Size(); i += 1) {
 		level_add_model(level, vulkan, models[i].GetString(), store_vertices);
@@ -806,11 +850,13 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	for (uint32 i = 0; i < skyboxes.Size(); i += 1) {
 		level_add_skybox(level, vulkan, skyboxes[i].GetString());
 	}
+	level->skybox_index = json_doc["skybox_index"].GetInt();
 	rapidjson::Value::Array entities_json = json_doc["entities"].GetArray();
 	level->entity_count = entities_json.Size();
 	level->render_component_count = 0;
 	level->collision_component_count = 0;
 	level->light_component_count = 0;
+	level->physics_component_count = 0;
 	for (uint32 i = 0; i < entities_json.Size(); i += 1) {
 		rapidjson::Value::Object entity_json = entities_json[i].GetObject();
 		if (entity_json.HasMember("render_component")) {
@@ -822,6 +868,9 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		if (entity_json.HasMember("collision_component")) {
 			level->collision_component_count += 1;
 		}
+		if (entity_json.HasMember("physics_component")) {
+			level->physics_component_count += 1;
+		}
 	}
 	memory_arena *entity_components_memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
 	level->entity_flags = memory_arena_allocate<uint32>(entity_components_memory_arena, level->entity_count);
@@ -831,10 +880,12 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	level->render_components = memory_arena_allocate<render_component>(entity_components_memory_arena, level->render_component_count);
 	level->collision_components = memory_arena_allocate<collision_component>(entity_components_memory_arena, level->collision_component_count);
 	level->light_components = memory_arena_allocate<light_component>(entity_components_memory_arena, level->light_component_count);
+	level->physics_components = memory_arena_allocate<physics_component>(entity_components_memory_arena, level->physics_component_count);
 
 	uint32 render_component_index = 0;
 	uint32 collision_component_index = 0;
 	uint32 light_component_index = 0;
+	uint32 physics_component_index = 0;
 	for (uint32 i = 0; i < entities_json.Size(); i += 1) {
 		rapidjson::Value::Object entity_json = entities_json[i].GetObject();
 		uint32 *entity_flag = &level->entity_flags[i];
@@ -858,75 +909,124 @@ void level_load_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			*entity_flag = *entity_flag | component_flag_light;
 			read_json_light_component(entity_json["light_component"].GetObject(), &level->light_components[light_component_index++]);
 		}
+		if (entity_json.HasMember("physics_component")) {
+			*entity_flag = *entity_flag | component_flag_physics;
+			read_json_physics_component(entity_json["physics_component"].GetObject(), &level->physics_components[physics_component_index++]);
+		}
 	}
 	extra_load(&json_doc);
 }
 
 template <typename T>
-void level_dump_json(level *level, const char *json_file_path, T extra_dump) {
+void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 	rapidjson::StringBuffer json_string;
 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(json_string);
 	writer.SetIndent('\t', 1);
 	writer.SetFormatOptions(rapidjson::kFormatSingleLineArray);
 
-	auto write_json_transform_object = [&writer](transform transform) {
+	auto write_json_transform_object = [&writer](transform *transform) {
 		writer.Key("transform");
 		writer.StartObject();
 		writer.Key("scale");
 		writer.StartArray();
-		writer.Double(transform.scale.x);
-		writer.Double(transform.scale.y);
-		writer.Double(transform.scale.z);
+		writer.Double(transform->scale.x);
+		writer.Double(transform->scale.y);
+		writer.Double(transform->scale.z);
 		writer.EndArray();
 		writer.Key("rotate");
 		writer.StartArray();
-		writer.Double(transform.rotate.x);
-		writer.Double(transform.rotate.y);
-		writer.Double(transform.rotate.z);
-		writer.Double(transform.rotate.w);
+		writer.Double(transform->rotate.x);
+		writer.Double(transform->rotate.y);
+		writer.Double(transform->rotate.z);
+		writer.Double(transform->rotate.w);
 		writer.EndArray();
 		writer.Key("translate");
 		writer.StartArray();
-		writer.Double(transform.translate.x);
-		writer.Double(transform.translate.y);
-		writer.Double(transform.translate.z);
+		writer.Double(transform->translate.x);
+		writer.Double(transform->translate.y);
+		writer.Double(transform->translate.z);
 		writer.EndArray();
 		writer.EndObject();
 	};
-	auto write_json_bound_object = [&writer](aa_bound bound) {
-		writer.Key("bound");
+	auto write_json_render_component = [&writer, level](render_component *component) {
+		writer.Key("render_component");
 		writer.StartObject();
-		writer.Key("min");
+		writer.Key("model_file_name");
+		writer.String(level->models[component->model_index].file_name);
+		writer.Key("uv_scale");
 		writer.StartArray();
-		writer.Double(bound.min.x);
-		writer.Double(bound.min.y);
-		writer.Double(bound.min.z);
+		writer.Double(component->uv_scale[0]);
+		writer.Double(component->uv_scale[1]);
 		writer.EndArray();
-		writer.Key("max");
-		writer.StartArray();
-		writer.Double(bound.max.x);
-		writer.Double(bound.max.y);
-		writer.Double(bound.max.z);
-		writer.EndArray();
+		writer.Key("height_map_scale");
+		writer.Double(component->height_map_scale);
 		writer.EndObject();
 	};
 	auto write_json_collision_component = [&writer](collision_component *component) {
+		writer.Key("collision_component");
 		writer.StartObject();
-		// writer.Key("bound_min");
-		// writer.StartArray();
-		// writer.Double(component->bound.min.x);
-		// writer.Double(component->bound.min.y);
-		// writer.Double(component->bound.min.z);
-		// writer.EndArray();
-		// writer.Key("bound_max");
-		// writer.StartArray();
-		// writer.Double(component->bound.max.x);
-		// writer.Double(component->bound.max.y);
-		// writer.Double(component->bound.max.z);
-		// writer.EndArray();
+		{
+			writer.Key("planes");
+			writer.StartArray();
+			for (uint32 i = 0; i < component->plane_count; i += 1) {
+				plane *plane = &component->planes[i];
+				writer.StartObject();
+				writer.Key("normal");
+				writer.StartArray();
+				writer.Double(plane->normal.x);
+				writer.Double(plane->normal.y);
+				writer.Double(plane->normal.z);
+				writer.EndArray();
+				writer.Key("distance");
+				writer.Double(plane->distance);
+				writer.EndObject();
+			}
+			writer.EndArray();
+		}
+		{
+			writer.Key("spheres");
+			writer.StartArray();
+			for (uint32 i = 0; i < component->sphere_count; i += 1) {
+				sphere *sphere = &component->spheres[i];
+				writer.StartObject();
+				writer.Key("center");
+				writer.StartArray();
+				writer.Double(sphere->center.x);
+				writer.Double(sphere->center.y);
+				writer.Double(sphere->center.z);
+				writer.EndArray();
+				writer.Key("radius");
+				writer.Double(sphere->radius);
+				writer.EndObject();
+			}
+			writer.EndArray();
+		}
+		{
+			writer.Key("bounds");
+			writer.StartArray();
+			for (uint32 i = 0; i < component->bound_count; i += 1) {
+				aa_bound *bound = &component->bounds[i];
+				writer.StartObject();
+				writer.Key("min");
+				writer.StartArray();
+				writer.Double(bound->min.x);
+				writer.Double(bound->min.y);
+				writer.Double(bound->min.z);
+				writer.EndArray();
+				writer.Key("max");
+				writer.StartArray();
+				writer.Double(bound->max.x);
+				writer.Double(bound->max.y);
+				writer.Double(bound->max.z);
+				writer.EndArray();
+				writer.EndObject();
+			}
+			writer.EndArray();
+		}
 		writer.EndObject();
 	};
 	auto write_json_light_component = [&writer](light_component *component) {
+		writer.Key("light_component");
 		writer.StartObject();
 		writer.Key("light_type");
 		if (component->light_type == light_type_ambient) {
@@ -972,59 +1072,85 @@ void level_dump_json(level *level, const char *json_file_path, T extra_dump) {
 		}
 		writer.EndObject();
 	};
-	auto write_json_render_component = [&writer, level](render_component *component) {
+	auto write_json_physics_component = [&writer](physics_component *component) {
+		writer.Key("physics_component");
 		writer.StartObject();
-		writer.Key("model_file_name");
-		writer.String(level->models[component->model_index].file_name);
-		writer.Key("uv_scale");
+		writer.Key("velocity");
 		writer.StartArray();
-		writer.Double(component->uv_scale[0]);
-		writer.Double(component->uv_scale[1]);
+		writer.Double(component->velocity.x);
+		writer.Double(component->velocity.y);
+		writer.Double(component->velocity.z);
 		writer.EndArray();
-		writer.Key("height_map_scale");
-		writer.Double(component->height_map_scale);
 		writer.EndObject();
 	};
 
 	writer.StartObject();
-	writer.Key("models");
-	writer.StartArray();
-	for (uint32 i = 0; i < level->model_count; i += 1) {
-		writer.String(level->models[i].file_name);
-	}
-	writer.EndArray();
-	writer.Key("skyboxes");
-	writer.StartArray();
-	for (uint32 i = 0; i < level->skybox_count; i += 1) {
-		writer.String(level->skyboxes[i].file_name);
-	}
-	writer.EndArray();
-	writer.Key("entities");
-	writer.StartArray();
-	for (uint32 i = 0; i < level->entity_count; i += 1) {
-		uint32 entity_flag = level->entity_flags[i];
-		transform entity_transform = level->entity_transforms[i];
-		const char *entity_name = level->entity_infos[i].name;
+	{
+		writer.Key("player");
 		writer.StartObject();
-		writer.Key("name");
-		writer.String(entity_name);
-		writer.Key("transform");
-		write_json_transform_object(entity_transform);
-		if (entity_flag & component_flag_collision) {
-			writer.Key("collision_component");
-			write_json_collision_component(entity_get_collision_component(level, i));
-		}
-		if (entity_flag & component_flag_light) {
-			writer.Key("light_component");
-			write_json_light_component(entity_get_light_component(level, i));
-		}
-		if (entity_flag & component_flag_render) {
-			writer.Key("render_component");
-			write_json_render_component(entity_get_render_component(level, i));
+		{
+			writer.Key("spawn");
+			writer.StartArray();
+			writer.Double(level->player_position.x);
+			writer.Double(level->player_position.y);
+			writer.Double(level->player_position.z);
+			writer.EndArray();
+			writer.Key("velocity");
+			writer.StartArray();
+			writer.Double(level->player_velocity.x);
+			writer.Double(level->player_velocity.y);
+			writer.Double(level->player_velocity.z);
+			writer.EndArray();
 		}
 		writer.EndObject();
 	}
-	writer.EndArray();
+	{
+		writer.Key("models");
+		writer.StartArray();
+		for (uint32 i = 0; i < level->model_count; i += 1) {
+			writer.String(level->models[i].file_name);
+		}
+		writer.EndArray();
+	}
+	{
+		writer.Key("skyboxes");
+		writer.StartArray();
+		for (uint32 i = 0; i < level->skybox_count; i += 1) {
+			writer.String(level->skyboxes[i].file_name);
+		}
+		writer.EndArray();
+	}
+	{
+		writer.Key("skybox_index");
+		writer.Int(level->skybox_index);
+	}
+	{
+		writer.Key("entities");
+		writer.StartArray();
+		for (uint32 i = 0; i < level->entity_count; i += 1) {
+			uint32 entity_flag = level->entity_flags[i];
+			transform entity_transform = level->entity_transforms[i];
+			const char *entity_name = level->entity_infos[i].name;
+			writer.StartObject();
+			writer.Key("name");
+			writer.String(entity_name);
+			write_json_transform_object(&entity_transform);
+			if (entity_flag & component_flag_render) {
+				write_json_render_component(entity_get_render_component(level, i));
+			}
+			if (entity_flag & component_flag_collision) {
+				write_json_collision_component(entity_get_collision_component(level, i));
+			}
+			if (entity_flag & component_flag_light) {
+				write_json_light_component(entity_get_light_component(level, i));
+			}
+			if (entity_flag & component_flag_physics) {
+				write_json_physics_component(entity_get_physics_component(level, i));
+			}
+			writer.EndObject();
+		}
+		writer.EndArray();
+	}
 	extra_dump(&writer);
 	writer.EndObject();
 
