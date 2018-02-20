@@ -42,6 +42,7 @@ struct model {
 	uint32 mesh_count;
 	model_material *materials;
 	uint32 material_count;
+	aa_bound bound;
 	char file_name[128];
 };
 
@@ -158,9 +159,6 @@ struct level_render_data {
 };
 
 struct level {
-	vec3 player_position;
-	vec3 player_velocity;
-	
 	uint32 *entity_flags;
 	entity_info *entity_infos;
 	transform *entity_transforms;
@@ -177,6 +175,8 @@ struct level {
 
 	entity_modification *entity_modifications;
 	entity_addition *entity_addition;
+
+	uint32 player_entity_index;
 
 	model *models;
 	uint32 model_count;
@@ -198,7 +198,7 @@ struct level {
 	char *json_file;
 };
 
-void level_initialize(level *level, vulkan *vulkan) {
+void initialize_level(level *level, vulkan *vulkan) {
 	*level = {};
 
 	level->frame_memory_arena.name = "frame";
@@ -483,6 +483,7 @@ uint32 level_add_model(level *level, vulkan *vulkan, const char *file_name, bool
 
 	gpk_model_header *gpk_model_header = (struct gpk_model_header *)file_mapping.ptr;
 	model *model = &level->models[level->model_count];
+	model->bound = gpk_model_header->bound;
 	snprintf(model->file_name, sizeof(model->file_name), "%s", file_name);
 	model->mesh_count = gpk_model_header->mesh_count;
 	model->meshes = memory_arena_allocate<struct model_mesh>(&level->assets_memory_arena, model->mesh_count);
@@ -835,13 +836,6 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		}
 	};
 
-	rapidjson::Value::Object player = json_doc["player"].GetObject();
-	{
-		rapidjson::Value::Array spawn = player["spawn"].GetArray();
-		level->player_position = {spawn[0].GetFloat(), spawn[1].GetFloat(), spawn[2].GetFloat()};
-		rapidjson::Value::Array velocity = player["velocity"].GetArray();
-		level->player_velocity = {velocity[0].GetFloat(), velocity[1].GetFloat(), velocity[2].GetFloat()};
-	}
 	rapidjson::Value::Array models = json_doc["models"].GetArray();
 	for (uint32 i = 0; i < models.Size(); i += 1) {
 		level_add_model(level, vulkan, models[i].GetString(), store_vertices);
@@ -850,7 +844,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	for (uint32 i = 0; i < skyboxes.Size(); i += 1) {
 		level_add_skybox(level, vulkan, skyboxes[i].GetString());
 	}
-	level->skybox_index = json_doc["skybox_index"].GetInt();
+	level->skybox_index = json_doc["skybox_index"].GetUint();
 	rapidjson::Value::Array entities_json = json_doc["entities"].GetArray();
 	level->entity_count = entities_json.Size();
 	level->render_component_count = 0;
@@ -914,6 +908,10 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			read_json_physics_component(entity_json["physics_component"].GetObject(), &level->physics_components[physics_component_index++]);
 		}
 	}
+
+	rapidjson::Value::Object player = json_doc["player"].GetObject();
+	level->player_entity_index = player["entity_index"].GetUint();
+
 	extra_load(&json_doc);
 }
 
@@ -1086,25 +1084,6 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 
 	writer.StartObject();
 	{
-		writer.Key("player");
-		writer.StartObject();
-		{
-			writer.Key("spawn");
-			writer.StartArray();
-			writer.Double(level->player_position.x);
-			writer.Double(level->player_position.y);
-			writer.Double(level->player_position.z);
-			writer.EndArray();
-			writer.Key("velocity");
-			writer.StartArray();
-			writer.Double(level->player_velocity.x);
-			writer.Double(level->player_velocity.y);
-			writer.Double(level->player_velocity.z);
-			writer.EndArray();
-		}
-		writer.EndObject();
-	}
-	{
 		writer.Key("models");
 		writer.StartArray();
 		for (uint32 i = 0; i < level->model_count; i += 1) {
@@ -1119,10 +1098,8 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 			writer.String(level->skyboxes[i].file_name);
 		}
 		writer.EndArray();
-	}
-	{
 		writer.Key("skybox_index");
-		writer.Int(level->skybox_index);
+		writer.Uint(level->skybox_index);
 	}
 	{
 		writer.Key("entities");
@@ -1151,6 +1128,13 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 		}
 		writer.EndArray();
 	}
+	{
+		writer.Key("player");
+		writer.StartObject();
+		writer.Key("entity_index");
+		writer.Uint(level->player_entity_index);
+		writer.EndObject();
+	}	
 	extra_dump(&writer);
 	writer.EndObject();
 
@@ -1267,6 +1251,39 @@ void level_update_player_camera(level *level, double last_frame_time, int32 raw_
 	// level->camera.position += camera_translate;
 	// level->camera.view = vec3_normalize(-camera_translate);
 	// level->camera.up = vec3_normalize(vec3_cross(vec3_cross(level->camera.view, vec3{0, 1, 0}), level->camera.view));
+}
+
+camera level_get_player_camera(level *level, vulkan *vulkan, float r, float theta, float phi) {
+	vec3 center = {};
+	vec3 translate = {};
+	if (level->player_entity_index < level->entity_count) {
+		transform *transform = &level->entity_transforms[level->player_entity_index];
+		quat rotate_0 = quat_from_rotation(vec3{1, 0, 0}, theta);
+		quat rotate_1 = quat_from_rotation(vec3{0, 1, 0}, phi);
+		quat rotate_2 = transform->rotate;
+		translate = rotate_2 * rotate_1 * rotate_0 * vec3{0, 0, -r};
+		if (level->entity_flags[level->player_entity_index] & component_flag_render) {
+			render_component *render_component = entity_get_render_component(level, level->player_entity_index);
+			center = aa_bound_center(level->models[render_component->model_index].bound);
+			center += transform->translate;
+		}
+		else {
+			center = transform->translate;
+		}
+	}
+	else {
+		center = {0, 0, 0};
+		translate = vec3_normalize({1, 1, 1}) * r;
+	}
+	camera camera = {};
+	camera.position = center + translate;
+	camera.view = vec3_normalize(-translate);
+	camera.up = vec3_cross(vec3_cross(camera.view, vec3{0, 1, 0}), camera.view);
+	camera.fovy = degree_to_radian(50);
+	camera.aspect = (float)vulkan->swap_chain.image_width / (float)vulkan->swap_chain.image_height;
+	camera.znear = 0.1f;
+	camera.zfar = 1000;
+	return camera;
 }
 
 template <typename F>

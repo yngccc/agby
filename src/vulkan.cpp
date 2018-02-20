@@ -2678,7 +2678,7 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 	}
 }
 
-void vulkan_initialize(vulkan *vulkan, const window &window) {
+void initialize_vulkan(vulkan *vulkan, const window &window) {
 	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
 	bool vsync_on = false;
 	*vulkan = {};

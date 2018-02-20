@@ -211,13 +211,13 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	// set_window_fullscreen(&window, true);
 
 	struct vulkan vulkan = {};
-	vulkan_initialize(&vulkan, window);
+	initialize_vulkan(&vulkan, window);
 
 	editor editor = {};
 	editor_initialize(&editor, &vulkan);
 
 	level level = {};
-	level_initialize(&level, &vulkan);
+	initialize_level(&level, &vulkan);
 	auto editor_load_level_setting = [&editor](rapidjson::Document *json_doc) {
 		if (json_doc->HasMember("editor_settings")) {
 			rapidjson::Value::Object editor_settings = (*json_doc)["editor_settings"].GetObject();
@@ -247,7 +247,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	double last_frame_time_sec = 0;
 	bool program_running = true;
 
-	show_window(window);
+	show_window(&window);
 
 	while (program_running) {
 		QueryPerformanceCounter(&performance_counters[0]);
@@ -256,7 +256,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		window.raw_mouse_dx = 0;
 		window.raw_mouse_dy = 0;
 
-		while (peek_window_message(window)) {
+		while (peek_window_message(&window)) {
 			switch (window.msg_type) {
 				case window_message_type_destroy:
 				case window_message_type_close:
@@ -844,7 +844,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					else if (editor.entity_gizmo == transform_rotate_gizmo) {
 						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::ROTATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-						entity_transform->rotate = mat4_get_rotation(transform_mat);
+						entity_transform->rotate = quat_from_mat4(transform_mat);
 					}
 					else if (editor.entity_gizmo == transform_scale_gizmo) {
 						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::SCALE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
@@ -884,7 +884,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							transform.translate = editor.camera.position + editor.camera.view * 16;
 							mat4 transform_mat = transform_to_mat4(transform);
 							ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::ROTATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-							light_component->directional_light.direction = vec3_normalize(mat4_get_rotation(transform_mat) * light_component->directional_light.direction);
+							light_component->directional_light.direction = vec3_normalize(quat_from_mat4(transform_mat) * light_component->directional_light.direction);
 
 							ImDrawList *draw_list = ImGuizmo::gContext.mDrawList;
 							vec3 line_begin_world = transform.translate;

@@ -26,30 +26,17 @@ struct game {
 	bool mouse_down[3];
 	float mouse_wheel;
 
-	transform player_transform;
 	camera player_camera;
-	float player_camera_pitch;
-	float gravity;
 
 	memory_arena general_memory_arena;
 };
 
-bool game_initialize(game *game, vulkan *vulkan) {
+bool initialize_game(game *game, vulkan *vulkan) {
 	{ // memory
 		game->general_memory_arena = {};
 		game->general_memory_arena.name = "general";
 		game->general_memory_arena.capacity = m_megabytes(64);
 		m_assert(allocate_virtual_memory(game->general_memory_arena.capacity, &game->general_memory_arena.memory));
-	}
-	{ // player
-		game->player_camera.position = vec3{100, 100, 100};
-		game->player_camera.view = vec3_normalize(-game->player_camera.position);
-		game->player_camera.up = vec3_cross(vec3_cross(game->player_camera.view, vec3{0, 1, 0}), game->player_camera.view);
-		game->player_camera.fovy = degree_to_radian(50);
-		game->player_camera.aspect = (float)vulkan->swap_chain.image_width / (float)vulkan->swap_chain.image_height;
-		game->player_camera.znear = 0.1f;
-		game->player_camera.zfar = 1000;
-		game->player_camera_pitch = asinf(game->player_camera.view.y);
 	}
 	return true;
 }
@@ -63,16 +50,17 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	// set_window_fullscreen(&window, true);
 
 	struct vulkan vulkan = {};
-	vulkan_initialize(&vulkan, window);
+	initialize_vulkan(&vulkan, window);
 
 	struct game game = {};
-	game_initialize(&game, &vulkan);
+	initialize_game(&game, &vulkan);
 
 	level level = {};
-	level_initialize(&level, &vulkan);
+	initialize_level(&level, &vulkan);
 	auto extra_level_load = [](rapidjson::Document *json_doc) {};
 	level_read_json(&level, &vulkan, "agby_assets\\levels\\level_save.json", extra_level_load);
-
+	game.player_camera = level_get_player_camera(&level, &vulkan, 10, 0.5, 0.5);
+	
 	LARGE_INTEGER performance_frequency = {};
 	QueryPerformanceFrequency(&performance_frequency);
 	LARGE_INTEGER performance_counters[2] = {};
@@ -80,7 +68,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	double last_frame_time_sec = 0;
 	bool program_running = true;
 
-	show_window(window);
+	show_window(&window);
 
 	while (program_running) {
 		QueryPerformanceCounter(&performance_counters[0]);
@@ -88,7 +76,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		window.raw_mouse_dx = 0;
 		window.raw_mouse_dy = 0;
 
-		while (peek_window_message(window)) {
+		while (peek_window_message(&window)) {
 			switch (window.msg_type) {
 				case window_message_type_destroy:
 				case window_message_type_close:

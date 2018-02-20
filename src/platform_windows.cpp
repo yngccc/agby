@@ -452,8 +452,8 @@ bool initialize_window(window *window) {
 	return true;
 };
 
-void show_window(const window &window) {
-	ShowWindow(window.handle, SW_SHOW);
+void show_window(window *window) {
+	ShowWindow(window->handle, SW_SHOW);
 }
 
 void set_window_fullscreen(window *window, bool fullscreen) {
@@ -475,9 +475,9 @@ void set_window_fullscreen(window *window, bool fullscreen) {
 	}
 }
 
-bool peek_window_message(const window &window) {
+bool peek_window_message(window *window) {
 	MSG msg;
-	if (PeekMessage(&msg, window.handle, 0, 0, PM_REMOVE)) {
+	if (PeekMessage(&msg, window->handle, 0, 0, PM_REMOVE)) {
 		TranslateMessage(&msg);
 		DispatchMessageA(&msg);
 		return true;

@@ -14,50 +14,6 @@
 #define NVTT_SHARED 1
 #include "../vendor/include/nvtt/nvtt.h"
 
-template <typename T>
-bool traverse_fbx_nodes(FbxNode *node, T node_func) {
-	if (!node_func(node)) {
-		return false;
-	}
-	for (int i = 0; i < node->GetChildCount(); i += 1) {
-		if (!traverse_fbx_nodes(node->GetChild(i), node_func)) {
-			return false;
-		}
-	}
-	return true;
-}
-
-mat4 fbx_mat4_to_mat4(FbxAMatrix *fbx_mat) {
-	FbxVector4 r1 = fbx_mat->GetRow(0);
-	FbxVector4 r2 = fbx_mat->GetRow(1);
-	FbxVector4 r3 = fbx_mat->GetRow(2);
-	FbxVector4 r4 = fbx_mat->GetRow(3);
-	mat4 mat;
-	mat.c1 = {{(float)r1[0], (float)r1[1], (float)r1[2], (float)r1[3]}};
-	mat.c2 = {{(float)r2[0], (float)r2[1], (float)r2[2], (float)r2[3]}};
-	mat.c3 = {{(float)r3[0], (float)r3[1], (float)r3[2], (float)r3[3]}};
-	mat.c4 = {{(float)r4[0], (float)r4[1], (float)r4[2], (float)r4[3]}};
-	return mat;
-}
-
-aa_bound compute_mesh_bound(FbxMesh *fbx_mesh, mat4 transform) {
-	FbxVector4 *control_points = fbx_mesh->GetControlPoints();
-	int32 control_point_count = fbx_mesh->GetControlPointsCount();
-	vec3 min_control_point = (transform * vec4{(float)control_points[0][0], (float)control_points[0][1], (float)control_points[0][2], 1}).xyz();
-	vec3 max_control_point = min_control_point;
-	for (int32 i = 0; i < control_point_count; i += 1) {
-		vec4 control_point = vec4{(float)control_points[i][0], (float)control_points[i][1], (float)control_points[i][2], 1};
-		control_point = transform * control_point;
-		min_control_point.x = min(min_control_point.x, control_point.x);
-		min_control_point.y = min(min_control_point.y, control_point.y);
-		min_control_point.z = min(min_control_point.z, control_point.z);
-		max_control_point.x = max(max_control_point.x, control_point.x);
-		max_control_point.y = max(max_control_point.y, control_point.y);
-		max_control_point.z = max(max_control_point.z, control_point.z);
-	}
-	return aa_bound{min_control_point, max_control_point};
-}
-
 typedef vec3 position;
 typedef vec2 uv;
 typedef i16vec3 normal;
@@ -117,14 +73,6 @@ struct material {
 	char name[sizeof(gpk_model_material_header::name)];
 };
 
-void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
-	for (uint32 i = 0; i < image_width * image_height; i += 1) {
-		uint8 r = image_data[i * 4];
-		image_data[i * 4] = image_data[i * 4 + 2];
-		image_data[i * 4 + 2] = r;
-	}
-}
-
 enum image_type {
 	image_type_albedo_map,
 	image_type_normal_map,
@@ -133,6 +81,75 @@ enum image_type {
 	image_type_ao_map,
 	image_type_height_map
 };
+
+template <typename T>
+bool traverse_fbx_nodes(FbxNode *node, T node_func) {
+	if (!node_func(node)) {
+		return false;
+	}
+	for (int i = 0; i < node->GetChildCount(); i += 1) {
+		if (!traverse_fbx_nodes(node->GetChild(i), node_func)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+mat4 fbx_mat4_to_mat4(FbxAMatrix *fbx_mat) {
+	FbxVector4 r1 = fbx_mat->GetRow(0);
+	FbxVector4 r2 = fbx_mat->GetRow(1);
+	FbxVector4 r3 = fbx_mat->GetRow(2);
+	FbxVector4 r4 = fbx_mat->GetRow(3);
+	mat4 mat;
+	mat.c1 = {{(float)r1[0], (float)r1[1], (float)r1[2], (float)r1[3]}};
+	mat.c2 = {{(float)r2[0], (float)r2[1], (float)r2[2], (float)r2[3]}};
+	mat.c3 = {{(float)r3[0], (float)r3[1], (float)r3[2], (float)r3[3]}};
+	mat.c4 = {{(float)r4[0], (float)r4[1], (float)r4[2], (float)r4[3]}};
+	return mat;
+}
+
+aa_bound compute_mesh_bound(FbxMesh *fbx_mesh, mat4 transform) {
+	FbxVector4 *control_points = fbx_mesh->GetControlPoints();
+	int32 control_point_count = fbx_mesh->GetControlPointsCount();
+	vec3 min_control_point = (transform * vec4{(float)control_points[0][0], (float)control_points[0][1], (float)control_points[0][2], 1}).xyz();
+	vec3 max_control_point = min_control_point;
+	for (int32 i = 0; i < control_point_count; i += 1) {
+		vec4 control_point = vec4{(float)control_points[i][0], (float)control_points[i][1], (float)control_points[i][2], 1};
+		control_point = transform * control_point;
+		min_control_point.x = min(min_control_point.x, control_point.x);
+		min_control_point.y = min(min_control_point.y, control_point.y);
+		min_control_point.z = min(min_control_point.z, control_point.z);
+		max_control_point.x = max(max_control_point.x, control_point.x);
+		max_control_point.y = max(max_control_point.y, control_point.y);
+		max_control_point.z = max(max_control_point.z, control_point.z);
+	}
+	return aa_bound{min_control_point, max_control_point};
+}
+
+aa_bound compute_meshes_bound(mesh *meshes, uint32 mesh_count) {
+	aa_bound bound = {};
+	for (uint32 i = 0; i < mesh_count; i += 1) {
+		struct mesh *mesh = &meshes[i];
+		for (uint32 i = 0; i < mesh->instance_count; i += 1) {
+			aa_bound *b = &mesh->instances[i].bound;
+			bound.min.x = min(bound.min.x, b->min.x);
+			bound.min.y = min(bound.min.y, b->min.y);
+			bound.min.z = min(bound.min.z, b->min.z);
+			bound.max.x = max(bound.max.x, b->max.x);
+			bound.max.y = max(bound.max.y, b->max.y);
+			bound.max.z = max(bound.max.z, b->max.z);
+		}
+	}
+	return bound;
+}
+
+void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
+	for (uint32 i = 0; i < image_width * image_height; i += 1) {
+		uint8 r = image_data[i * 4];
+		image_data[i * 4] = image_data[i * 4 + 2];
+		image_data[i * 4 + 2] = r;
+	}
+}
 
 void compress_image(image_type image_type, uint8 *data, uint32 width, uint32 height, uint8 **compressed_data, uint32 *compressed_data_mipmap_count, uint32 *compressed_data_size) {
 	using namespace nvtt;
@@ -421,6 +438,7 @@ void import_fbx_model(gpk_import_cmd_line cmdl) {
 		}
 	}
 	gpk_model_header model_header = {};
+	model_header.bound = compute_meshes_bound(meshes, mesh_count);
 	gpk_model_mesh_header *mesh_headers = (struct gpk_model_mesh_header *)calloc(gpk_model_max_mesh_count, sizeof(struct gpk_model_mesh_header));
 	gpk_model_material_header *material_headers = (struct gpk_model_material_header *)calloc(gpk_model_max_material_count, sizeof(struct gpk_model_material_header));
 	uint32 model_total_size = 0;

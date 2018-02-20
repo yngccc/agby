@@ -100,6 +100,7 @@ struct gpk_model_header {
 	uint32 mesh_count;
 	uint32 material_offsets[gpk_model_max_material_count];
 	uint32 material_count;
+	aa_bound bound;
 };
 
 struct gpk_skybox_header {

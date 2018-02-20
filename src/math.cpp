@@ -417,7 +417,7 @@ mat4 mat4_perspective_projection(float fovy, float aspect, float znear, float zf
 	return mat;
 }
 
-mat4 mat4_lookat(vec3 eye, vec3 center, vec3 up) {
+mat4 mat4_look_at(vec3 eye, vec3 center, vec3 up) {
 	vec3 f = vec3_normalize(center - eye);
 	vec3 s = vec3_normalize(vec3_cross(f, up));
 	vec3 u = vec3_cross(s, f);
@@ -467,6 +467,15 @@ union quat {
 	quat operator-() const { return quat{ -this->x, -this->y, -this->z, -this->w }; }
 	quat operator*(float d) const { return quat{ this->x * d, this->y * d, this->z * d, this->w * d }; }
 	vec3 operator*(const vec3 &v) const { mat3 quat_to_mat3(quat); return quat_to_mat3(*this) * v; }
+	quat operator*(const quat &q) const {
+		quat result = {
+			this->w * q.x + this->x * q.w + this->y * q.z - this->z * q.y,
+			this->w * q.y + this->y * q.w + this->z * q.x - this->x * q.z,
+			this->w * q.z + this->z * q.w + this->x * q.y - this->y * q.x,
+			this->w * q.w - this->x * q.x - this->y * q.y - this->z * q.z
+		};
+		return result;
+	}
 	quat operator/(float d) const { return quat{ this->x / d, this->y / d, this->z / d, this->w / d }; }
 };
 
@@ -481,26 +490,6 @@ quat quat_normalize(quat q) {
 
 quat quat_inverse(quat q) {
 	return quat{q.x, q.y, q.z, -q.w};
-}
-
-vec3 quat_to_euler_angles(quat q) {
-	return vec3{
-		atan2f(2 * (q.q0 * q.q1 + q.q2 * q.q3), 1 - 2 * (q.q1 * q.q1 + q.q2 * q.q2)),
-		asinf(2 * (q.q0 * q.q2 - q.q3 * q.q1)),
-		atan2f(2 * (q.q0 * q.q3 + q.q1 * q.q2), 1 - 2 * (q.q2 * q.q2 + q.q3 * q.q3))
-	};
-}
-
-quat quat_from_euler_angles(float x, float y, float z) {
-	vec3 euler_angles = {x * 0.5f, y * 0.5f, z *0.5f};
-	vec3 c = vec3{cosf(euler_angles.x), cosf(euler_angles.y), cosf(euler_angles.z)};
-	vec3 s = vec3{sinf(euler_angles.x), sinf(euler_angles.y), sinf(euler_angles.z)};
-	quat q;
-	q.w = c.x * c.y * c.z + s.x * s.y * s.z;
-	q.x = s.x * c.y * c.z - c.x * s.y * s.z;
-	q.y = c.x * s.y * c.z + s.x * c.y * s.z;
-	q.z = c.x * c.y * s.z - s.x * s.y * c.z;
-	return q;
 }
 
 quat quat_from_mat3(const mat3 &m) {
@@ -533,7 +522,7 @@ quat quat_from_mat3(const mat3 &m) {
 	}
 }
 
-quat mat4_get_rotation(const mat4 &m) {
+quat quat_from_mat4(const mat4 &m) {
 	vec3 scaling = mat4_get_scaling(m);
 	mat3 m3 = mat4_to_mat3(m);
 	m3[0] /= scaling.x;
@@ -577,6 +566,26 @@ mat4 quat_to_mat4(quat q) {
 	return m;
 }
 
+vec3 quat_to_euler_angles(quat q) {
+	return vec3{
+		atan2f(2 * (q.q0 * q.q1 + q.q2 * q.q3), 1 - 2 * (q.q1 * q.q1 + q.q2 * q.q2)),
+		asinf(2 * (q.q0 * q.q2 - q.q3 * q.q1)),
+		atan2f(2 * (q.q0 * q.q3 + q.q1 * q.q2), 1 - 2 * (q.q2 * q.q2 + q.q3 * q.q3))
+	};
+}
+
+quat quat_from_euler_angles(float x, float y, float z) {
+	vec3 euler_angles = {x * 0.5f, y * 0.5f, z *0.5f};
+	vec3 c = vec3{cosf(euler_angles.x), cosf(euler_angles.y), cosf(euler_angles.z)};
+	vec3 s = vec3{sinf(euler_angles.x), sinf(euler_angles.y), sinf(euler_angles.z)};
+	quat q;
+	q.w = c.x * c.y * c.z + s.x * s.y * s.z;
+	q.x = s.x * c.y * c.z - c.x * s.y * s.z;
+	q.y = c.x * s.y * c.z + s.x * c.y * s.z;
+	q.z = c.x * c.y * s.z - s.x * s.y * c.z;
+	return q;
+}
+
 quat quat_from_rotation(vec3 axis, float angle) {
 	axis = vec3_normalize(axis);
 	float sin = sinf(angle / 2);
@@ -610,23 +619,6 @@ quat quat_from_between(vec3 a, vec3 b) {
 		q.w = 1 + adb;
 		return q;
 	}
-}
-
-quat quat_compose(quat q1, quat q2) {
-	return quat{
-		q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
-		q1.w * q2.y + q1.y * q2.w + q1.z * q2.x - q1.x * q2.z,
-		q1.w * q2.z + q1.z * q2.w + q1.x * q2.y - q1.y * q2.x,
-		q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z
-	};
-}
-
-quat quat_decompose_left(quat q, quat qr) {
-	return quat_compose(q, quat_inverse(qr));
-}
-
-quat quat_decompose_right(quat q, quat ql) {
-	return quat_compose(quat_inverse(ql), q);
 }
 
 quat quat_slerp(quat q1, quat q2, float t) {
@@ -679,7 +671,7 @@ mat4 camera_projection_mat4(const camera &camera) {
 }
 
 mat4 camera_view_mat4(const camera &camera) {
-	return mat4_lookat(camera.position, camera.position + camera.view, camera.up);
+	return mat4_look_at(camera.position, camera.position + camera.view, camera.up);
 }
 
 mat4 camera_view_projection_mat4(const camera &camera) {
@@ -738,7 +730,7 @@ mat4 camera_shadow_map_projection_mat4(const camera &camera, vec3 directional_li
 
 	// return mat4_orthographic_projection(bound_min.x, bound_max.x, bound_min.y, bound_max.y, -bound_max.z, -bound_min.z) * light_view_mat4;
 
-	mat4 light_view_mat4 = mat4_lookat(directional_light * 50, {0, 0, 0}, {0, 1, 0});
+	mat4 light_view_mat4 = mat4_look_at(directional_light * 50, {0, 0, 0}, {0, 1, 0});
 	return mat4_orthographic_projection(-50, 50, -50, 50, 0, 100) * light_view_mat4;
 }
 
@@ -936,22 +928,6 @@ float vertical_fov(float horizontal_fov, float aspect_ratio) {
 
 bool point_inside_rect(int point_x, int point_y, int rect_x, int rect_y, int rect_w, int rect_h) {
 	return (point_x > rect_x && point_x < (rect_x + rect_w) && point_y > rect_y && point_y < (rect_y + rect_h));
-}
-
-struct cartesian_coord {
-	float x, y, z;
-};
-
-struct spherical_coord {
-	float r, theta, phi;
-};
-
-spherical_coord spherical_cartesian(cartesian_coord ccoord) {
-	spherical_coord scoord;
-	scoord.r = sqrtf(ccoord.x * ccoord.x + ccoord.y * ccoord.y + ccoord.z * ccoord.z);
-	scoord.theta = atan2f(ccoord.y, ccoord.x);
-	scoord.phi = atan2f(ccoord.z, ccoord.x);
-	return scoord;
 }
 
 vec4 fit_rect_into_rect(float rect_outer_width, float rect_outer_height, float rect_inner_width, float rect_inner_height) {
