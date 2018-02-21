@@ -600,14 +600,14 @@ quat quat_from_rotation(vec3 axis, float angle) {
 
 quat quat_from_between(vec3 a, vec3 b) {
 	float adb = vec3_dot(a, b);
-	if (adb < -0.999999) {
+	if (adb < -0.999999f) {
 		vec3 txa = vec3_cross(vec3{1, 0, 0}, a);
 		if (vec3_len(txa) < 0.000001) {
 			txa = vec3_cross(vec3{0, 1, 0}, a);
 		}
 		return quat_from_rotation(txa, (float)M_PI);
 	}
-	else if (adb > 0.999999) {
+	else if (adb > 0.999999f) {
 		return quat{0, 0, 0, 1};
 	}
 	else {
@@ -617,7 +617,7 @@ quat quat_from_between(vec3 a, vec3 b) {
 		q.y = axb.y;
 		q.z = axb.z;
 		q.w = 1 + adb;
-		return q;
+		return quat_normalize(q);
 	}
 }
 

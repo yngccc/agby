@@ -108,6 +108,72 @@ mat4 fbx_mat4_to_mat4(FbxAMatrix *fbx_mat) {
 	return mat;
 }
 
+int32 fbx_get_element_array_index(uint32 polygon_vertex_index, int32 control_point_index, FbxLayerElement::EMappingMode mapping, FbxLayerElement::EReferenceMode ref, FbxLayerElementArrayTemplate<int> &indices) {
+	if (mapping == FbxLayerElement::eByControlPoint) {
+		if (ref == FbxLayerElement::eDirect) {
+			return control_point_index;
+		}
+		else {
+			return indices[control_point_index];
+		}
+	}
+	else if (mapping == FbxLayerElement::eByPolygonVertex) {
+		if (ref == FbxLayerElement::eDirect) {
+			return polygon_vertex_index;
+		}
+		else {
+			return indices[polygon_vertex_index];
+		}
+	}
+	else {
+		m_assert(false);
+		return 0;
+	}
+}
+
+const char *fbx_enum_to_string(FbxLayerElement::EMappingMode mode) {
+	switch (mode) {
+		case FbxLayerElement::eNone: {
+			return "eNone";
+		} break;
+		case FbxLayerElement::eByControlPoint: {
+			return "eByControlPoint";
+		} break;
+		case FbxLayerElement::eByPolygonVertex: {
+			return "eByPolygonVertex";
+		} break;
+		case FbxLayerElement::eByPolygon: {
+			return "eByPolygon";
+		} break;
+		case FbxLayerElement::eByEdge: {
+			return "eByEdge";
+		} break;
+		case FbxLayerElement::eAllSame: {
+			return "eAllSame";
+		} break;
+		default: {
+			return "";
+		}
+	}
+}
+
+const char *fbx_enum_to_string(FbxLayerElement::EReferenceMode mode) {
+	switch (mode) {
+		case FbxLayerElement::eDirect: {
+			return "eDirect";
+		} break;
+		case FbxLayerElement::eIndex: {
+			return "eIndex";
+		} break;
+		case FbxLayerElement::eIndexToDirect: {
+			return "eIndexToDirect";
+		} break;
+		default: {
+			return "";
+		}
+	}
+}
+
 aa_bound compute_mesh_bound(FbxMesh *fbx_mesh, mat4 transform) {
 	FbxVector4 *control_points = fbx_mesh->GetControlPoints();
 	int32 control_point_count = fbx_mesh->GetControlPointsCount();
@@ -347,10 +413,10 @@ void import_fbx_model(gpk_import_cmd_line cmdl) {
 				fatal("non-triangle(%d vertices) mesh polygon found", fbx_mesh->GetPolygonSize(i));
 			}
 		}
-		if (!fbx_mesh->GenerateNormals()) {
+		if (!fbx_mesh->GenerateNormals(true, true)) {
 			fatal("generate normals failed\n");
 		}
-		if (!fbx_mesh->GenerateTangentsDataForAllUVSets()) {
+		if (!fbx_mesh->GenerateTangentsDataForAllUVSets(true)) {
 			fatal("generate tangents failed\n");
 		}
 		struct mesh *mesh = &meshes[mesh_count++];
@@ -378,17 +444,38 @@ void import_fbx_model(gpk_import_cmd_line cmdl) {
 				}
 			}
 		}
+
 		FbxVector4 *control_points = fbx_mesh->GetControlPoints();
 		int32 *polygon_control_point_indices = fbx_mesh->GetPolygonVertices();
-		FbxArray<FbxVector2> polygon_uvs = {};
-		fbx_mesh->GetPolygonVertexUVs("map1", polygon_uvs);
-		FbxArray<FbxVector4> polygon_normals = {};
-		fbx_mesh->GetPolygonVertexNormals(polygon_normals);
+
+		FbxGeometryElementUV *polygon_element_uvs = fbx_mesh->GetElementUV("map1");
+		FbxLayerElement::EMappingMode polygon_uvs_mapping = polygon_element_uvs->GetMappingMode();
+		FbxLayerElement::EReferenceMode polygon_uvs_ref = polygon_element_uvs->GetReferenceMode();
+		FbxLayerElementArrayTemplate<int32> &polygon_uv_indices = polygon_element_uvs->GetIndexArray();
+		FbxLayerElementArrayTemplate<FbxVector2> &polygon_uvs = polygon_element_uvs->GetDirectArray();
+		
+		FbxGeometryElementNormal *polygon_element_normals = fbx_mesh->GetElementNormal();
+		FbxLayerElement::EMappingMode polygon_normals_mapping = polygon_element_normals->GetMappingMode();
+		FbxLayerElement::EReferenceMode polygon_normals_ref = polygon_element_normals->GetReferenceMode();
+		FbxLayerElementArrayTemplate<int> &polygon_normal_indices = polygon_element_normals->GetIndexArray();
+		FbxLayerElementArrayTemplate<FbxVector4> &polygon_normals = polygon_element_normals->GetDirectArray();
+
 		FbxGeometryElementTangent *polygon_element_tangents = fbx_mesh->GetElementTangent();
-		if (polygon_element_tangents->GetMappingMode() != FbxLayerElement::eByPolygonVertex || polygon_element_tangents->GetReferenceMode() != FbxLayerElement::eDirect) {
-			fatal("tangents bad mapping/reference mode");
-		}
+		FbxLayerElement::EMappingMode polygon_tangents_mapping = polygon_element_tangents->GetMappingMode();
+		FbxLayerElement::EReferenceMode polygon_tangents_ref = polygon_element_tangents->GetReferenceMode();
+		FbxLayerElementArrayTemplate<int> &polygon_tangent_indices = polygon_element_tangents->GetIndexArray();
 		FbxLayerElementArrayTemplate<FbxVector4> &polygon_tangents = polygon_element_tangents->GetDirectArray();
+
+		if (polygon_uvs_mapping != FbxLayerElement::eByControlPoint && polygon_uvs_mapping != FbxLayerElement::eByPolygonVertex) {
+			fatal("uvs bad mapping(\"%s\")", fbx_enum_to_string(polygon_uvs_mapping));
+		}
+		if (polygon_normals_mapping != FbxLayerElement::eByControlPoint && polygon_normals_mapping != FbxLayerElement::eByPolygonVertex) {
+			fatal("normals bad mapping(\"%s\")", fbx_enum_to_string(polygon_normals_mapping));
+		}
+		if (polygon_tangents_mapping != FbxLayerElement::eByControlPoint && polygon_tangents_mapping != FbxLayerElement::eByPolygonVertex) {
+			fatal("tangents bad mapping(\"%s\")", fbx_enum_to_string(polygon_tangents_mapping));
+		}
+
 		struct unique_control_point {
 			struct {
 				uv uv;
@@ -400,11 +487,12 @@ void import_fbx_model(gpk_import_cmd_line cmdl) {
 		};
 		unique_control_point *unique_control_points = (struct unique_control_point *)calloc(fbx_mesh->GetControlPointsCount(), sizeof(struct unique_control_point));
 		for (uint32 i = 0; i < polygon_vertex_count; i += 1) {
-			unique_control_point *ucp = &unique_control_points[polygon_control_point_indices[i]];
+			int32 control_point_index = polygon_control_point_indices[i];
+			unique_control_point *ucp = &unique_control_points[control_point_index];
 			m_assert(ucp->element_count < m_countof(ucp->elements));
-			FbxVector2 fbx_uv = polygon_uvs[i];
-			FbxVector4 fbx_normal = polygon_normals[i];
-			FbxVector4 fbx_tangent = polygon_tangents[i];
+			FbxVector2 &fbx_uv = polygon_uvs[fbx_get_element_array_index(i, control_point_index, polygon_uvs_mapping, polygon_uvs_ref, polygon_uv_indices)];
+			FbxVector4 &fbx_normal = polygon_normals[fbx_get_element_array_index(i, control_point_index, polygon_normals_mapping, polygon_normals_ref, polygon_normal_indices)];
+			FbxVector4 &fbx_tangent = polygon_tangents[fbx_get_element_array_index(i, control_point_index, polygon_tangents_mapping, polygon_tangents_ref, polygon_tangent_indices)];
 			uv uv = {(float)fbx_uv[0], (float)(1.0 - fbx_uv[1])};
 			normal normal = {(int16)round(fbx_normal[0] * 32767.0), (int16)round(fbx_normal[1] * 32767.0), (int16)round(fbx_normal[2] * 32767.0)};
 			tangent tangent = {(int16)round(fbx_tangent[0] * 32767.0), (int16)round(fbx_tangent[1] * 32767.0), (int16)round(fbx_tangent[2] * 32767.0)};

@@ -485,6 +485,10 @@ bool peek_window_message(window *window) {
 	return false;
 };
 
+void show_cursor(bool show) {
+	ShowCursor(show);
+}
+
 void pin_cursor(bool pin) {
 	HWND hwnd = GetActiveWindow();
 	if (!hwnd) {

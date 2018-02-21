@@ -212,7 +212,7 @@ void initialize_level(level *level, vulkan *vulkan) {
 	}
 
 	level->assets_memory_arena.name = "assets";
-	level->assets_memory_arena.capacity = m_megabytes(16);
+	level->assets_memory_arena.capacity = m_megabytes(64);
 	m_assert(allocate_virtual_memory(level->assets_memory_arena.capacity, &level->assets_memory_arena.memory));
 
 	level->model_capacity = 1024;
@@ -448,16 +448,20 @@ void level_entity_component_end_frame(level *level) {
 	level->entity_flags = new_entity_flags;
 	level->entity_infos = new_entity_infos;
 	level->entity_transforms = new_entity_transforms;
+	level->entity_count = new_entity_count;
+
 	level->entity_modifications = new_entity_modifications;
+	level->entity_addition = nullptr;
+
 	level->render_components = new_render_components;
 	level->collision_components = new_collision_components;
 	level->light_components = new_light_components;
-	level->entity_count = new_entity_count;
+	level->physics_components = new_physics_components;
+
 	level->render_component_count = new_render_component_count;
 	level->collision_component_count = new_collision_component_count;
 	level->light_component_count = new_light_component_count;
-
-	level->entity_addition = nullptr;
+	level->physics_component_count = new_physics_component_count;
 }
 
 uint32 level_get_model_index(level *level, const char *model_file_name) {
@@ -1144,115 +1148,6 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 	close_file_mapping(file_mapping);
 }
 
-void level_update_player_movement(level *level, double last_frame_time) {
-	// player *player = &level->players[level->current_player_index];
-	// vec3 player_facing = quat_to_mat3(player->transform.rotation) * vec3{0, 0, 1};
-	// vec3 player_facing_left = vec3_normalize(vec3_cross(vec3{0, 1, 0}, player_facing));
-	// bool player_jumping = player->current_jump_time > 0;
-	// bool player_falling = false;
-	// float player_fall_speed = 10.0;
-	// double player_fall_time = 0;
-	// {
-	//   terrain *terrain = &level->terrains[level->current_terrain_index];
-	//   vec3 player_bound_bottom_center = aa_bound_bottom_center(aa_bound_transform(player->bound, player->transform));
-	//   double px = clamp((double)player_bound_bottom_center.x / (double)terrain->size + 0.5, 0.0, 1.0);
-	//   double py = clamp((double)player_bound_bottom_center.z / (double)terrain->size + 0.5, 0.0, 1.0);
-	//   uint32 x = (uint32)(terrain->height_map_size * px);
-	//   uint32 y = (uint32)(terrain->height_map_size * py);
-	//   float terrain_height = terrain->height_map[terrain->height_map_size * y + x];
-	//   float player_terrain_delta_height = player_bound_bottom_center.y - terrain_height;
-	//   player_fall_time = (double)player_terrain_delta_height / (double)player_fall_speed;
-	//   player_falling = !player_jumping && player_fall_time > last_frame_time;
-	//   if (!player_jumping && player_fall_time <= last_frame_time) {
-	//     player->transform.translation.y -= player_terrain_delta_height;
-	//  }
-	//}
-	// if (player_falling) {
-	//   player->transform.translation.y -= (float)last_frame_time * player_fall_speed;
-	//}
-	// else if (player_jumping) {
-	//   player->transform.translation += player->velocity * (float)last_frame_time;
-	//   double player_new_jump_time = max(player->current_jump_time - last_frame_time, 0.0);
-	//   player->transform.translation.y += (float)(sin(player_new_jump_time / player->jump_time * M_PI) - sin(player->current_jump_time / player->jump_time * M_PI)) * player->jump_height;
-	//   player->current_jump_time = player_new_jump_time;
-	//}
-	// else {
-	//   player->velocity = {0, 0, 0};
-	//   if (ImGui::IsKeyDown('W')) {
-	//     player->velocity += player_facing * player->walk_speed;
-	//  }
-	//   if (ImGui::IsKeyDown('S')) {
-	//     player->velocity -= player_facing * player->walk_speed;
-	//  }
-	//   if (ImGui::IsKeyDown('A')) {
-	//     player->velocity += player_facing_left * player->walk_speed;
-	//  }
-	//   if (ImGui::IsKeyDown('D')) {
-	//     player->velocity -= player_facing_left * player->walk_speed;        
-	//  }
-	//   if (ImGui::IsKeyPressed(' ')) {
-	//     player->current_jump_time = player->jump_time;
-	//  }
-	//   player->transform.translation += player->velocity * (float)last_frame_time;
-	// double player_new_jump_time = max(player->current_jump_time - last_frame_time, 0.0);
-	// player->transform.translation.y += (float)(sin(player_new_jump_time / player->jump_time * M_PI) - sin(player->current_jump_time / player->jump_time * M_PI)) * player->jump_height;
-	// player->current_jump_time = player_new_jump_time;
-	//}
-}
-
-void level_update_player_camera(level *level, double last_frame_time, int32 raw_mouse_dx, int32 raw_mouse_dy) {
-	// player *player = &level->players[level->current_player_index];
-
-	// if (ImGui::GetIO().KeyCtrl && ImGui::GetIO().MouseWheel != 0) {
-	//   level->camera_zoom -= ImGui::GetIO().MouseWheel * 0.1f;
-	//   level->camera_zoom = clamp(level->camera_zoom, 1.0f, 16.0f);
-	//}
-	// else if (ImGui::GetIO().KeyCtrl && (ImGui::IsKeyDown(VK_UP) || ImGui::IsKeyDown(VK_DOWN))) {
-	//   level->camera_zoom -=  (ImGui::IsKeyDown(VK_UP) ? (float)last_frame_time : -(float)last_frame_time) * 3.0f;
-	//   level->camera_zoom = clamp(level->camera_zoom, 1.0f, 16.0f);
-	//}
-
-	// if (ImGui::IsMouseClicked(0) || ImGui::IsMouseClicked(1)) {
-	//   pin_cursor(true);
-	//   level->camera_moving = true;
-	//}
-	// if (level->camera_moving) {
-	//   if ((ImGui::IsMouseReleased(0) && !ImGui::IsMouseDown(1)) || (ImGui::IsMouseReleased(1) && !ImGui::IsMouseDown(0))) {
-	//     pin_cursor(false);
-	//     level->camera_moving = false;
-	//  }
-	//   else {
-	//     float rotate_sensitivity = 0.003f;
-	//     level->camera_rotates[0] += raw_mouse_dy * rotate_sensitivity;
-	//     level->camera_rotates[0] = clamp(level->camera_rotates[0], degree_to_radian(0), degree_to_radian(80));
-	//     if (ImGui::IsMouseDown(0)) {
-	//       level->camera_rotates[1] += raw_mouse_dx * rotate_sensitivity;
-	//       level->camera_rotates[1] = wrap_angle(level->camera_rotates[1]);
-	//    }
-	//     else if (ImGui::IsMouseDown(1)) {
-	//       if (raw_mouse_dx != 0 || raw_mouse_dy != 0) {
-	//         player->transform.rotation = quat_compose(player->transform.rotation, quat_from_rotation(vec3{0, -1, 0}, level->camera_rotates[1]));
-	//         level->camera_rotates[1] = 0;
-	//         player->transform.rotation = quat_compose(player->transform.rotation, quat_from_rotation(vec3{0, -1, 0}, raw_mouse_dx * rotate_sensitivity));
-	//      }
-	//    }
-	//  }
-	//}
-
-	// vec3 player_facing = quat_to_mat3(player->transform.rotation) * vec3{0, 0, 1};
-	// vec3 player_facing_left = vec3_normalize(vec3_cross(vec3{0, 1, 0}, player_facing));
-	// aa_bound player_bound = aa_bound_transform(player->bound, player->transform);
-
-	// vec3 camera_translate = -player_facing * (player_bound.max.z - player_bound.min.z) * level->camera_zoom;
-	// camera_translate = mat3_from_rotation(vec3{player_facing_left}, level->camera_rotates[0]) * camera_translate;
-	// camera_translate = mat3_from_rotation(vec3{0, -1, 0}, level->camera_rotates[1]) * camera_translate;
-
-	// level->camera.position = aa_bound_center(player_bound);
-	// level->camera.position += camera_translate;
-	// level->camera.view = vec3_normalize(-camera_translate);
-	// level->camera.up = vec3_normalize(vec3_cross(vec3_cross(level->camera.view, vec3{0, 1, 0}), level->camera.view));
-}
-
 camera level_get_player_camera(level *level, vulkan *vulkan, float r, float theta, float phi) {
 	vec3 center = {};
 	vec3 translate = {};
@@ -1260,8 +1155,7 @@ camera level_get_player_camera(level *level, vulkan *vulkan, float r, float thet
 		transform *transform = &level->entity_transforms[level->player_entity_index];
 		quat rotate_0 = quat_from_rotation(vec3{1, 0, 0}, theta);
 		quat rotate_1 = quat_from_rotation(vec3{0, 1, 0}, phi);
-		quat rotate_2 = transform->rotate;
-		translate = rotate_2 * rotate_1 * rotate_0 * vec3{0, 0, -r};
+		translate = rotate_1 * rotate_0 * vec3{0, 0, -r};
 		if (level->entity_flags[level->player_entity_index] & component_flag_render) {
 			render_component *render_component = entity_get_render_component(level, level->player_entity_index);
 			center = aa_bound_center(level->models[render_component->model_index].bound);
@@ -1273,7 +1167,7 @@ camera level_get_player_camera(level *level, vulkan *vulkan, float r, float thet
 	}
 	else {
 		center = {0, 0, 0};
-		translate = vec3_normalize({1, 1, 1}) * r;
+		translate = vec3_normalize({0, 1, -1}) * r;
 	}
 	camera camera = {};
 	camera.position = center + translate;
