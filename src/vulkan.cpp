@@ -1222,7 +1222,7 @@ void vulkan_memories_initialize(vulkan *vulkan) {
 		vkDestroyImage(vulkan->device.device, vulkan_image, nullptr);
 		uint32 memory_type_index = 0;
 		m_assert(find_memory_type_index(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memory_type_index));
-		m_assert(allocate_memory_type(memory_type_index, m_megabytes(4), &vulkan->memories.common_images_memory));
+		m_assert(allocate_memory_type(memory_type_index, m_megabytes(16), &vulkan->memories.common_images_memory));
 	}
 	{ // level images
 		VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};

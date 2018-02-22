@@ -52,32 +52,6 @@ struct skybox {
 	char file_name[32];
 };
 
-struct entity_info {
-	char name[32];
-};
-
-enum component_flag {
-	component_flag_render    = 1 << 0,
-	component_flag_collision = 1 << 1,
-	component_flag_light     = 1 << 2,
-	component_flag_physics   = 1 << 3
-};
-
-struct render_component {
-	uint32 model_index;
-	vec2 uv_scale;
-	float height_map_scale;
-};
-
-struct collision_component {
-	plane *planes;
-	sphere *spheres;
-	aa_bound *bounds;
-	uint32 plane_count;
-	uint32 sphere_count;
-	uint32 bound_count;
-};
-
 enum light_type {
 	light_type_ambient,
 	light_type_directional,
@@ -99,7 +73,33 @@ struct point_light {
 	float attenuation;
 };
 
-struct light_component {
+struct entity_info {
+	char name[32];
+};
+
+enum entity_component_flag {
+	entity_component_flag_render    = 1 << 0,
+	entity_component_flag_collision = 1 << 1,
+	entity_component_flag_light     = 1 << 2,
+	entity_component_flag_physics   = 1 << 3
+};
+
+struct entity_render_component {
+	uint32 model_index;
+	vec2 uv_scale;
+	float height_map_scale;
+};
+
+struct entity_collision_component {
+	plane *planes;
+	sphere *spheres;
+	aa_bound *bounds;
+	uint32 plane_count;
+	uint32 sphere_count;
+	uint32 bound_count;
+};
+
+struct entity_light_component {
 	light_type light_type;
 	union {
 		ambient_light ambient_light;
@@ -108,7 +108,7 @@ struct light_component {
 	};
 };
 
-struct physics_component {
+struct entity_physics_component {
 	vec3 velocity;
 };
 
@@ -121,20 +121,20 @@ struct entity_modification {
 	uint32 *flag;
 	entity_info *info;
 	transform *transform;
-	render_component *render_component;
-	collision_component *collision_component;
-	light_component *light_component;
-	physics_component *physics_component;
+	entity_render_component *entity_render_component;
+	entity_collision_component *entity_collision_component;
+	entity_light_component *entity_light_component;
+	entity_physics_component *entity_physics_component;
 };
 
 struct entity_addition {
 	uint32 flag;
 	entity_info info;
 	transform transform;
-	render_component *render_component;
-	collision_component *collision_component;
-	light_component *light_component;
-	physics_component *physics_component;
+	entity_render_component *entity_render_component;
+	entity_collision_component *entity_collision_component;
+	entity_light_component *entity_light_component;
+	entity_physics_component *entity_physics_component;
 	entity_addition *next;
 };
 
@@ -164,10 +164,10 @@ struct level {
 	transform *entity_transforms;
 	uint32 entity_count;
 
-	render_component *render_components;
-	collision_component *collision_components;
-	light_component *light_components;
-	physics_component *physics_components;
+	entity_render_component *render_components;
+	entity_collision_component *collision_components;
+	entity_light_component *light_components;
+	entity_physics_component *physics_components;
 	uint32 render_component_count;
 	uint32 collision_component_count;
 	uint32 light_component_count;
@@ -227,58 +227,58 @@ void initialize_level(level *level, vulkan *vulkan) {
 	vulkan->memories.level_images_memory.size = 0;
 }
 
-render_component *entity_get_render_component(level *level, uint32 entity_index) {
+entity_render_component *entity_get_render_component(level *level, uint32 entity_index) {
 	m_assert(entity_index < level->entity_count);
-	m_assert(level->entity_flags[entity_index] & component_flag_render);
+	m_assert(level->entity_flags[entity_index] & entity_component_flag_render);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag_render) {
+		if (level->entity_flags[i] & entity_component_flag_render) {
 			index += 1;
 		}
 	}
 	return &level->render_components[index];
 }
 
-collision_component *entity_get_collision_component(level *level, uint32 entity_index) {
+entity_collision_component *entity_get_collision_component(level *level, uint32 entity_index) {
 	m_assert(entity_index < level->entity_count);
-	m_assert(level->entity_flags[entity_index] & component_flag_collision);
+	m_assert(level->entity_flags[entity_index] & entity_component_flag_collision);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag_collision) {
+		if (level->entity_flags[i] & entity_component_flag_collision) {
 			index += 1;
 		}
 	}
 	return &level->collision_components[index];
 }
 
-light_component *entity_get_light_component(level *level, uint32 entity_index) {
+entity_light_component *entity_get_light_component(level *level, uint32 entity_index) {
 	m_assert(entity_index < level->entity_count);
-	m_assert(level->entity_flags[entity_index] & component_flag_light);
+	m_assert(level->entity_flags[entity_index] & entity_component_flag_light);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag_light) {
+		if (level->entity_flags[i] & entity_component_flag_light) {
 			index += 1;
 		}
 	}
 	return &level->light_components[index];
 }
 
-physics_component *entity_get_physics_component(level *level, uint32 entity_index) {
+entity_physics_component *entity_get_physics_component(level *level, uint32 entity_index) {
 	m_assert(entity_index < level->entity_count);
-	m_assert(level->entity_flags[entity_index] & component_flag_physics);
+	m_assert(level->entity_flags[entity_index] & entity_component_flag_physics);
 	uint32 index = 0;
 	for (uint32 i = 0; i < entity_index; i += 1) {
-		if (level->entity_flags[i] & component_flag_physics) {
+		if (level->entity_flags[i] & entity_component_flag_physics) {
 			index += 1;
 		}
 	}
 	return &level->physics_components[index];
 }
 
-uint32 component_get_entity_index(level *level, uint32 component_index, component_flag component_flag) {
+uint32 entity_component_get_entity_index(level *level, uint32 component_index, entity_component_flag entity_component_flag) {
 	uint32 index = 0;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
-		if (level->entity_flags[i] & component_flag) {
+		if (level->entity_flags[i] & entity_component_flag) {
 			if (index == component_index) {
 				return i;
 			}
@@ -289,7 +289,7 @@ uint32 component_get_entity_index(level *level, uint32 component_index, componen
 	return UINT32_MAX;
 }
 
-void level_entity_component_end_frame(level *level) {
+void level_process_entity_modifications_additions(level *level) {
 	uint32 new_entity_count = level->entity_count;
 	uint32 new_render_component_count = level->render_component_count;
 	uint32 new_collision_component_count = level->collision_component_count;
@@ -301,16 +301,16 @@ void level_entity_component_end_frame(level *level) {
 			entity_modification *em = &level->entity_modifications[i];
 			if (em->remove) {
 				new_entity_count -= 1;
-				if (entity_flag & component_flag_render) {
+				if (entity_flag & entity_component_flag_render) {
 					new_render_component_count -= 1;
 				}
-				if (entity_flag & component_flag_collision) {
+				if (entity_flag & entity_component_flag_collision) {
 					new_collision_component_count -= 1;
 				}
-				if (entity_flag & component_flag_light) {
+				if (entity_flag & entity_component_flag_light) {
 					new_light_component_count -= 1;
 				}
-				if (entity_flag & component_flag_physics) {
+				if (entity_flag & entity_component_flag_physics) {
 					new_physics_component_count -= 1;
 				}
 			}
@@ -318,25 +318,25 @@ void level_entity_component_end_frame(level *level) {
 				if (em->remove_render_component) {
 					new_render_component_count -= 1;
 				}
-				else if (em->render_component && !(entity_flag & component_flag_render)) {
+				else if (em->entity_render_component && !(entity_flag & entity_component_flag_render)) {
 					new_render_component_count += 1;
 				}
 				if (em->remove_collision_component) {
 					new_collision_component_count -= 1;
 				}
-				else if (em->collision_component && !(entity_flag & component_flag_collision)) {
+				else if (em->entity_collision_component && !(entity_flag & entity_component_flag_collision)) {
 					new_collision_component_count += 1;
 				}
 				if (em->remove_light_component) {
 					new_light_component_count -= 1;
 				}
-				else if (em->light_component && !(entity_flag & component_flag_light)) {
+				else if (em->entity_light_component && !(entity_flag & entity_component_flag_light)) {
 					new_light_component_count += 1;
 				}
 				if (em->remove_physics_component) {
 					new_physics_component_count -= 1;
 				}
-				else if (em->physics_component && !(entity_flag & component_flag_physics)) {
+				else if (em->entity_physics_component && !(entity_flag & entity_component_flag_physics)) {
 					new_physics_component_count += 1;
 				}
 			}
@@ -344,16 +344,16 @@ void level_entity_component_end_frame(level *level) {
 		entity_addition *ea = level->entity_addition;
 		while (ea) {
 			new_entity_count += 1;
-			if (ea->render_component) {
+			if (ea->entity_render_component) {
 				new_render_component_count += 1;
 			}
-			if (ea->collision_component) {
+			if (ea->entity_collision_component) {
 				new_collision_component_count += 1;
 			}
-			if (ea->light_component) {
+			if (ea->entity_light_component) {
 				new_light_component_count += 1;
 			}
-			if (ea->physics_component) {
+			if (ea->entity_physics_component) {
 				new_physics_component_count += 1;
 			}
 			ea = ea->next;
@@ -368,29 +368,29 @@ void level_entity_component_end_frame(level *level) {
 	entity_info *new_entity_infos = memory_arena_allocate<entity_info>(entity_components_memory_arena, new_entity_count);
 	transform *new_entity_transforms = memory_arena_allocate<transform>(entity_components_memory_arena, new_entity_count);
 	entity_modification *new_entity_modifications = memory_arena_allocate<entity_modification>(entity_components_memory_arena, new_entity_count);
-	render_component *new_render_components = memory_arena_allocate<render_component>(entity_components_memory_arena, new_render_component_count);
-	collision_component *new_collision_components = memory_arena_allocate<collision_component>(entity_components_memory_arena, new_collision_component_count);
-	light_component *new_light_components = memory_arena_allocate<light_component>(entity_components_memory_arena, new_light_component_count);
-	physics_component *new_physics_components = memory_arena_allocate<physics_component>(entity_components_memory_arena, new_physics_component_count);
+	entity_render_component *new_render_components = memory_arena_allocate<entity_render_component>(entity_components_memory_arena, new_render_component_count);
+	entity_collision_component *new_collision_components = memory_arena_allocate<entity_collision_component>(entity_components_memory_arena, new_collision_component_count);
+	entity_light_component *new_light_components = memory_arena_allocate<entity_light_component>(entity_components_memory_arena, new_light_component_count);
+	entity_physics_component *new_physics_components = memory_arena_allocate<entity_physics_component>(entity_components_memory_arena, new_physics_component_count);
 
-	auto deep_copy_collision_component = [entity_components_memory_arena](collision_component *cc) -> collision_component {
-		collision_component collision_component = *cc;
-		if (collision_component.plane_count > 0) {
-			plane *planes = memory_arena_allocate<struct plane>(entity_components_memory_arena, collision_component.plane_count);
-			memcpy(planes, collision_component.planes, collision_component.plane_count * sizeof(struct plane));
-			collision_component.planes = planes;
+	auto deep_copy_collision_component = [entity_components_memory_arena](entity_collision_component *cc) -> entity_collision_component {
+		entity_collision_component entity_collision_component = *cc;
+		if (entity_collision_component.plane_count > 0) {
+			plane *planes = memory_arena_allocate<struct plane>(entity_components_memory_arena, entity_collision_component.plane_count);
+			memcpy(planes, entity_collision_component.planes, entity_collision_component.plane_count * sizeof(struct plane));
+			entity_collision_component.planes = planes;
 		}
-		if (collision_component.sphere_count > 0) {
-			sphere *spheres = memory_arena_allocate<struct sphere>(entity_components_memory_arena, collision_component.sphere_count);
-			memcpy(spheres, collision_component.spheres, collision_component.sphere_count * sizeof(struct sphere));
-			collision_component.spheres = spheres;
+		if (entity_collision_component.sphere_count > 0) {
+			sphere *spheres = memory_arena_allocate<struct sphere>(entity_components_memory_arena, entity_collision_component.sphere_count);
+			memcpy(spheres, entity_collision_component.spheres, entity_collision_component.sphere_count * sizeof(struct sphere));
+			entity_collision_component.spheres = spheres;
 		}
-		if (collision_component.bound_count > 0) {
-			aa_bound *bounds = memory_arena_allocate<struct aa_bound>(entity_components_memory_arena, collision_component.bound_count);
-			memcpy(bounds, collision_component.bounds, collision_component.bound_count * sizeof(struct aa_bound));
-			collision_component.bounds = bounds;
+		if (entity_collision_component.bound_count > 0) {
+			aa_bound *bounds = memory_arena_allocate<struct aa_bound>(entity_components_memory_arena, entity_collision_component.bound_count);
+			memcpy(bounds, entity_collision_component.bounds, entity_collision_component.bound_count * sizeof(struct aa_bound));
+			entity_collision_component.bounds = bounds;
 		}
-		return collision_component;
+		return entity_collision_component;
 	};
 	
 	uint32 entity_index = 0;
@@ -405,23 +405,23 @@ void level_entity_component_end_frame(level *level) {
 			new_entity_infos[entity_index] = em->info ? *em->info : level->entity_infos[i];
 			new_entity_transforms[entity_index] = em->transform ? *em->transform : level->entity_transforms[i];
 			if (!em->remove_render_component) {
-				if (level->entity_flags[i] & component_flag_render || em->render_component) {
-					new_render_components[render_component_index++] = em->render_component ? *em->render_component : *entity_get_render_component(level, i);
+				if (level->entity_flags[i] & entity_component_flag_render || em->entity_render_component) {
+					new_render_components[render_component_index++] = em->entity_render_component ? *em->entity_render_component : *entity_get_render_component(level, i);
 				}
 			}
 			if (!em->remove_collision_component) {
-				if (level->entity_flags[i] & component_flag_collision || em->collision_component) {
-					new_collision_components[collision_component_index++] = deep_copy_collision_component(em->collision_component ? em->collision_component : entity_get_collision_component(level, i));
+				if (level->entity_flags[i] & entity_component_flag_collision || em->entity_collision_component) {
+					new_collision_components[collision_component_index++] = deep_copy_collision_component(em->entity_collision_component ? em->entity_collision_component : entity_get_collision_component(level, i));
 				}
 			}
 			if (!em->remove_light_component) {
-				if (level->entity_flags[i] & component_flag_light || em->light_component) {
-					new_light_components[light_component_index++] = em->light_component ? *em->light_component : *entity_get_light_component(level, i);
+				if (level->entity_flags[i] & entity_component_flag_light || em->entity_light_component) {
+					new_light_components[light_component_index++] = em->entity_light_component ? *em->entity_light_component : *entity_get_light_component(level, i);
 				}
 			}
 			if (!em->remove_physics_component) {
-				if (level->entity_flags[i] & component_flag_physics || em->physics_component) {
-					new_physics_components[physics_component_index++] = em->physics_component ? *em->physics_component : *entity_get_physics_component(level, i);
+				if (level->entity_flags[i] & entity_component_flag_physics || em->entity_physics_component) {
+					new_physics_components[physics_component_index++] = em->entity_physics_component ? *em->entity_physics_component : *entity_get_physics_component(level, i);
 				}
 			}
 			entity_index += 1;
@@ -432,14 +432,14 @@ void level_entity_component_end_frame(level *level) {
 		new_entity_flags[entity_index] = ea->flag;
 		new_entity_infos[entity_index] = ea->info;
 		new_entity_transforms[entity_index] = ea->transform;
-		if (ea->render_component) {
-			new_render_components[render_component_index++] = *ea->render_component;
+		if (ea->entity_render_component) {
+			new_render_components[render_component_index++] = *ea->entity_render_component;
 		}
-		if (ea->collision_component) {
-			new_collision_components[collision_component_index++] = deep_copy_collision_component(ea->collision_component);
+		if (ea->entity_collision_component) {
+			new_collision_components[collision_component_index++] = deep_copy_collision_component(ea->entity_collision_component);
 		}
-		if (ea->light_component) {
-			new_light_components[light_component_index++] = *ea->light_component;
+		if (ea->entity_light_component) {
+			new_light_components[light_component_index++] = *ea->entity_light_component;
 		}
 		entity_index += 1;
 		ea = ea->next;
@@ -737,31 +737,31 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		transform->translate.y = json_transform_translation[1].GetFloat();
 		transform->translate.z = json_transform_translation[2].GetFloat();
 	};
-	auto read_json_render_component = [level](rapidjson::Value::Object render_component_json, render_component *render_component) {
-		render_component->model_index = level_get_model_index(level, render_component_json["model_file_name"].GetString());
+	auto read_json_render_component = [level](rapidjson::Value::Object render_component_json, entity_render_component *entity_render_component) {
+		entity_render_component->model_index = level_get_model_index(level, render_component_json["model_file_name"].GetString());
 		if (render_component_json.HasMember("uv_scale")) {
 			rapidjson::Value::Array uv_scale = render_component_json["uv_scale"].GetArray();
-			render_component->uv_scale[0] = uv_scale[0].GetFloat();
-			render_component->uv_scale[1] = uv_scale[1].GetFloat();
+			entity_render_component->uv_scale[0] = uv_scale[0].GetFloat();
+			entity_render_component->uv_scale[1] = uv_scale[1].GetFloat();
 		}
 		else {
-			render_component->uv_scale[0] = 1;
-			render_component->uv_scale[1] = 1;
+			entity_render_component->uv_scale[0] = 1;
+			entity_render_component->uv_scale[1] = 1;
 		}
 		if (render_component_json.HasMember("height_map_scale")) {
-			render_component->height_map_scale = render_component_json["height_map_scale"].GetFloat();
+			entity_render_component->height_map_scale = render_component_json["height_map_scale"].GetFloat();
 		}
 		else {
-			render_component->height_map_scale = 0;
+			entity_render_component->height_map_scale = 0;
 		}
 	};
-	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, collision_component *collision_component) {
+	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, entity_collision_component *entity_collision_component) {
 		memory_arena *memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
 		if (collision_component_json.HasMember("planes")) {
 			rapidjson::Value::Array planes = collision_component_json["planes"].GetArray();
 			if (planes.Size() > 0) {
-				collision_component->planes = memory_arena_allocate<plane>(memory_arena, planes.Size());
-				collision_component->plane_count = planes.Size();
+				entity_collision_component->planes = memory_arena_allocate<plane>(memory_arena, planes.Size());
+				entity_collision_component->plane_count = planes.Size();
 				for (uint32 i = 0; i < planes.Size(); i += 1) {
 				}
 			}
@@ -769,8 +769,8 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		if (collision_component_json.HasMember("spheres")) {
 			rapidjson::Value::Array spheres = collision_component_json["spheres"].GetArray();
 			if (spheres.Size() > 0) {
-				collision_component->spheres = memory_arena_allocate<sphere>(memory_arena, spheres.Size());
-				collision_component->sphere_count = spheres.Size();
+				entity_collision_component->spheres = memory_arena_allocate<sphere>(memory_arena, spheres.Size());
+				entity_collision_component->sphere_count = spheres.Size();
 				for (uint32 i = 0; i < spheres.Size(); i += 1) {
 				}
 			}
@@ -778,65 +778,65 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		if (collision_component_json.HasMember("bounds")) {
 			rapidjson::Value::Array bounds = collision_component_json["bounds"].GetArray();
 			if (bounds.Size() > 0) {
-				collision_component->bounds = memory_arena_allocate<aa_bound>(memory_arena, bounds.Size());
-				collision_component->bound_count = bounds.Size();
+				entity_collision_component->bounds = memory_arena_allocate<aa_bound>(memory_arena, bounds.Size());
+				entity_collision_component->bound_count = bounds.Size();
 				for (uint32 i = 0; i < bounds.Size(); i += 1) {
 					rapidjson::Value::Object bound = bounds[i].GetObject();
 					rapidjson::Value::Array min = bound["min"].GetArray();
 					rapidjson::Value::Array max = bound["max"].GetArray();
-					collision_component->bounds[i].min.x = min[0].GetFloat();
-					collision_component->bounds[i].min.y = min[1].GetFloat();
-					collision_component->bounds[i].min.z = min[2].GetFloat();
-					collision_component->bounds[i].max.x = max[0].GetFloat();
-					collision_component->bounds[i].max.y = max[1].GetFloat();
-					collision_component->bounds[i].max.z = max[2].GetFloat();
+					entity_collision_component->bounds[i].min.x = min[0].GetFloat();
+					entity_collision_component->bounds[i].min.y = min[1].GetFloat();
+					entity_collision_component->bounds[i].min.z = min[2].GetFloat();
+					entity_collision_component->bounds[i].max.x = max[0].GetFloat();
+					entity_collision_component->bounds[i].max.y = max[1].GetFloat();
+					entity_collision_component->bounds[i].max.z = max[2].GetFloat();
 				}
 			}
 		}
 	};
-	auto read_json_light_component = [](rapidjson::Value::Object light_component_json, light_component *light_component) {
+	auto read_json_light_component = [](rapidjson::Value::Object light_component_json, entity_light_component *entity_light_component) {
 		const char *light_type = light_component_json["light_type"].GetString();
 		if (!strcmp(light_type, "ambient")) {
-			light_component->light_type = light_type_ambient;
+			entity_light_component->light_type = light_type_ambient;
 			rapidjson::Value::Array color = light_component_json["color"].GetArray();
-			light_component->ambient_light.color.r = color[0].GetFloat();
-			light_component->ambient_light.color.g = color[1].GetFloat();
-			light_component->ambient_light.color.b = color[2].GetFloat();
+			entity_light_component->ambient_light.color.r = color[0].GetFloat();
+			entity_light_component->ambient_light.color.g = color[1].GetFloat();
+			entity_light_component->ambient_light.color.b = color[2].GetFloat();
 		}
 		else if (!strcmp(light_type, "directional")) {
-			light_component->light_type = light_type_directional;
+			entity_light_component->light_type = light_type_directional;
 			rapidjson::Value::Array color = light_component_json["color"].GetArray();
 			rapidjson::Value::Array direction = light_component_json["direction"].GetArray();
-			light_component->directional_light.color.r = color[0].GetFloat();
-			light_component->directional_light.color.g = color[1].GetFloat();
-			light_component->directional_light.color.b = color[2].GetFloat();
-			light_component->directional_light.direction.x = direction[0].GetFloat();
-			light_component->directional_light.direction.y = direction[1].GetFloat();
-			light_component->directional_light.direction.z = direction[2].GetFloat();
+			entity_light_component->directional_light.color.r = color[0].GetFloat();
+			entity_light_component->directional_light.color.g = color[1].GetFloat();
+			entity_light_component->directional_light.color.b = color[2].GetFloat();
+			entity_light_component->directional_light.direction.x = direction[0].GetFloat();
+			entity_light_component->directional_light.direction.y = direction[1].GetFloat();
+			entity_light_component->directional_light.direction.z = direction[2].GetFloat();
 		}
 		else if (!strcmp(light_type, "point")) {
-			light_component->light_type = light_type_point;
+			entity_light_component->light_type = light_type_point;
 			rapidjson::Value::Array color = light_component_json["color"].GetArray();
 			rapidjson::Value::Array position = light_component_json["position"].GetArray();
 			float attenuation = light_component_json["attenuation"].GetFloat();
-			light_component->point_light.color.r = color[0].GetFloat();
-			light_component->point_light.color.g = color[1].GetFloat();
-			light_component->point_light.color.b = color[2].GetFloat();
-			light_component->point_light.position.x = position[0].GetFloat();
-			light_component->point_light.position.y = position[1].GetFloat();
-			light_component->point_light.position.z = position[2].GetFloat();
-			light_component->point_light.attenuation = attenuation;
+			entity_light_component->point_light.color.r = color[0].GetFloat();
+			entity_light_component->point_light.color.g = color[1].GetFloat();
+			entity_light_component->point_light.color.b = color[2].GetFloat();
+			entity_light_component->point_light.position.x = position[0].GetFloat();
+			entity_light_component->point_light.position.y = position[1].GetFloat();
+			entity_light_component->point_light.position.z = position[2].GetFloat();
+			entity_light_component->point_light.attenuation = attenuation;
 		}
 		else {
 			fatal("invalid json light type");
 		}
 	};
-	auto read_json_physics_component = [level](rapidjson::Value::Object physics_component_json, physics_component *physics_component) {
+	auto read_json_physics_component = [level](rapidjson::Value::Object physics_component_json, entity_physics_component *entity_physics_component) {
 		if (physics_component_json.HasMember("velocity")) {
 			rapidjson::Value::Array velocity = physics_component_json["velocity"].GetArray();
-			physics_component->velocity.x = velocity[0].GetFloat();
-			physics_component->velocity.y = velocity[1].GetFloat();
-			physics_component->velocity.z = velocity[2].GetFloat();
+			entity_physics_component->velocity.x = velocity[0].GetFloat();
+			entity_physics_component->velocity.y = velocity[1].GetFloat();
+			entity_physics_component->velocity.z = velocity[2].GetFloat();
 		}
 	};
 
@@ -875,10 +875,10 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	level->entity_infos = memory_arena_allocate<entity_info>(entity_components_memory_arena, level->entity_count);
 	level->entity_transforms = memory_arena_allocate<transform>(entity_components_memory_arena, level->entity_count);
 	level->entity_modifications = memory_arena_allocate<entity_modification>(entity_components_memory_arena, level->entity_count);
-	level->render_components = memory_arena_allocate<render_component>(entity_components_memory_arena, level->render_component_count);
-	level->collision_components = memory_arena_allocate<collision_component>(entity_components_memory_arena, level->collision_component_count);
-	level->light_components = memory_arena_allocate<light_component>(entity_components_memory_arena, level->light_component_count);
-	level->physics_components = memory_arena_allocate<physics_component>(entity_components_memory_arena, level->physics_component_count);
+	level->render_components = memory_arena_allocate<entity_render_component>(entity_components_memory_arena, level->render_component_count);
+	level->collision_components = memory_arena_allocate<entity_collision_component>(entity_components_memory_arena, level->collision_component_count);
+	level->light_components = memory_arena_allocate<entity_light_component>(entity_components_memory_arena, level->light_component_count);
+	level->physics_components = memory_arena_allocate<entity_physics_component>(entity_components_memory_arena, level->physics_component_count);
 
 	uint32 render_component_index = 0;
 	uint32 collision_component_index = 0;
@@ -896,19 +896,19 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			read_json_transform_object(entity_json["transform"].GetObject(), entity_transform);
 		}
 		if (entity_json.HasMember("render_component")) {
-			*entity_flag = *entity_flag | component_flag_render;
+			*entity_flag = *entity_flag | entity_component_flag_render;
 			read_json_render_component(entity_json["render_component"].GetObject(), &level->render_components[render_component_index++]);
 		}
 		if (entity_json.HasMember("collision_component")) {
-			*entity_flag = *entity_flag | component_flag_collision;
+			*entity_flag = *entity_flag | entity_component_flag_collision;
 			read_json_collision_component(entity_json["collision_component"].GetObject(), &level->collision_components[collision_component_index++]);
 		}
 		if (entity_json.HasMember("light_component")) {
-			*entity_flag = *entity_flag | component_flag_light;
+			*entity_flag = *entity_flag | entity_component_flag_light;
 			read_json_light_component(entity_json["light_component"].GetObject(), &level->light_components[light_component_index++]);
 		}
 		if (entity_json.HasMember("physics_component")) {
-			*entity_flag = *entity_flag | component_flag_physics;
+			*entity_flag = *entity_flag | entity_component_flag_physics;
 			read_json_physics_component(entity_json["physics_component"].GetObject(), &level->physics_components[physics_component_index++]);
 		}
 	}
@@ -950,7 +950,7 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 		writer.EndArray();
 		writer.EndObject();
 	};
-	auto write_json_render_component = [&writer, level](render_component *component) {
+	auto write_json_render_component = [&writer, level](entity_render_component *component) {
 		writer.Key("render_component");
 		writer.StartObject();
 		writer.Key("model_file_name");
@@ -964,7 +964,7 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 		writer.Double(component->height_map_scale);
 		writer.EndObject();
 	};
-	auto write_json_collision_component = [&writer](collision_component *component) {
+	auto write_json_collision_component = [&writer](entity_collision_component *component) {
 		writer.Key("collision_component");
 		writer.StartObject();
 		{
@@ -1027,7 +1027,7 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 		}
 		writer.EndObject();
 	};
-	auto write_json_light_component = [&writer](light_component *component) {
+	auto write_json_light_component = [&writer](entity_light_component *component) {
 		writer.Key("light_component");
 		writer.StartObject();
 		writer.Key("light_type");
@@ -1074,7 +1074,7 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 		}
 		writer.EndObject();
 	};
-	auto write_json_physics_component = [&writer](physics_component *component) {
+	auto write_json_physics_component = [&writer](entity_physics_component *component) {
 		writer.Key("physics_component");
 		writer.StartObject();
 		writer.Key("velocity");
@@ -1116,16 +1116,16 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 			writer.Key("name");
 			writer.String(entity_name);
 			write_json_transform_object(&entity_transform);
-			if (entity_flag & component_flag_render) {
+			if (entity_flag & entity_component_flag_render) {
 				write_json_render_component(entity_get_render_component(level, i));
 			}
-			if (entity_flag & component_flag_collision) {
+			if (entity_flag & entity_component_flag_collision) {
 				write_json_collision_component(entity_get_collision_component(level, i));
 			}
-			if (entity_flag & component_flag_light) {
+			if (entity_flag & entity_component_flag_light) {
 				write_json_light_component(entity_get_light_component(level, i));
 			}
-			if (entity_flag & component_flag_physics) {
+			if (entity_flag & entity_component_flag_physics) {
 				write_json_physics_component(entity_get_physics_component(level, i));
 			}
 			writer.EndObject();
@@ -1156,9 +1156,9 @@ camera level_get_player_camera(level *level, vulkan *vulkan, float r, float thet
 		quat rotate_0 = quat_from_rotation(vec3{1, 0, 0}, theta);
 		quat rotate_1 = quat_from_rotation(vec3{0, 1, 0}, phi);
 		translate = rotate_1 * rotate_0 * vec3{0, 0, -r};
-		if (level->entity_flags[level->player_entity_index] & component_flag_render) {
-			render_component *render_component = entity_get_render_component(level, level->player_entity_index);
-			center = aa_bound_center(level->models[render_component->model_index].bound);
+		if (level->entity_flags[level->player_entity_index] & entity_component_flag_render) {
+			entity_render_component *entity_render_component = entity_get_render_component(level, level->player_entity_index);
+			center = aa_bound_center(level->models[entity_render_component->model_index].bound);
 			center += transform->translate;
 		}
 		else {
@@ -1255,11 +1255,11 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 		vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
 		level->render_data.models = memory_arena_allocate<struct model_render_data>(&level->frame_memory_arena, level->render_component_count);
 		level->render_data.model_count = 0;
-		auto add_model_render_data = [level, vulkan, uniform_alignment](render_component *render_component, mat4 transform) {
+		auto add_model_render_data = [level, vulkan, uniform_alignment](entity_render_component *entity_render_component, mat4 transform) {
 			model_render_data *model_render_data = &level->render_data.models[level->render_data.model_count++];
-			model_render_data->model_index = render_component->model_index;
-			m_assert(render_component->model_index < level->model_count);
-			model *model = &level->models[render_component->model_index];
+			model_render_data->model_index = entity_render_component->model_index;
+			m_assert(entity_render_component->model_index < level->model_count);
+			model *model = &level->models[entity_render_component->model_index];
 			model_render_data->meshes_render_data = memory_arena_allocate<mesh_render_data>(&level->frame_memory_arena, model->mesh_count);
 			for (uint32 i = 0; i < model->mesh_count; i += 1) {
 				model_mesh *model_mesh = &model->meshes[i];
@@ -1273,19 +1273,19 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 				} *uniforms = (struct uniforms_t *)(vulkan->buffers.frame_uniform_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index]);
 				uniforms->model_mat = transform * model_mesh->instances[0].transform;
 				uniforms->normal_mat = mat4_transpose(mat4_inverse(uniforms->model_mat));
-				uniforms->uv_scale = render_component->uv_scale;
+				uniforms->uv_scale = entity_render_component->uv_scale;
 				uniforms->roughness = 1.0f;
 				uniforms->metallic = 0.0f;
-				uniforms->height_map_scale = render_component->height_map_scale;
+				uniforms->height_map_scale = entity_render_component->height_map_scale;
 				model_render_data->meshes_render_data[i].frame_uniforms_buffer_offset = vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
 				uint32 uniforms_size = round_up((uint32)sizeof(struct uniforms_t), uniform_alignment);
 				vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] += uniforms_size;
 			}
 		};
 		for (uint32 i = 0; i < level->entity_count; i += 1) {
-			if (level->entity_flags[i] & component_flag_render) {
-				render_component *render_component = entity_get_render_component(level, i);
-				add_model_render_data(render_component, transform_to_mat4(level->entity_transforms[i]));
+			if (level->entity_flags[i] & entity_component_flag_render) {
+				entity_render_component *entity_render_component = entity_get_render_component(level, i);
+				add_model_render_data(entity_render_component, transform_to_mat4(level->entity_transforms[i]));
 			}
 		}
 	}

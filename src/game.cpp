@@ -160,9 +160,9 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		{
 			uint32 physics_component_index = 0;
 			for (uint32 i = 0; i < level.entity_count; i += 1) {
-				if (level.entity_flags[i] & component_flag_physics) {
+				if (level.entity_flags[i] & entity_component_flag_physics) {
 					transform *transform = &level.entity_transforms[i];
-					physics_component *component = &level.physics_components[physics_component_index++];
+					entity_physics_component *component = &level.physics_components[physics_component_index++];
 					transform->translate += component->velocity * (float)last_frame_time_sec;
 				}
 			}
@@ -180,7 +180,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		level_generate_render_commands(&level, &vulkan, game.player_camera, []{}, []{});
 		vulkan_end_render(&vulkan);
 
-		level_entity_component_end_frame(&level);
+		level_process_entity_modifications_additions(&level);
 		level.frame_memory_arena.size = 0;
 
 		QueryPerformanceCounter(&performance_counters[1]);
