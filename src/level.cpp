@@ -203,17 +203,20 @@ void initialize_level(level *level, vulkan *vulkan) {
 
 	level->frame_memory_arena.name = "frame";
 	level->frame_memory_arena.capacity = m_megabytes(4);
-	m_assert(allocate_virtual_memory(level->frame_memory_arena.capacity, &level->frame_memory_arena.memory));
+	level->frame_memory_arena.memory = allocate_virtual_memory(level->frame_memory_arena.capacity);
+	m_assert(level->frame_memory_arena.memory);
 
 	for (uint32 i = 0; i < m_countof(level->entity_components_memory_arenas); i += 1) {
 		level->entity_components_memory_arenas[i].name = "entity_components";
 		level->entity_components_memory_arenas[i].capacity = m_megabytes(8);
-		m_assert(allocate_virtual_memory(level->entity_components_memory_arenas[i].capacity, &level->entity_components_memory_arenas[i].memory));
+		level->entity_components_memory_arenas[i].memory = allocate_virtual_memory(level->entity_components_memory_arenas[i].capacity);
+		m_assert(level->entity_components_memory_arenas[i].memory);
 	}
 
 	level->assets_memory_arena.name = "assets";
 	level->assets_memory_arena.capacity = m_megabytes(64);
-	m_assert(allocate_virtual_memory(level->assets_memory_arena.capacity, &level->assets_memory_arena.memory));
+	level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
+	m_assert(level->assets_memory_arena.memory);
 
 	level->model_capacity = 1024;
 	level->model_count = 0;
@@ -288,6 +291,41 @@ uint32 entity_component_get_entity_index(level *level, uint32 component_index, e
 	m_assert(false);
 	return UINT32_MAX;
 }
+
+entity_collision_component deep_copy_collision_component (entity_collision_component *cc, memory_arena *memory_arena,
+																													plane *new_planes = nullptr, uint32 new_plane_count = 0,
+																													sphere *new_spheres = nullptr, uint32 new_sphere_count = 0,
+																													aa_bound *new_bounds = nullptr, uint32 new_bound_count = 0) {
+	entity_collision_component collision_component = *cc;
+	collision_component.plane_count += new_plane_count;
+	collision_component.sphere_count += new_sphere_count;
+	collision_component.bound_count += new_bound_count;
+	if (collision_component.plane_count > 0) {
+		plane *planes = memory_arena_allocate<struct plane>(memory_arena, collision_component.plane_count);
+		memcpy(planes, cc->planes, cc->plane_count * sizeof(struct plane));
+		if (new_plane_count > 0) {
+			memcpy(planes + cc->plane_count, new_planes, new_plane_count * sizeof(struct plane));
+		}
+		collision_component.planes = planes;
+	}
+	if (collision_component.sphere_count > 0) {
+		sphere *spheres = memory_arena_allocate<struct sphere>(memory_arena, collision_component.sphere_count);
+		memcpy(spheres, cc->spheres, cc->sphere_count * sizeof(struct sphere));
+		if (new_sphere_count > 0) {
+			memcpy(spheres + cc->sphere_count, new_spheres, new_sphere_count * sizeof(struct sphere));
+		}
+		collision_component.spheres = spheres;
+	}
+	if (collision_component.bound_count > 0) {
+		aa_bound *bounds = memory_arena_allocate<struct aa_bound>(memory_arena, collision_component.bound_count);
+		memcpy(bounds, cc->bounds, cc->bound_count * sizeof(struct aa_bound));
+		if (new_bound_count > 0) {
+			memcpy(bounds + cc->bound_count, new_bounds, new_bound_count * sizeof(struct aa_bound));
+		}
+		collision_component.bounds = bounds;
+	}
+	return collision_component;
+};
 
 void level_process_entity_modifications_additions(level *level) {
 	uint32 new_entity_count = level->entity_count;
@@ -373,26 +411,6 @@ void level_process_entity_modifications_additions(level *level) {
 	entity_light_component *new_light_components = memory_arena_allocate<entity_light_component>(entity_components_memory_arena, new_light_component_count);
 	entity_physics_component *new_physics_components = memory_arena_allocate<entity_physics_component>(entity_components_memory_arena, new_physics_component_count);
 
-	auto deep_copy_collision_component = [entity_components_memory_arena](entity_collision_component *cc) -> entity_collision_component {
-		entity_collision_component entity_collision_component = *cc;
-		if (entity_collision_component.plane_count > 0) {
-			plane *planes = memory_arena_allocate<struct plane>(entity_components_memory_arena, entity_collision_component.plane_count);
-			memcpy(planes, entity_collision_component.planes, entity_collision_component.plane_count * sizeof(struct plane));
-			entity_collision_component.planes = planes;
-		}
-		if (entity_collision_component.sphere_count > 0) {
-			sphere *spheres = memory_arena_allocate<struct sphere>(entity_components_memory_arena, entity_collision_component.sphere_count);
-			memcpy(spheres, entity_collision_component.spheres, entity_collision_component.sphere_count * sizeof(struct sphere));
-			entity_collision_component.spheres = spheres;
-		}
-		if (entity_collision_component.bound_count > 0) {
-			aa_bound *bounds = memory_arena_allocate<struct aa_bound>(entity_components_memory_arena, entity_collision_component.bound_count);
-			memcpy(bounds, entity_collision_component.bounds, entity_collision_component.bound_count * sizeof(struct aa_bound));
-			entity_collision_component.bounds = bounds;
-		}
-		return entity_collision_component;
-	};
-	
 	uint32 entity_index = 0;
 	uint32 render_component_index = 0;
 	uint32 collision_component_index = 0;
@@ -411,7 +429,8 @@ void level_process_entity_modifications_additions(level *level) {
 			}
 			if (!em->remove_collision_component) {
 				if (level->entity_flags[i] & entity_component_flag_collision || em->entity_collision_component) {
-					new_collision_components[collision_component_index++] = deep_copy_collision_component(em->entity_collision_component ? em->entity_collision_component : entity_get_collision_component(level, i));
+					entity_collision_component *collision_component = em->entity_collision_component ? em->entity_collision_component : entity_get_collision_component(level, i);
+					new_collision_components[collision_component_index++] = deep_copy_collision_component(collision_component, entity_components_memory_arena);
 				}
 			}
 			if (!em->remove_light_component) {
@@ -436,7 +455,7 @@ void level_process_entity_modifications_additions(level *level) {
 			new_render_components[render_component_index++] = *ea->entity_render_component;
 		}
 		if (ea->entity_collision_component) {
-			new_collision_components[collision_component_index++] = deep_copy_collision_component(ea->entity_collision_component);
+			new_collision_components[collision_component_index++] = deep_copy_collision_component(ea->entity_collision_component, entity_components_memory_arena);
 		}
 		if (ea->entity_light_component) {
 			new_light_components[light_component_index++] = *ea->entity_light_component;

@@ -42,6 +42,19 @@ struct editor_render_data {
 	uint32 imgui_frame_vertex_buffer_offset;
 };
 
+enum undoable_type {
+	undoable_type_delete_collision_component_bound
+};
+
+struct undoable {
+	undoable_type type;
+	union {
+		struct {
+			aa_bound bound;
+		} delete_collision_component_bound;
+	};
+};
+
 struct editor {
 	stbtt_fontinfo stbtt_font_info;
 	stbtt_pack_context stbtt_pack_context;
@@ -74,19 +87,14 @@ struct editor {
 	char new_level_file[128];
 	char load_level_file[128];
 	char save_level_file[128];
+
+	undoable undoables[256];
+	uint32 undoable_count;
 	
 	editor_render_data render_data;
-
-	memory_arena general_memory_arena;
 };
 
 bool initialize_editor(editor *editor, vulkan *vulkan) {
-	{ // memory
-		editor->general_memory_arena = {};
-		editor->general_memory_arena.name = "general";
-		editor->general_memory_arena.capacity = m_megabytes(64);
-		m_assert(allocate_virtual_memory(editor->general_memory_arena.capacity, &editor->general_memory_arena.memory));
-	}
 	{ // imgui
 		ImGui::StyleColorsDark();
 		ImGuiIO *imgui_io = &ImGui::GetIO();
@@ -161,7 +169,8 @@ bool initialize_editor(editor *editor, vulkan *vulkan) {
 		editor->font_size = 128;
 		editor->font_atlas_width = 2048;
 		editor->font_atlas_height = 1024;
-		uint8 *font_atlas = memory_arena_allocate<uint8>(&editor->general_memory_arena, editor->font_atlas_width * editor->font_atlas_height);
+		uint8 *font_atlas = (uint8 *)allocate_virtual_memory(editor->font_atlas_width * editor->font_atlas_height);
+		m_scope_exit(free_virtual_memory(font_atlas));
 		m_assert(stbtt_PackBegin(&editor->stbtt_pack_context, font_atlas, editor->font_atlas_width, editor->font_atlas_height, 0, 1, nullptr));
 		stbtt_PackSetOversampling(&editor->stbtt_pack_context, 2, 2);
 		m_assert(stbtt_PackFontRange(&editor->stbtt_pack_context, font_file_mapping.ptr, 0, editor->font_size, 32, 95, editor->stbtt_packed_chars));
@@ -273,39 +282,48 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	show_command_prompt();
 	assets_import_issue_jobs();
 
-	struct window window = {};
+	memory_arena general_memory_arena = {};
+	general_memory_arena.name = "general";
+	general_memory_arena.capacity = m_megabytes(64);
+	general_memory_arena.memory = allocate_virtual_memory(general_memory_arena.capacity);
+	m_assert(general_memory_arena.memory);
+	
+	window window = {};
 	m_assert(initialize_window(&window));
 	set_window_fullscreen(&window, true);
 
-	struct vulkan vulkan = {};
-	initialize_vulkan(&vulkan, window);
+	vulkan *vulkan = {};
+	vulkan = memory_arena_allocate<struct vulkan>(&general_memory_arena, 1);
+	initialize_vulkan(vulkan, window);
 
-	editor editor = {};
-	initialize_editor(&editor, &vulkan);
+	editor *editor = {};
+	editor = memory_arena_allocate<struct editor>(&general_memory_arena, 1);
+	initialize_editor(editor, vulkan);
 
-	level level = {};
-	initialize_level(&level, &vulkan);
+	level *level = {};
+	level = memory_arena_allocate<struct level>(&general_memory_arena, 1);
+	initialize_level(level, vulkan);
 	auto editor_load_level_setting = [&editor](rapidjson::Document *json_doc) {
 		if (json_doc->HasMember("editor_settings")) {
 			rapidjson::Value::Object editor_settings = (*json_doc)["editor_settings"].GetObject();
 			if (editor_settings.HasMember("camera")) {
 				rapidjson::Value::Object camera = editor_settings["camera"].GetObject();
 				rapidjson::Value::Array position = camera["position"].GetArray();
-				editor.camera.position = {(float)position[0].GetDouble(), (float)position[1].GetDouble(), (float)position[2].GetDouble()};
+				editor->camera.position = {(float)position[0].GetDouble(), (float)position[1].GetDouble(), (float)position[2].GetDouble()};
 				rapidjson::Value::Array view = camera["view"].GetArray();
-				editor.camera.view = {(float)view[0].GetDouble(), (float)view[1].GetDouble(), (float)view[2].GetDouble()};
+				editor->camera.view = {(float)view[0].GetDouble(), (float)view[1].GetDouble(), (float)view[2].GetDouble()};
 				rapidjson::Value::Array up = camera["up"].GetArray();
-				editor.camera.up = {(float)up[0].GetDouble(), (float)up[1].GetDouble(), (float)up[2].GetDouble()};
-				editor.camera.fovy = (float)camera["fovy"].GetDouble();
-				editor.camera.aspect = (float)camera["aspect"].GetDouble();
-				editor.camera.znear = (float)camera["znear"].GetDouble();
-				editor.camera.zfar = (float)camera["zfar"].GetDouble();
-				editor.camera_move_speed = (float)camera["move_speed"].GetDouble();
-				editor.camera_pitch = asinf(editor.camera.view.y);
+				editor->camera.up = {(float)up[0].GetDouble(), (float)up[1].GetDouble(), (float)up[2].GetDouble()};
+				editor->camera.fovy = (float)camera["fovy"].GetDouble();
+				editor->camera.aspect = (float)camera["aspect"].GetDouble();
+				editor->camera.znear = (float)camera["znear"].GetDouble();
+				editor->camera.zfar = (float)camera["zfar"].GetDouble();
+				editor->camera_move_speed = (float)camera["move_speed"].GetDouble();
+				editor->camera_pitch = asinf(editor->camera.view.y);
 			}
 		}
 	};
-	level_read_json(&level, &vulkan, "agby_assets\\levels\\level_save.json", editor_load_level_setting, true);
+	level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", editor_load_level_setting, true);
 
 	LARGE_INTEGER performance_frequency = {};
 	QueryPerformanceFrequency(&performance_frequency);
@@ -384,39 +402,39 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		{ // move camera
 			if (ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse) {
 				pin_cursor(true);
-				editor.camera_moving = true;
+				editor->camera_moving = true;
 			}
 			if (ImGui::IsMouseReleased(1)) {
 				pin_cursor(false);
-				editor.camera_moving = false;
+				editor->camera_moving = false;
 			}
-			if (editor.camera_moving) {
+			if (editor->camera_moving) {
 				if (ImGui::IsKeyDown('W')) {
-					editor.camera.position = editor.camera.position + editor.camera.view * (float)last_frame_time_sec * editor.camera_move_speed;
+					editor->camera.position = editor->camera.position + editor->camera.view * (float)last_frame_time_sec * editor->camera_move_speed;
 				}
 				if (ImGui::IsKeyDown('S')) {
-					editor.camera.position = editor.camera.position - editor.camera.view * (float)last_frame_time_sec * editor.camera_move_speed;
+					editor->camera.position = editor->camera.position - editor->camera.view * (float)last_frame_time_sec * editor->camera_move_speed;
 				}
 				if (ImGui::IsKeyDown('A')) {
-					vec3 move_direction = vec3_normalize(vec3_cross(editor.camera.view, vec3{0, 1, 0}));
-					editor.camera.position = editor.camera.position - move_direction * (float)last_frame_time_sec * editor.camera_move_speed;
+					vec3 move_direction = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
+					editor->camera.position = editor->camera.position - move_direction * (float)last_frame_time_sec * editor->camera_move_speed;
 				}
 				if (ImGui::IsKeyDown('D')) {
-					vec3 move_direction = vec3_normalize(vec3_cross(editor.camera.view, vec3{0, 1, 0}));
-					editor.camera.position = editor.camera.position + move_direction * (float)last_frame_time_sec * editor.camera_move_speed;
+					vec3 move_direction = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
+					editor->camera.position = editor->camera.position + move_direction * (float)last_frame_time_sec * editor->camera_move_speed;
 				}
 				float camera_rotation_speed = 2.0f;
 				float max_pitch = degree_to_radian(75.0f);
 				float yaw = -window.raw_mouse_dx * camera_rotation_speed * ImGui::GetIO().DeltaTime;
-				editor.camera.view = vec3_normalize(mat4_to_mat3(mat4_from_rotation(vec3{0, 1, 0}, yaw)) * editor.camera.view);
+				editor->camera.view = vec3_normalize(mat4_to_mat3(mat4_from_rotation(vec3{0, 1, 0}, yaw)) * editor->camera.view);
 				float pitch = -window.raw_mouse_dy * camera_rotation_speed * ImGui::GetIO().DeltaTime;
-				if (editor.camera_pitch + pitch > -max_pitch && editor.camera_pitch + pitch < max_pitch) {
-					vec3 view_cross_up = vec3_normalize(vec3_cross(editor.camera.view, vec3{0, 1, 0}));
+				if (editor->camera_pitch + pitch > -max_pitch && editor->camera_pitch + pitch < max_pitch) {
+					vec3 view_cross_up = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
 					mat4 rotate_mat = mat4_from_rotation(view_cross_up, pitch);
-					editor.camera.view = vec3_normalize(mat4_to_mat3(rotate_mat) * editor.camera.view);
-					editor.camera_pitch += pitch;
+					editor->camera.view = vec3_normalize(mat4_to_mat3(rotate_mat) * editor->camera.view);
+					editor->camera_pitch += pitch;
 				}
-				editor.camera.up = vec3_normalize(vec3_cross(vec3_cross(editor.camera.view, vec3{0, 1, 0}), editor.camera.view));
+				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
 			}
 		}
 		{ // selection/gizmo modes
@@ -427,38 +445,38 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			if (ImGui::BeginPopup("##popup")) {
 				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "selection mode");
 				ImGui::Separator();
-				if (ImGui::MenuItem("entity##selection_mode_entity", nullptr, editor.selection_mode == editor_selection_mode_entity)) {
-					editor.selection_mode = editor_selection_mode_entity;
+				if (ImGui::MenuItem("entity##selection_mode_entity", nullptr, editor->selection_mode == editor_selection_mode_entity)) {
+					editor->selection_mode = editor_selection_mode_entity;
 				}
-				if (ImGui::MenuItem("mesh##selection_mode_mesh", nullptr, editor.selection_mode == editor_selection_mode_mesh)) {
-					editor.selection_mode = editor_selection_mode_mesh;
+				if (ImGui::MenuItem("mesh##selection_mode_mesh", nullptr, editor->selection_mode == editor_selection_mode_mesh)) {
+					editor->selection_mode = editor_selection_mode_mesh;
 				}
-				if (ImGui::MenuItem("collision object##selection_mode_collision_object", nullptr, editor.selection_mode == editor_selection_mode_collision_object)) {
-					editor.selection_mode = editor_selection_mode_collision_object;
+				if (ImGui::MenuItem("collision object##selection_mode_collision_object", nullptr, editor->selection_mode == editor_selection_mode_collision_object)) {
+					editor->selection_mode = editor_selection_mode_collision_object;
 				}
 				ImGui::Dummy(ImVec2{0, 10});
 				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "gizmo mode");
 				ImGui::Separator();
-				if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor.gizmo_mode == editor_gizmo_mode_transform_translate)) {
-					editor.gizmo_mode = editor_gizmo_mode_transform_translate;
+				if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor->gizmo_mode == editor_gizmo_mode_transform_translate)) {
+					editor->gizmo_mode = editor_gizmo_mode_transform_translate;
 				}
-				if (ImGui::MenuItem("transform rotate##gizmo_mode_transform_rotate", nullptr, editor.gizmo_mode == editor_gizmo_mode_transform_rotate)) {
-					editor.gizmo_mode = editor_gizmo_mode_transform_rotate;
+				if (ImGui::MenuItem("transform rotate##gizmo_mode_transform_rotate", nullptr, editor->gizmo_mode == editor_gizmo_mode_transform_rotate)) {
+					editor->gizmo_mode = editor_gizmo_mode_transform_rotate;
 				}
-				if (ImGui::MenuItem("transform scale##gizmo_mode_transform_scale", nullptr, editor.gizmo_mode == editor_gizmo_mode_transform_scale)) {
-					editor.gizmo_mode = editor_gizmo_mode_transform_scale;
+				if (ImGui::MenuItem("transform scale##gizmo_mode_transform_scale", nullptr, editor->gizmo_mode == editor_gizmo_mode_transform_scale)) {
+					editor->gizmo_mode = editor_gizmo_mode_transform_scale;
 				}
-				if (ImGui::MenuItem("dir light rotate##gizmo_mode_dir_light_rotate", nullptr, editor.gizmo_mode == editor_gizmo_mode_directional_light_rotate)) {
-					editor.gizmo_mode = editor_gizmo_mode_directional_light_rotate;
+				if (ImGui::MenuItem("dir light rotate##gizmo_mode_dir_light_rotate", nullptr, editor->gizmo_mode == editor_gizmo_mode_directional_light_rotate)) {
+					editor->gizmo_mode = editor_gizmo_mode_directional_light_rotate;
 				}
-				if (ImGui::MenuItem("point light translate##gizmo_mode_point_light_translate", nullptr, editor.gizmo_mode == editor_gizmo_mode_point_light_translate)) {
-					editor.gizmo_mode = editor_gizmo_mode_point_light_translate;
+				if (ImGui::MenuItem("point light translate##gizmo_mode_point_light_translate", nullptr, editor->gizmo_mode == editor_gizmo_mode_point_light_translate)) {
+					editor->gizmo_mode = editor_gizmo_mode_point_light_translate;
 				}
-				if (ImGui::MenuItem("collision bound min##gizmo_mode_collision_bound_min", nullptr, editor.gizmo_mode == editor_gizmo_mode_collision_bound_min)) {
-					editor.gizmo_mode = editor_gizmo_mode_collision_bound_min;
+				if (ImGui::MenuItem("collision bound min##gizmo_mode_collision_bound_min", nullptr, editor->gizmo_mode == editor_gizmo_mode_collision_bound_min)) {
+					editor->gizmo_mode = editor_gizmo_mode_collision_bound_min;
 				}
-				if (ImGui::MenuItem("collision bound max##gizmo_mode_collision_bound_max", nullptr, editor.gizmo_mode == editor_gizmo_mode_collision_bound_max)) {
-					editor.gizmo_mode = editor_gizmo_mode_collision_bound_max;
+				if (ImGui::MenuItem("collision bound max##gizmo_mode_collision_bound_max", nullptr, editor->gizmo_mode == editor_gizmo_mode_collision_bound_max)) {
+					editor->gizmo_mode = editor_gizmo_mode_collision_bound_max;
 				}
 				ImGui::EndPopup();
 			}
@@ -468,16 +486,16 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			if (ImGui::IsMouseClicked(0) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
 				vec3 window_pos = vec3{ImGui::GetMousePos().x, ImGui::GetIO().DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
 				vec4 viewport = vec4{0, 0, ImGui::GetIO().DisplaySize.x , ImGui::GetIO().DisplaySize.y};
-				vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor.camera), camera_projection_mat4(editor.camera), viewport);
-				ray ray = {editor.camera.position, vec3_normalize(mouse_world_position - editor.camera.position), editor.camera.zfar};
-				if (editor.selection_mode == editor_selection_mode_entity) {
+				vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
+				ray ray = {editor->camera.position, vec3_normalize(mouse_world_position - editor->camera.position), editor->camera.zfar};
+				if (editor->selection_mode == editor_selection_mode_entity) {
 					float min_distance = ray.len;
 					uint32 entity_index = UINT32_MAX;
-					for (uint32 i = 0; i < level.entity_count; i += 1) {
-						if (level.entity_flags[i] & entity_component_flag_render) {
-							entity_render_component *entity_render_component = entity_get_render_component(&level, i);
-							model *model = &level.models[entity_render_component->model_index];
-							mat4 model_transform = transform_to_mat4(level.entity_transforms[i]);
+					for (uint32 i = 0; i < level->entity_count; i += 1) {
+						if (level->entity_flags[i] & entity_component_flag_render) {
+							entity_render_component *entity_render_component = entity_get_render_component(level, i);
+							model *model = &level->models[entity_render_component->model_index];
+							mat4 model_transform = transform_to_mat4(level->entity_transforms[i]);
 							uint32 mesh_index = 0;
 							float distance = 0;
 							if (ray_intersect_model(ray, model, model_transform, &mesh_index, &distance) && distance < min_distance) {
@@ -486,28 +504,28 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							}
 						}
 					}
-					if (editor.entity_index != entity_index) {
-						editor_select_new_entity(&editor, entity_index);
+					if (editor->entity_index != entity_index) {
+						editor_select_new_entity(editor, entity_index);
 					}
 				}
-				else if (editor.selection_mode == editor_selection_mode_mesh) {
-					if (editor.entity_index < level.entity_count && level.entity_flags[editor.entity_index] & entity_component_flag_render) {
-						entity_render_component *entity_render_component = entity_get_render_component(&level, editor.entity_index);
-						model *model = &level.models[entity_render_component->model_index];
-						mat4 model_transform = transform_to_mat4(level.entity_transforms[editor.entity_index]);
+				else if (editor->selection_mode == editor_selection_mode_mesh) {
+					if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_render) {
+						entity_render_component *entity_render_component = entity_get_render_component(level, editor->entity_index);
+						model *model = &level->models[entity_render_component->model_index];
+						mat4 model_transform = transform_to_mat4(level->entity_transforms[editor->entity_index]);
 						uint32 mesh_index = UINT32_MAX;
 						float distance = 0;
 						ray_intersect_model(ray, model, model_transform, &mesh_index, &distance);
-						editor.entity_mesh_index = mesh_index;
+						editor->entity_mesh_index = mesh_index;
 					}
 				}
-				else if (editor.selection_mode == editor_selection_mode_collision_object) {
-					if (editor.entity_index < level.entity_count && level.entity_flags[editor.entity_index] & entity_component_flag_collision && editor.collision_object_show_bounds) {
-						entity_collision_component *entity_collision_component = entity_get_collision_component(&level, editor.entity_index);
+				else if (editor->selection_mode == editor_selection_mode_collision_object) {
+					if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision && editor->collision_object_show_bounds) {
+						entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 						float min_distance = ray.len;
 						uint32 bound_index = UINT32_MAX;
 						for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
-							transform transform = level.entity_transforms[editor.entity_index];
+							transform transform = level->entity_transforms[editor->entity_index];
 							aa_bound bound = entity_collision_component->bounds[i];
 							bound = aa_bound_translate(aa_bound_scale(bound, transform.scale), transform.translate);
 							vec2 intersection = {};
@@ -516,8 +534,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 								bound_index = i;
 							}
 						}
-						editor.entity_collision_object_type = collision_object_type_bound;
-						editor.entity_collision_object_index = bound_index;
+						editor->entity_collision_object_type = collision_object_type_bound;
+						editor->entity_collision_object_index = bound_index;
 					}
 				}
 			}
@@ -528,7 +546,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			bool save_level_popup = false;
 			ImGui::PushID("main_menu_bar");
 			if (ImGui::BeginMainMenuBar()) {
-				editor.menu_bar_height = ImGui::GetWindowHeight();
+				editor->menu_bar_height = ImGui::GetWindowHeight();
 				if (ImGui::BeginMenu("File##file")) {
 					ImGui::PushID("file");
 					if (ImGui::MenuItem("New Level##new_level")) {
@@ -548,9 +566,9 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					ImGui::PushID("view");
 					ImGui::Text("collision component");
 					ImGui::Separator();
-					ImGui::MenuItem("show planes##show_planes", nullptr, &editor.collision_object_show_planes);
-					ImGui::MenuItem("show spheres##show_spheres", nullptr, &editor.collision_object_show_spheres);
-					ImGui::MenuItem("show bounds##show_bounds", nullptr, &editor.collision_object_show_bounds);
+					ImGui::MenuItem("show planes##show_planes", nullptr, &editor->collision_object_show_planes);
+					ImGui::MenuItem("show spheres##show_spheres", nullptr, &editor->collision_object_show_spheres);
+					ImGui::MenuItem("show bounds##show_bounds", nullptr, &editor->collision_object_show_bounds);
 					ImGui::PopID();
 					ImGui::EndMenu();
 				}
@@ -561,9 +579,9 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				ImGui::OpenPopup("##load_level_popup");
 			}
 			if (ImGui::BeginPopupModal("##load_level_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-				ImGui::InputText("file##load_level_popup_file", editor.load_level_file, sizeof(editor.load_level_file));
+				ImGui::InputText("file##load_level_popup_file", editor->load_level_file, sizeof(editor->load_level_file));
 				if (ImGui::Button("load##load_level_popup_load")) {
-					level_read_json(&level, &vulkan, editor.load_level_file, editor_load_level_setting, true);
+					level_read_json(level, vulkan, editor->load_level_file, editor_load_level_setting, true);
 					ImGui::CloseCurrentPopup();
 				}
 				ImGui::SameLine();
@@ -576,7 +594,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				ImGui::OpenPopup("##save_level_popup");
 			}
 			if (ImGui::BeginPopupModal("##save_level_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-				ImGui::InputText("file##save_level_popup_file", editor.save_level_file, sizeof(editor.save_level_file));
+				ImGui::InputText("file##save_level_popup_file", editor->save_level_file, sizeof(editor->save_level_file));
 				auto editor_dump_level_setting = [&editor](rapidjson::PrettyWriter<rapidjson::StringBuffer> *writer) {
 					writer->Key("editor_settings");
 					writer->StartObject();
@@ -584,41 +602,41 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					writer->StartObject();
 					writer->Key("position");
 					writer->StartArray();
-					writer->Double(editor.camera.position.x);
-					writer->Double(editor.camera.position.y);
-					writer->Double(editor.camera.position.z);
+					writer->Double(editor->camera.position.x);
+					writer->Double(editor->camera.position.y);
+					writer->Double(editor->camera.position.z);
 					writer->EndArray();
 					writer->Key("view");
 					writer->StartArray();
-					writer->Double(editor.camera.view.x);
-					writer->Double(editor.camera.view.y);
-					writer->Double(editor.camera.view.z);
+					writer->Double(editor->camera.view.x);
+					writer->Double(editor->camera.view.y);
+					writer->Double(editor->camera.view.z);
 					writer->EndArray();
 					writer->Key("up");
 					writer->StartArray();
-					writer->Double(editor.camera.up.x);
-					writer->Double(editor.camera.up.y);
-					writer->Double(editor.camera.up.z);
+					writer->Double(editor->camera.up.x);
+					writer->Double(editor->camera.up.y);
+					writer->Double(editor->camera.up.z);
 					writer->EndArray();
 					writer->Key("fovy");
-					writer->Double(editor.camera.fovy);
+					writer->Double(editor->camera.fovy);
 					writer->Key("aspect");
-					writer->Double(editor.camera.aspect);
+					writer->Double(editor->camera.aspect);
 					writer->Key("znear");
-					writer->Double(editor.camera.znear);
+					writer->Double(editor->camera.znear);
 					writer->Key("zfar");
-					writer->Double(editor.camera.zfar);
+					writer->Double(editor->camera.zfar);
 					writer->Key("move_speed");
-					writer->Double(editor.camera_move_speed);
+					writer->Double(editor->camera_move_speed);
 					writer->EndObject();
 					writer->EndObject();
 				};
 				if (ImGui::Button("save##save_level_popup_save")) {
-					if (file_exists(editor.save_level_file)) {
+					if (file_exists(editor->save_level_file)) {
 						ImGui::OpenPopup("##save_level_popup_file_exists_popup");
 					}
 					else {
-						level_write_json(&level, editor.save_level_file, editor_dump_level_setting);
+						level_write_json(level, editor->save_level_file, editor_dump_level_setting);
 						ImGui::CloseCurrentPopup();
 					}
 				}
@@ -628,10 +646,10 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				}
 				bool close_popup = false;
 				if (ImGui::BeginPopupModal("##save_level_popup_file_exists_popup")) {
-					ImGui::Text("file \"%s\" already exists, replace?", editor.save_level_file);
+					ImGui::Text("file \"%s\" already exists, replace?", editor->save_level_file);
 					ImGui::Separator();
 					if (ImGui::Button("yes##save_level_popup_file_exists_popup_yes")) {
-						level_write_json(&level, editor.save_level_file, editor_dump_level_setting);
+						level_write_json(level, editor->save_level_file, editor_dump_level_setting);
 						ImGui::CloseCurrentPopup();
 						close_popup = true;
 					}
@@ -648,20 +666,20 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			}
 		}
 		{ // entity window
-			ImGui::SetNextWindowPos(ImVec2{0, editor.menu_bar_height});
+			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f});
 			ImGui::PushID("entitiy_window");
 			if (ImGui::Begin("Entity##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-				editor.entity_window_height = ImGui::GetWindowHeight();
-				const char *entity_combo_name = editor.entity_index < level.entity_count ? level.entity_infos[editor.entity_index].name : nullptr;
+				editor->entity_window_height = ImGui::GetWindowHeight();
+				const char *entity_combo_name = editor->entity_index < level->entity_count ? level->entity_infos[editor->entity_index].name : nullptr;
 				if (ImGui::BeginCombo("##entities_combo", entity_combo_name)) {
-					if (ImGui::Selectable("", editor.entity_index >= level.entity_count)) {
-						editor_select_new_entity(&editor, UINT32_MAX);
+					if (ImGui::Selectable("", editor->entity_index >= level->entity_count)) {
+						editor_select_new_entity(editor, UINT32_MAX);
 					}
-					for (uint32 i = 0; i < level.entity_count; i += 1) {
-						if (ImGui::Selectable(level.entity_infos[i].name, editor.entity_index == i)) {
-							if (editor.entity_index != i) {
-								editor_select_new_entity(&editor, i);
+					for (uint32 i = 0; i < level->entity_count; i += 1) {
+						if (ImGui::Selectable(level->entity_infos[i].name, editor->entity_index == i)) {
+							if (editor->entity_index != i) {
+								editor_select_new_entity(editor, i);
 							}
 						}
 					}
@@ -680,17 +698,17 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					if (ImGui::Button("ok##new_entity_popup_ok")) {
 						if (strcmp(entity_name_buf, "")) {
-							for (uint32 i = 0; i < level.entity_count; i += 1) {
-								if (!strcmp(level.entity_infos[i].name, entity_name_buf)) {
+							for (uint32 i = 0; i < level->entity_count; i += 1) {
+								if (!strcmp(level->entity_infos[i].name, entity_name_buf)) {
 									show_duplicate_name_error = true;
 									break;
 								}
 							}
 							if (!show_duplicate_name_error) {
-								entity_addition *entity_addition = memory_arena_allocate<struct entity_addition>(&level.frame_memory_arena, 1);
+								entity_addition *entity_addition = memory_arena_allocate<struct entity_addition>(&level->frame_memory_arena, 1);
 								array_copy(entity_addition->info.name, entity_name_buf);
 								entity_addition->transform = transform_identity();
-								list_prepend(&level.entity_addition, entity_addition);
+								list_prepend(&level->entity_addition, entity_addition);
 								show_duplicate_name_error = false;
 								ImGui::CloseCurrentPopup();
 							}
@@ -704,14 +722,14 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					ImGui::EndPopup();
 				}
 				ImGui::Separator();
-				if (editor.entity_index >= level.entity_count) {
+				if (editor->entity_index >= level->entity_count) {
 					goto entity_window_skip_components_label;
 				}
-				uint32 *entity_flag = &level.entity_flags[editor.entity_index];
+				uint32 *entity_flag = &level->entity_flags[editor->entity_index];
 				{
 					ImGui::PushID("basic_properties");
 					if (ImGui::CollapsingHeader("Basic Properties##collapsing_header")) {
-						transform *entity_transform = &level.entity_transforms[editor.entity_index];
+						transform *entity_transform = &level->entity_transforms[editor->entity_index];
 						ImGui::InputFloat3("translate##transform_translate_field", entity_transform->translate.e, 3);
 						if (ImGui::InputFloat4("rotate##transform_rotate_field", entity_transform->rotate.e, 3)) {
 							entity_transform->rotate = quat_normalize(entity_transform->rotate);
@@ -723,33 +741,33 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				if (*entity_flag & entity_component_flag_render) {
 					ImGui::PushID("render_component");
 					if (ImGui::CollapsingHeader("Render Component##collapsing_header")) {
-						entity_render_component *entity_render_component = entity_get_render_component(&level, editor.entity_index);
-						const char *model_combo_name = (entity_render_component->model_index < level.model_count) ? level.models[entity_render_component->model_index].file_name : nullptr;
+						entity_render_component *entity_render_component = entity_get_render_component(level, editor->entity_index);
+						const char *model_combo_name = (entity_render_component->model_index < level->model_count) ? level->models[entity_render_component->model_index].file_name : nullptr;
 						if (ImGui::BeginCombo("models##models_combo", model_combo_name)) {
-							for (uint32 i = 0; i < level.model_count; i += 1) {
-								if (ImGui::Selectable(level.models[i].file_name, entity_render_component->model_index == i)) {
+							for (uint32 i = 0; i < level->model_count; i += 1) {
+								if (ImGui::Selectable(level->models[i].file_name, entity_render_component->model_index == i)) {
 									entity_render_component->model_index = i;
-									editor.entity_mesh_index = UINT32_MAX;
+									editor->entity_mesh_index = UINT32_MAX;
 								}
 							}
 							ImGui::EndCombo();
 						}
-						if (entity_render_component->model_index < level.model_count) {
-							model *model = &level.models[entity_render_component->model_index];
-							const char *mesh_combo_name = (editor.entity_mesh_index < model->mesh_count) ? model->meshes[editor.entity_mesh_index].name : nullptr;
+						if (entity_render_component->model_index < level->model_count) {
+							model *model = &level->models[entity_render_component->model_index];
+							const char *mesh_combo_name = (editor->entity_mesh_index < model->mesh_count) ? model->meshes[editor->entity_mesh_index].name : nullptr;
 							if (ImGui::BeginCombo("meshes##model_meshes_combo", mesh_combo_name)) {
-								if (ImGui::Selectable("", editor.entity_mesh_index >= model->mesh_count)) {
-									editor.entity_mesh_index = model->mesh_count;
+								if (ImGui::Selectable("", editor->entity_mesh_index >= model->mesh_count)) {
+									editor->entity_mesh_index = model->mesh_count;
 								}
 								for (uint32 i = 0; i < model->mesh_count; i += 1) {
-									if (ImGui::Selectable(model->meshes[i].name, editor.entity_mesh_index == i)) {
-										editor.entity_mesh_index = i;
+									if (ImGui::Selectable(model->meshes[i].name, editor->entity_mesh_index == i)) {
+										editor->entity_mesh_index = i;
 									}
 								}
 								ImGui::EndCombo();
 							}
 						}
-						if (entity_render_component->model_index < level.model_count) {
+						if (entity_render_component->model_index < level->model_count) {
 							ImGui::SliderFloat("uv scale u##material_uv_scale_u", &entity_render_component->uv_scale[0], 1.0f, 10.0f);
 							ImGui::SliderFloat("uv scale v##material_uv_scale_v", &entity_render_component->uv_scale[1], 1.0f, 10.0f);
 							ImGui::SliderFloat("height map scale##material_height_map_scale", &entity_render_component->height_map_scale, 0.0f, 0.2f);
@@ -760,29 +778,73 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				if (*entity_flag & entity_component_flag_collision) {
 					ImGui::PushID("collision_component");
 					if (ImGui::CollapsingHeader("Collision Component##collapsing_header")) {
-						entity_collision_component *entity_collision_component = entity_get_collision_component(&level, editor.entity_index);
-						ImGui::BulletText("%u planes", entity_collision_component->plane_count);
+						entity_collision_component *collision_component = entity_get_collision_component(level, editor->entity_index);
+						ImGui::BulletText("%u planes", collision_component->plane_count);
 						ImGui::SameLine();
-						ImGui::BulletText("%u spheres", entity_collision_component->sphere_count);
+						ImGui::BulletText("%u spheres", collision_component->sphere_count);
 						ImGui::SameLine();
-						ImGui::BulletText("%u bounds", entity_collision_component->bound_count);
-						if (editor.entity_collision_object_type == collision_object_type_plane && editor.entity_collision_object_index < entity_collision_component->plane_count) {
+						ImGui::BulletText("%u bounds", collision_component->bound_count);
+						if (ImGui::Button("New Plane##new_plane")) {
+							plane new_plane = {{0, 1, 0}, 5};
+							entity_collision_component *new_cc = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+							*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena, &new_plane, 1, nullptr, 0, nullptr, 0);
+							level->entity_modifications[editor->entity_index].entity_collision_component = new_cc;
+							editor->entity_collision_object_type = collision_object_type_plane;
+							editor->entity_collision_object_index = collision_component->plane_count;
+						}
+						ImGui::SameLine();
+						if (ImGui::Button("New Sphere##new_sphere")) {
+							sphere new_sphere = {{0, 0, 0}, 5};
+							entity_collision_component *new_cc = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+							*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena, nullptr, 0, &new_sphere, 1, nullptr, 0);
+							level->entity_modifications[editor->entity_index].entity_collision_component = new_cc;
+							editor->entity_collision_object_type = collision_object_type_sphere;
+							editor->entity_collision_object_index = collision_component->sphere_count;
+						}
+						ImGui::SameLine();
+						if (ImGui::Button("New Bound##new_bound")) {
+							aa_bound new_bound = {{-5, -5, -5}, {5, 5, 5}};
+							entity_collision_component *new_cc = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+							*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena, nullptr, 0, nullptr, 0, &new_bound, 1);
+							level->entity_modifications[editor->entity_index].entity_collision_component = new_cc;
+							editor->entity_collision_object_type = collision_object_type_bound;
+							editor->entity_collision_object_index = collision_component->bound_count;
+						}
+						if (editor->entity_collision_object_type == collision_object_type_plane && editor->entity_collision_object_index < collision_component->plane_count) {
 							ImGui::Text("plane selected:");
-							plane *plane = &entity_collision_component->planes[editor.entity_collision_object_index];
+							plane *plane = &collision_component->planes[editor->entity_collision_object_index];
 							ImGui::InputFloat3("normal##plane_normal_field", plane->normal.e, 3);
 							ImGui::InputFloat("distance##plane_distance_field", &plane->distance, 3);
+							if (ImGui::Button("delete plane##delete_plane")) {
+								entity_collision_component *new_cc = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+								*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena);
+								array_remove(new_cc->planes, &new_cc->plane_count, editor->entity_collision_object_index);
+								level->entity_modifications[editor->entity_index].entity_collision_component = new_cc;
+							}
 						}
-						if (editor.entity_collision_object_type == collision_object_type_sphere && editor.entity_collision_object_index < entity_collision_component->sphere_count) {
+						if (editor->entity_collision_object_type == collision_object_type_sphere && editor->entity_collision_object_index < collision_component->sphere_count) {
 							ImGui::Text("sphere selected:");
-							sphere *sphere = &entity_collision_component->spheres[editor.entity_collision_object_index];
+							sphere *sphere = &collision_component->spheres[editor->entity_collision_object_index];
 							ImGui::InputFloat3("center##sphere_center_field", sphere->center.e, 3);
 							ImGui::InputFloat("radius##sphere_radius_field", &sphere->radius, 3);
+							if (ImGui::Button("delete sphere##delete_sphere")) {
+								entity_collision_component *new_cc = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+								*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena);
+								array_remove(new_cc->spheres, &new_cc->sphere_count, editor->entity_collision_object_index);
+								level->entity_modifications[editor->entity_index].entity_collision_component = new_cc;
+							}
 						}
-						if (editor.entity_collision_object_type == collision_object_type_bound && editor.entity_collision_object_index < entity_collision_component->bound_count) {
+						if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < collision_component->bound_count) {
 							ImGui::Text("bound selected:");
-							aa_bound *bound = &entity_collision_component->bounds[editor.entity_collision_object_index];
+							aa_bound *bound = &collision_component->bounds[editor->entity_collision_object_index];
 							ImGui::InputFloat3("min##bound_min_field", bound->min.e, 3);
 							ImGui::InputFloat3("max##bound_max_field", bound->max.e, 3);
+							if (ImGui::Button("delete bound##delete_bound")) {
+								entity_collision_component *new_cc = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+								*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena);
+								array_remove(new_cc->bounds, &new_cc->bound_count, editor->entity_collision_object_index);
+								level->entity_modifications[editor->entity_index].entity_collision_component = new_cc;
+							}
 						}
 					}
 					ImGui::PopID();
@@ -790,7 +852,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				if (*entity_flag & entity_component_flag_light) {
 					ImGui::PushID("light_component");
 					if (ImGui::CollapsingHeader("Light Component##collapsing_header")) {
-						entity_light_component *entity_light_component = entity_get_light_component(&level, editor.entity_index);
+						entity_light_component *entity_light_component = entity_get_light_component(level, editor->entity_index);
 						if (entity_light_component->light_type == light_type_ambient) {
 							ImGui::ColorEdit3("color##ambient_light_color", entity_light_component->ambient_light.color.e);
 						}
@@ -811,7 +873,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				if (*entity_flag & entity_component_flag_physics) {
 					ImGui::PushID("physics_component");
 					if (ImGui::CollapsingHeader("Physics Component##collapsing_header")) {
-						entity_physics_component *entity_physics_component = entity_get_physics_component(&level, editor.entity_index);
+						entity_physics_component *entity_physics_component = entity_get_physics_component(level, editor->entity_index);
 						ImGui::InputFloat3("velocity##velocity_field", entity_physics_component->velocity.e);
 					}
 					ImGui::PopID();
@@ -860,24 +922,24 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						else {
 							show_duplicate_component_error = false;
 							if (component_type_index == 0) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
-								*entity_flag = level.entity_flags[editor.entity_index] | entity_component_flag_render;
-								entity_render_component *entity_render_component = memory_arena_allocate<struct entity_render_component>(&level.frame_memory_arena, 1);
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_render;
+								entity_render_component *entity_render_component = memory_arena_allocate<struct entity_render_component>(&level->frame_memory_arena, 1);
 								entity_render_component->uv_scale = {1, 1};
-								level.entity_modifications[editor.entity_index].flag = entity_flag;
-								level.entity_modifications[editor.entity_index].entity_render_component = entity_render_component;
+								level->entity_modifications[editor->entity_index].flag = entity_flag;
+								level->entity_modifications[editor->entity_index].entity_render_component = entity_render_component;
 							}
 							else if (component_type_index == 1) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
-								*entity_flag = level.entity_flags[editor.entity_index] | entity_component_flag_collision;
-								entity_collision_component *entity_collision_component = memory_arena_allocate<struct entity_collision_component>(&level.frame_memory_arena, 1);
-								level.entity_modifications[editor.entity_index].flag = entity_flag;
-								level.entity_modifications[editor.entity_index].entity_collision_component = entity_collision_component;
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_collision;
+								entity_collision_component *entity_collision_component = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+								level->entity_modifications[editor->entity_index].flag = entity_flag;
+								level->entity_modifications[editor->entity_index].entity_collision_component = entity_collision_component;
 							}
 							else if (component_type_index == 2) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
-								*entity_flag = level.entity_flags[editor.entity_index] | entity_component_flag_light;
-								entity_light_component *entity_light_component = memory_arena_allocate<struct entity_light_component>(&level.frame_memory_arena, 1);
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_light;
+								entity_light_component *entity_light_component = memory_arena_allocate<struct entity_light_component>(&level->frame_memory_arena, 1);
 								if (light_type_index == 0) {
 									entity_light_component->light_type = {light_type_ambient};
 									entity_light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
@@ -890,15 +952,15 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 									entity_light_component->light_type = {light_type_point};
 									entity_light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
 								}
-								level.entity_modifications[editor.entity_index].flag = entity_flag;
-								level.entity_modifications[editor.entity_index].entity_light_component = entity_light_component;
+								level->entity_modifications[editor->entity_index].flag = entity_flag;
+								level->entity_modifications[editor->entity_index].entity_light_component = entity_light_component;
 							}
 							else if (component_type_index == 3) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level.frame_memory_arena, 1);
-								*entity_flag = level.entity_flags[editor.entity_index] | entity_component_flag_physics;
-								entity_physics_component *entity_physics_component = memory_arena_allocate<struct entity_physics_component>(&level.frame_memory_arena, 1);
-								level.entity_modifications[editor.entity_index].flag = entity_flag;
-								level.entity_modifications[editor.entity_index].entity_physics_component = entity_physics_component;
+								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_physics;
+								entity_physics_component *entity_physics_component = memory_arena_allocate<struct entity_physics_component>(&level->frame_memory_arena, 1);
+								level->entity_modifications[editor->entity_index].flag = entity_flag;
+								level->entity_modifications[editor->entity_index].entity_physics_component = entity_physics_component;
 							}
 							ImGui::CloseCurrentPopup();
 						}
@@ -921,14 +983,14 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						ImGui::TextColored({1, 0, 0, 1}, "error: entity name already exist");
 					}
 					if (ImGui::Button("ok##rename_popup_ok")) {
-						for (uint32 i = 0; i < level.entity_count; i += 1) {
-							if (!strcmp(level.entity_infos[i].name, name_buf)) {
+						for (uint32 i = 0; i < level->entity_count; i += 1) {
+							if (!strcmp(level->entity_infos[i].name, name_buf)) {
 								show_duplicate_name_error = true;
 								break;
 							}
 						}
 						if (!show_duplicate_name_error) {
-							strcpy(level.entity_infos[editor.entity_index].name, name_buf);
+							strcpy(level->entity_infos[editor->entity_index].name, name_buf);
 							array_set(name_buf, '\0');
 							ImGui::CloseCurrentPopup();
 						}
@@ -942,7 +1004,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					ImGui::EndPopup();
 				}
 				if (ImGui::Button("Delete##delete_button")) {
-					level.entity_modifications[editor.entity_index].remove = true;
+					level->entity_modifications[editor->entity_index].remove = true;
 				}
 			}
 		entity_window_skip_components_label:
@@ -950,16 +1012,16 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			ImGui::PopID();
 		}
 		{ // skybox window
-			ImGui::SetNextWindowPos(ImVec2{0, editor.menu_bar_height + editor.entity_window_height});
+			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height + editor->entity_window_height});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.2f});
 			ImGui::PushID("skyboxes_window");
 			if (ImGui::Begin("Skyboxes##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-				editor.skybox_window_height = ImGui::GetWindowHeight();
-				const char *skybox_combo_name = (level.skybox_index < level.skybox_count) ? level.skyboxes[level.skybox_index].file_name : nullptr;
+				editor->skybox_window_height = ImGui::GetWindowHeight();
+				const char *skybox_combo_name = (level->skybox_index < level->skybox_count) ? level->skyboxes[level->skybox_index].file_name : nullptr;
 				if (ImGui::BeginCombo("skyboxes##skyboxes_combo", skybox_combo_name)) {
-					for (uint32 i = 0; i < level.skybox_count; i += 1) {
-						if (ImGui::Selectable(level.skyboxes[i].file_name, level.skybox_index == i)) {
-							level.skybox_index = i;
+					for (uint32 i = 0; i < level->skybox_count; i += 1) {
+						if (ImGui::Selectable(level->skyboxes[i].file_name, level->skybox_index == i)) {
+							level->skybox_index = i;
 						}
 					}
 					ImGui::EndCombo();
@@ -969,7 +1031,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			ImGui::PopID();
 		}
 		{ // memory window
-			ImGui::SetNextWindowPos(ImVec2{0, editor.menu_bar_height + editor.entity_window_height + editor.skybox_window_height});
+			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height + editor->entity_window_height + editor->skybox_window_height});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.8f});
 			ImGui::PushID("memory_usage_window");
 			if (ImGui::Begin("Memory Usage##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
@@ -986,22 +1048,22 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					ImGui::Text(memory_name);
 				};
 				ImGui::Text("Memory Arenas");
-				memory_arena *entity_components_memory_arena = &level.entity_components_memory_arenas[level.entity_components_memory_arena_index];
+				memory_arena *entity_components_memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
 				imgui_render_memory(entity_components_memory_arena->size, entity_components_memory_arena->capacity, entity_components_memory_arena->name);
-				imgui_render_memory(level.assets_memory_arena.size, level.assets_memory_arena.capacity, level.assets_memory_arena.name);
+				imgui_render_memory(level->assets_memory_arena.size, level->assets_memory_arena.capacity, level->assets_memory_arena.name);
 				ImGui::Text("Vulkan Memories");
-				imgui_render_memory(vulkan.memories.common_images_memory.size, vulkan.memories.common_images_memory.capacity, "common images");
-				imgui_render_memory(vulkan.memories.level_images_memory.size, vulkan.memories.level_images_memory.capacity, "level images");
-				imgui_render_memory(vulkan.buffers.level_vertex_buffer_offset, vulkan.buffers.level_vertex_buffer.capacity, "level vertices");
-				imgui_render_memory(vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index], vulkan.buffers.frame_vertex_buffers[vulkan.frame_index].capacity, "frame vertices");
-				imgui_render_memory(vulkan.buffers.frame_uniform_buffer_offsets[vulkan.frame_index], vulkan.buffers.frame_uniform_buffers[vulkan.frame_index].capacity, "frame uniforms");
+				imgui_render_memory(vulkan->memories.common_images_memory.size, vulkan->memories.common_images_memory.capacity, "common images");
+				imgui_render_memory(vulkan->memories.level_images_memory.size, vulkan->memories.level_images_memory.capacity, "level images");
+				imgui_render_memory(vulkan->buffers.level_vertex_buffer_offset, vulkan->buffers.level_vertex_buffer.capacity, "level vertices");
+				imgui_render_memory(vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].capacity, "frame vertices");
+				imgui_render_memory(vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], vulkan->buffers.frame_uniform_buffers[vulkan->frame_index].capacity, "frame uniforms");
 			}
 			ImGui::End();
 			ImGui::PopID();
 		}
 		{ // popups
 			static bool camera_move_speed_popup = false;
-			if (!ImGui::GetIO().WantCaptureMouse && editor.camera_moving) {
+			if (!ImGui::GetIO().WantCaptureMouse && editor->camera_moving) {
 				if (ImGui::GetIO().MouseWheel != 0) {
 					ImGui::OpenPopup("##camera_speed_popup");
 					camera_move_speed_popup = true;
@@ -1010,41 +1072,41 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			if (ImGui::BeginPopupModal("##camera_speed_popup", &camera_move_speed_popup, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 				float min_speed = 0.1f;
 				float max_speed = 100;
-				editor.camera_move_speed += ImGui::GetIO().MouseWheel;
-    		ImGui::SliderFloat("camera speed##camera_speed_slider", &editor.camera_move_speed, min_speed, max_speed);
+				editor->camera_move_speed += ImGui::GetIO().MouseWheel;
+    		ImGui::SliderFloat("camera speed##camera_speed_slider", &editor->camera_move_speed, min_speed, max_speed);
 				ImGui::EndPopup();
 			}
 		}
 		{ // gizmo
-			if (editor.entity_index < level.entity_count) {
-				uint32 entity_flag = level.entity_flags[editor.entity_index];
-				transform *entity_transform = &level.entity_transforms[editor.entity_index];
-				mat4 camera_view_mat = camera_view_mat4(editor.camera);
-				mat4 camera_proj_mat = camera_projection_mat4(editor.camera);
-				if (editor.gizmo_mode == editor_gizmo_mode_transform_translate) {
+			if (editor->entity_index < level->entity_count) {
+				uint32 entity_flag = level->entity_flags[editor->entity_index];
+				transform *entity_transform = &level->entity_transforms[editor->entity_index];
+				mat4 camera_view_mat = camera_view_mat4(editor->camera);
+				mat4 camera_proj_mat = camera_projection_mat4(editor->camera);
+				if (editor->gizmo_mode == editor_gizmo_mode_transform_translate) {
 					ImGuizmo::BeginFrame();
 					mat4 transform_mat = transform_to_mat4(*entity_transform);
 					ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
 					entity_transform->translate = mat4_get_translation(transform_mat);
 				}
-				else if (editor.gizmo_mode == editor_gizmo_mode_transform_rotate) {
+				else if (editor->gizmo_mode == editor_gizmo_mode_transform_rotate) {
 					ImGuizmo::BeginFrame();
 					mat4 transform_mat = transform_to_mat4(*entity_transform);
 					ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::ROTATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
 					entity_transform->rotate = quat_from_mat4(transform_mat);
 				}
-				else if (editor.gizmo_mode == editor_gizmo_mode_transform_scale) {
+				else if (editor->gizmo_mode == editor_gizmo_mode_transform_scale) {
 					ImGuizmo::BeginFrame();
 					mat4 transform_mat = transform_to_mat4(*entity_transform);
 					ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::SCALE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
 					entity_transform->scale = mat4_get_scaling(transform_mat);
 				}
-				else if (editor.gizmo_mode == editor_gizmo_mode_directional_light_rotate && entity_flag & entity_component_flag_light) {
-					entity_light_component *entity_light_component = entity_get_light_component(&level, editor.entity_index);
+				else if (editor->gizmo_mode == editor_gizmo_mode_directional_light_rotate && entity_flag & entity_component_flag_light) {
+					entity_light_component *entity_light_component = entity_get_light_component(level, editor->entity_index);
 					if (entity_light_component->light_type == light_type_directional) {
 						ImGuizmo::BeginFrame();
 						transform transform = transform_identity();
-						transform.translate = editor.camera.position + editor.camera.view * 16;
+						transform.translate = editor->camera.position + editor->camera.view * 16;
 						mat4 transform_mat = transform_to_mat4(transform);
 						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::ROTATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
 						entity_light_component->directional_light.direction = vec3_normalize(quat_from_mat4(transform_mat) * entity_light_component->directional_light.direction);
@@ -1068,8 +1130,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						draw_list->AddCircleFilled(line_end_imgui, 12, 0xff00ffff);
 					}
 				}
-				else if (editor.gizmo_mode == editor_gizmo_mode_point_light_translate && entity_flag & entity_component_flag_light) {
-					entity_light_component *entity_light_component = entity_get_light_component(&level, editor.entity_index);
+				else if (editor->gizmo_mode == editor_gizmo_mode_point_light_translate && entity_flag & entity_component_flag_light) {
+					entity_light_component *entity_light_component = entity_get_light_component(level, editor->entity_index);
 					if (entity_light_component->light_type == light_type_point) {
 						ImGuizmo::BeginFrame();
 						transform transform = transform_identity();
@@ -1079,11 +1141,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						entity_light_component->point_light.position = mat4_get_translation(transform_mat);
 					}
 				}
-				else if (editor.gizmo_mode == editor_gizmo_mode_collision_bound_min && entity_flag & entity_component_flag_collision) {
-					entity_collision_component *entity_collision_component = entity_get_collision_component(&level, editor.entity_index);
-					if (editor.entity_collision_object_type == collision_object_type_bound && editor.entity_collision_object_index < entity_collision_component->bound_count) {
+				else if (editor->gizmo_mode == editor_gizmo_mode_collision_bound_min && entity_flag & entity_component_flag_collision) {
+					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
+					if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < entity_collision_component->bound_count) {
 						ImGuizmo::BeginFrame();
-						aa_bound *bound = &entity_collision_component->bounds[editor.entity_collision_object_index];
+						aa_bound *bound = &entity_collision_component->bounds[editor->entity_collision_object_index];
 						aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(*bound, entity_transform->scale), entity_transform->translate);
 						mat4 transform_mat = mat4_from_translation(transformed_bound.min);
 						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
@@ -1094,11 +1156,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						bound->min += new_min - transformed_bound.min;
 					}
 				}
-				else if (editor.gizmo_mode == editor_gizmo_mode_collision_bound_max && entity_flag & entity_component_flag_collision) {
-					entity_collision_component *entity_collision_component = entity_get_collision_component(&level, editor.entity_index);
-					if (editor.entity_collision_object_type == collision_object_type_bound && editor.entity_collision_object_index < entity_collision_component->bound_count) {
+				else if (editor->gizmo_mode == editor_gizmo_mode_collision_bound_max && entity_flag & entity_component_flag_collision) {
+					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
+					if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < entity_collision_component->bound_count) {
 						ImGuizmo::BeginFrame();
-						aa_bound *bound = &entity_collision_component->bounds[editor.entity_collision_object_index];
+						aa_bound *bound = &entity_collision_component->bounds[editor->entity_collision_object_index];
 						aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(*bound, entity_transform->scale), entity_transform->translate);
 						mat4 transform_mat = mat4_from_translation(transformed_bound.max);
 						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
@@ -1114,15 +1176,15 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		ImGui::Render();
 
 		auto generate_editor_render_data = [&] {
-			editor.render_data = {};
-			vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index] = round_up(vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index], 16);
-			editor.render_data.lines_frame_vertex_buffer_offset = vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index];
+			editor->render_data = {};
+			vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], 16);
+			editor->render_data.lines_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
 			struct line_point {
 				vec3 position;
 				u8vec4 color;
 			};
 			static_assert(sizeof(struct line_point) == 16, "");
-			line_point *line_points = (struct line_point *)(vulkan.buffers.frame_vertex_buffer_ptrs[vulkan.frame_index] + editor.render_data.lines_frame_vertex_buffer_offset);
+			line_point *line_points = (struct line_point *)(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + editor->render_data.lines_frame_vertex_buffer_offset);
 			{ // reference grid
 				u8vec4 color = u8vec4{200, 200, 200, 255};
 				line_point horizontal_points[20];
@@ -1142,16 +1204,16 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				memcpy(line_points, horizontal_points, sizeof(horizontal_points));
 				memcpy(line_points + m_countof(horizontal_points), vertical_points, sizeof(vertical_points));
 				line_points += m_countof(horizontal_points) + m_countof(vertical_points);
-				editor.render_data.lines_vertex_count += m_countof(horizontal_points) + m_countof(vertical_points);
-				vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index] += sizeof(horizontal_points) + sizeof(vertical_points);
+				editor->render_data.lines_vertex_count += m_countof(horizontal_points) + m_countof(vertical_points);
+				vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(horizontal_points) + sizeof(vertical_points);
 			}
 			{ // collision component bounds
-				if (editor.collision_object_show_bounds && editor.entity_index < level.entity_count && level.entity_flags[editor.entity_index] & entity_component_flag_collision) {
-					entity_collision_component *entity_collision_component = entity_get_collision_component(&level, editor.entity_index);
+				if (editor->collision_object_show_bounds && editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
+					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 					for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
-						transform *transform = &level.entity_transforms[editor.entity_index];
+						transform *transform = &level->entity_transforms[editor->entity_index];
 						aa_bound bound = aa_bound_translate(aa_bound_scale(entity_collision_component->bounds[i], transform->scale), transform->translate);
-						bool selected = editor.entity_collision_object_type == collision_object_type_bound && editor.entity_collision_object_index == i;
+						bool selected = editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index == i;
 						u8vec4 color = selected ? u8vec4{255, 0, 0, 255} : u8vec4{0, 255, 0, 255};
 						vec3 size = bound.max - bound.min;
 						vec3 points[8];
@@ -1168,62 +1230,62 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 																				 {points[0], color}, {points[4], color}, {points[1], color}, {points[5], color}, {points[2], color}, {points[6], color}, {points[3], color}, {points[7], color}}; // columns
 						memcpy(line_points, bound_points, sizeof(bound_points));
 						line_points += m_countof(bound_points);
-						editor.render_data.lines_vertex_count += m_countof(bound_points);
-						vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index] += sizeof(bound_points);
+						editor->render_data.lines_vertex_count += m_countof(bound_points);
+						vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(bound_points);
 					}
 				}
 			}
 			{ // entity mesh outline
-				if (editor.entity_index < level.entity_count && level.entity_flags[editor.entity_index] & entity_component_flag_render) {
-					entity_render_component *entity_render_component = entity_get_render_component(&level, editor.entity_index);
-					if (entity_render_component->model_index < level.model_count && editor.entity_mesh_index < level.models[entity_render_component->model_index].mesh_count) {
-						for (uint32 i = 0; i < level.render_data.model_count; i += 1) {
-							if (level.render_data.models[i].model_index == entity_render_component->model_index) {
-								level.render_data.models[i].meshes_render_data[editor.entity_mesh_index].render_vertices_outline = true;
+				if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_render) {
+					entity_render_component *entity_render_component = entity_get_render_component(level, editor->entity_index);
+					if (entity_render_component->model_index < level->model_count && editor->entity_mesh_index < level->models[entity_render_component->model_index].mesh_count) {
+						for (uint32 i = 0; i < level->render_data.model_count; i += 1) {
+							if (level->render_data.models[i].model_index == entity_render_component->model_index) {
+								level->render_data.models[i].meshes_render_data[editor->entity_mesh_index].render_vertices_outline = true;
 							}
 						}														
 					}
 				}
 			}
 			{ // imgui
-				vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index] = round_up(vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index], (uint32)sizeof(ImDrawVert));
-				editor.render_data.imgui_frame_vertex_buffer_offset = vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index];
+				vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(ImDrawVert));
+				editor->render_data.imgui_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
 				ImDrawData *imgui_draw_data = ImGui::GetDrawData();
 				for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
 					ImDrawList *dlist = imgui_draw_data->CmdLists[i];
 					uint32 vertices_size = dlist->VtxBuffer.Size * sizeof(ImDrawVert);
 					uint32 indices_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
-					memcpy(vulkan.buffers.frame_vertex_buffer_ptrs[vulkan.frame_index] + vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index], dlist->VtxBuffer.Data, vertices_size);
-					memcpy(vulkan.buffers.frame_vertex_buffer_ptrs[vulkan.frame_index] + vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index] + vertices_size, dlist->IdxBuffer.Data, indices_size);
-					vulkan.buffers.frame_vertex_buffer_offsets[vulkan.frame_index] += round_up(vertices_size + indices_size, (uint32)sizeof(ImDrawVert));
+					memcpy(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], dlist->VtxBuffer.Data, vertices_size);
+					memcpy(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] + vertices_size, dlist->IdxBuffer.Data, indices_size);
+					vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += round_up(vertices_size + indices_size, (uint32)sizeof(ImDrawVert));
 				}
 			}
 		};
    	auto extra_main_render_pass_render_commands = [&] {
-			VkCommandBuffer cmd_buffer = vulkan.cmd_buffers.graphic_cmd_buffers[vulkan.frame_index];
-			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan.pipelines.lines_pipeline.pipeline);
+			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.pipeline);
 			VkDeviceSize vertices_offset = 0;
-			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan.buffers.frame_vertex_buffers[vulkan.frame_index].buffer, &vertices_offset);
-			uint32 uniform_buffer_offsets[3] = {level.render_data.common_data_frame_uniform_buffer_offset, 0, 0};
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan.pipelines.lines_pipeline.layout, 0, 1, &(vulkan.descriptors.frame_uniform_buffer_offsets[vulkan.frame_index]), m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
-			vkCmdDraw(cmd_buffer, editor.render_data.lines_vertex_count, 1, editor.render_data.lines_frame_vertex_buffer_offset / 16, 0);
+			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
+			uint32 uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, 0, 0};
+			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
+			vkCmdDraw(cmd_buffer, editor->render_data.lines_vertex_count, 1, editor->render_data.lines_frame_vertex_buffer_offset / 16, 0);
 		};
    	auto extra_swap_chain_render_commands = [&] {
-			VkCommandBuffer cmd_buffer = vulkan.cmd_buffers.graphic_cmd_buffers[vulkan.frame_index];
-			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan.pipelines.imgui_pipeline.pipeline);
+			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline.pipeline);
 			VkDeviceSize vertices_offset = 0;
-			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan.buffers.frame_vertex_buffers[vulkan.frame_index].buffer, &vertices_offset);
-			vkCmdBindIndexBuffer(cmd_buffer, vulkan.buffers.frame_vertex_buffers[vulkan.frame_index].buffer, vertices_offset, VK_INDEX_TYPE_UINT16);
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan.pipelines.imgui_pipeline.layout, 0, 1, &vulkan.descriptors.imgui_font_atlas_image, 0, nullptr);
-			vec2 push_consts = {(float)vulkan.swap_chain.image_width, (float)vulkan.swap_chain.image_height};
-			vkCmdPushConstants(cmd_buffer, vulkan.pipelines.imgui_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_consts), &push_consts);
+			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
+			vkCmdBindIndexBuffer(cmd_buffer, vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, vertices_offset, VK_INDEX_TYPE_UINT16);
+			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline.layout, 0, 1, &vulkan->descriptors.imgui_font_atlas_image, 0, nullptr);
+			vec2 push_consts = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
+			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.imgui_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_consts), &push_consts);
 			ImDrawData *imgui_draw_data = ImGui::GetDrawData();
 			for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
 				ImDrawList *dlist = imgui_draw_data->CmdLists[i];
 				uint32 vertices_size = dlist->VtxBuffer.Size * sizeof(ImDrawVert);
 				uint32 elements_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
-				uint32 vertex_index = editor.render_data.imgui_frame_vertex_buffer_offset / sizeof(ImDrawVert);
-				uint32 element_index = (editor.render_data.imgui_frame_vertex_buffer_offset + vertices_size) / sizeof(ImDrawIdx);
+				uint32 vertex_index = editor->render_data.imgui_frame_vertex_buffer_offset / sizeof(ImDrawVert);
+				uint32 element_index = (editor->render_data.imgui_frame_vertex_buffer_offset + vertices_size) / sizeof(ImDrawIdx);
 				for (int32 i = 0; i < dlist->CmdBuffer.Size; i += 1) {
 				 	ImDrawCmd *dcmd = &dlist->CmdBuffer.Data[i];
 					VkRect2D scissor = {{(int32)dcmd->ClipRect.x, (int32)dcmd->ClipRect.y}, {(uint32)(dcmd->ClipRect.z - dcmd->ClipRect.x), (uint32)(dcmd->ClipRect.w - dcmd->ClipRect.y)}};
@@ -1231,17 +1293,17 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					vkCmdDrawIndexed(cmd_buffer, dcmd->ElemCount, 1, element_index, vertex_index, 0);
 					element_index += dcmd->ElemCount;
 				}
-				editor.render_data.imgui_frame_vertex_buffer_offset += round_up(vertices_size + elements_size, (uint32)sizeof(ImDrawVert));
+				editor->render_data.imgui_frame_vertex_buffer_offset += round_up(vertices_size + elements_size, (uint32)sizeof(ImDrawVert));
 			}
 		};
-		vulkan_begin_render(&vulkan);
-		level_generate_render_data(&level, &vulkan, editor.camera, generate_editor_render_data);
-		level_generate_render_commands(&level, &vulkan, editor.camera, extra_main_render_pass_render_commands, extra_swap_chain_render_commands);
+		vulkan_begin_render(vulkan);
+		level_generate_render_data(level, vulkan, editor->camera, generate_editor_render_data);
+		level_generate_render_commands(level, vulkan, editor->camera, extra_main_render_pass_render_commands, extra_swap_chain_render_commands);
 		bool screen_shot = ImGui::IsKeyReleased(keycode_print_screen);
-		vulkan_end_render(&vulkan, screen_shot);
+		vulkan_end_render(vulkan, screen_shot);
 
-		level_process_entity_modifications_additions(&level);
-		level.frame_memory_arena.size = 0;
+		level_process_entity_modifications_additions(level);
+		level->frame_memory_arena.size = 0;
 	
 		QueryPerformanceCounter(&performance_counters[1]);
 		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;

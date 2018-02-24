@@ -424,7 +424,8 @@ void vulkan_device_initialize(vulkan_device *vulkan_device) {
 	struct memory_arena memory_arena = {};
 	string info_str = {};
 	memory_arena.capacity = m_megabytes(1);
-	m_assert(allocate_virtual_memory(memory_arena.capacity, &memory_arena.memory));
+	memory_arena.memory = allocate_virtual_memory(memory_arena.capacity);
+	m_assert(memory_arena.memory);
 	info_str.capacity = memory_arena.capacity / 2;
 	info_str.buf = memory_arena_allocate<char>(&memory_arena, info_str.capacity);
 	m_scope_exit(
@@ -631,7 +632,8 @@ void vulkan_swap_chain_initialize(window window, bool vsync_on, vulkan *vulkan) 
 	struct memory_arena memory_arena = {};
 	string info_str = {};
 	memory_arena.capacity = m_megabytes(1);
-	m_assert(allocate_virtual_memory(memory_arena.capacity, &memory_arena.memory));
+	memory_arena.memory = allocate_virtual_memory(memory_arena.capacity);
+	m_assert(memory_arena.memory);
 	info_str.capacity = memory_arena.capacity / 2;
 	info_str.buf = memory_arena_allocate<char>(&memory_arena, info_str.capacity);
 	m_scope_exit(

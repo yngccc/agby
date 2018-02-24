@@ -77,7 +77,7 @@ bool set_exe_dir_as_current() {
 	return true;
 }
 
-bool allocate_virtual_memory(uint64 size, void **memory) {
+void *allocate_virtual_memory(uint64 size) {
 	static SYSTEM_INFO system_info = [] {
 		SYSTEM_INFO system_info;
 		GetSystemInfo(&system_info);
@@ -94,8 +94,7 @@ bool allocate_virtual_memory(uint64 size, void **memory) {
 		VirtualFree(mem, 0, MEM_RELEASE);
 		return false;
 	}
-	*memory = mem + system_info.dwPageSize;
-	return true;
+	return mem + system_info.dwPageSize;
 }
 
 void free_virtual_memory(void *memory) {
