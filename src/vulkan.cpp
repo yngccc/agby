@@ -265,7 +265,7 @@ struct vulkan_pipeline {
 
 struct vulkan_pipelines {
 	vulkan_pipeline static_model_pipeline;
-	vulkan_pipeline static_model_line_pipeline;
+	vulkan_pipeline static_model_wireframe_pipeline;
 	vulkan_pipeline static_model_shadow_map_pipeline;
 	vulkan_pipeline animated_model_pipeline;
 	vulkan_pipeline animated_model_shadow_map_pipeline;
@@ -273,6 +273,7 @@ struct vulkan_pipelines {
 	vulkan_pipeline skybox_pipeline;
 	vulkan_pipeline imgui_pipeline;
 	vulkan_pipeline text_pipeline;
+	vulkan_pipeline triangle_wireframe_pipeline;
 	vulkan_pipeline lines_pipeline;
 	vulkan_pipeline swap_chain_pipeline;
 };
@@ -1823,7 +1824,7 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
 		pipeline->layout = layout;
 	}
-	{ // static model line
+	{ // static model wireframe
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
 		shader_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
 		shader_stages[0].module = shader_module_from_file("shaders\\static_model_line.vert.spv");
@@ -1905,7 +1906,7 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 		create_info.renderPass = vulkan->render_passes.main_render_pass;
 		create_info.subpass = 0;
 		create_info.basePipelineHandle = VK_NULL_HANDLE;
-		vulkan_pipeline *pipeline = &vulkan->pipelines.static_model_line_pipeline;
+		vulkan_pipeline *pipeline = &vulkan->pipelines.static_model_wireframe_pipeline;
 		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
 		pipeline->layout = layout;
 	}
@@ -2515,6 +2516,8 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 		vulkan_pipeline *pipeline = &vulkan->pipelines.text_pipeline;
 		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
 		pipeline->layout = layout;
+	}
+	{ // triangle wireframe
 	}
 	{ // lines
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};

@@ -7,6 +7,7 @@
 #include "vulkan.cpp"
 #include "assets.cpp"
 #include "level.cpp"
+#include "geometry.cpp"
 
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "../vendor/include/imgui/imgui_draw.cpp"

@@ -1553,9 +1553,9 @@ void level_generate_render_commands(level *level, vulkan *vulkan, camera camera,
 					}
 					vkCmdDrawIndexed(cmd_buffer, model_mesh->index_count, 1, model_mesh->index_buffer_offset / sizeof(uint16), model_mesh->vertex_buffer_offset / model_mesh->vertex_size, 0);
 					if (model_render_data->meshes_render_data[i].render_vertices_outline) {
-						vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_line_pipeline.pipeline);
+						vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_wireframe_pipeline.pipeline);
 						uint32 frame_uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes_render_data[i].frame_uniforms_buffer_offset, 0};
-						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_line_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(frame_uniform_buffer_offsets), frame_uniform_buffer_offsets);
+						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_wireframe_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(frame_uniform_buffer_offsets), frame_uniform_buffer_offsets);
 						vkCmdDrawIndexed(cmd_buffer, model_mesh->index_count, 1, model_mesh->index_buffer_offset / sizeof(uint16), model_mesh->vertex_buffer_offset / model_mesh->vertex_size, 0);
 						vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.pipeline);
 					}

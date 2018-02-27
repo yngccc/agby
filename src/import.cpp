@@ -281,7 +281,7 @@ void compress_image(image_type image_type, uint8 *data, uint32 width, uint32 hei
 	*compressed_data_size = output_handler.compressed_data_size;
 }
 
-void import_fbx_model(gpk_import_cmd_line cmdl) {
+void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 	printf("Importing model \"%s\" to \"%s\"\n", cmdl.asset_file, cmdl.import_file);
 	FbxScene *fbx_scene = nullptr;
 	{
@@ -641,7 +641,41 @@ void import_fbx_model(gpk_import_cmd_line cmdl) {
 	close_file_mapping(import_file_mapping);
 }
 
-void import_skybox(gpk_import_cmd_line cmdl) {
+void fbx_mesh_to_text(const char *fbx_file) {
+	printf("manually invoking fbx_mesh_to_text(\"%s\")", fbx_file);
+	FbxScene *fbx_scene = nullptr;
+	{
+		FbxManager *fbx_sdk_manager = FbxManager::Create();
+		FbxImporter *fbx_importer = FbxImporter::Create(fbx_sdk_manager, "");
+		if (!fbx_importer->Initialize(fbx_file, -1, fbx_sdk_manager->GetIOSettings())) {
+			fatal("fbx_importer->Initialize failed, file: \"%s\"", fbx_file);
+		}
+		fbx_scene = FbxScene::Create(fbx_sdk_manager, "");
+		fbx_importer->Import(fbx_scene);
+		FbxGeometryConverter(fbx_sdk_manager).Triangulate(fbx_scene, true);
+	}
+	FbxMesh *fbx_mesh = fbx_scene->GetSrcObject<FbxMesh>(0);
+	if (!fbx_mesh) {
+		fatal("error: cannot find a fbx mesh");
+	}
+	FILE *output_file = fopen("fbx_mesh_to_text.txt", "w");
+	if (!output_file) {
+		fatal("error: cannot create file fbx_mesh_to_text.txt");
+	}
+	FbxVector4 *control_points = fbx_mesh->GetControlPoints();
+	int32 *polygon_control_point_indices = fbx_mesh->GetPolygonVertices();
+	for (int32 i = 0; i < fbx_mesh->GetPolygonCount() * 3; i += 1) {
+		FbxVector4 &cp = control_points[polygon_control_point_indices[i]];
+		fprintf(output_file, "{%.3ff, %.3ff, %.3ff}, ", cp[0], cp[1], cp[2]);
+		if (i % 3 == 2) {
+			fprintf(output_file, "\n");
+		}
+	}
+	fclose(output_file);
+	printf("\ndone!");
+}
+
+void skybox_to_gpk(gpk_import_cmd_line cmdl) {
 	console("Importing skybox \"%s\" to \"%s\"\n", cmdl.asset_file, cmdl.import_file);
 	const char *cubemap_files[6] = {"left.png", "right.png", "up.png", "down.png", "front.png", "back.png"};
 	uint8 *cubemap_data[6] = {};
@@ -680,19 +714,26 @@ void import_skybox(gpk_import_cmd_line cmdl) {
 }
 
 int main(int argc, char **argv) {
-	if (argc != 4) {
-		fatal("import.exe expect 3 command line arguments");
-	}
 	set_exe_dir_as_current();
-	gpk_import_cmd_line cmdl = {};
-	cmdl.import_type = (gpk_import_type)atoi(argv[1]);
-	snprintf(cmdl.asset_file, sizeof(cmdl.asset_file), "%s", argv[2]);
-	snprintf(cmdl.import_file, sizeof(cmdl.import_file), "%s", argv[3]);
-	if (cmdl.import_type == gpk_import_type_fbx_model) {
-		import_fbx_model(cmdl);
+	if (argc == 4) {
+		gpk_import_cmd_line cmdl = {};
+		cmdl.import_type = (gpk_import_type)atoi(argv[1]);
+		snprintf(cmdl.asset_file, sizeof(cmdl.asset_file), "%s", argv[2]);
+		snprintf(cmdl.import_file, sizeof(cmdl.import_file), "%s", argv[3]);
+		if (cmdl.import_type == gpk_import_type_fbx_model) {
+			fbx_model_to_gpk(cmdl);
+		}
+		else if (cmdl.import_type == gpk_import_type_skybox) {
+			skybox_to_gpk(cmdl);
+		}
 	}
-	else if (cmdl.import_type == gpk_import_type_skybox) {
-		import_skybox(cmdl);
+	else if (argc == 3) {
+		if (!strcmp(argv[1], "-manual_0")) {
+			fbx_mesh_to_text(argv[2]);
+		}
+	}
+	else {
+		fatal("import.exe: invalid command line arguments");
 	}
 }
 
