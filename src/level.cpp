@@ -91,12 +91,14 @@ struct entity_render_component {
 };
 
 struct entity_collision_component {
-	plane *planes;
 	sphere *spheres;
+	capsule *capsules;
 	aa_bound *bounds;
-	uint32 plane_count;
+	triangle *triangles;
 	uint32 sphere_count;
+	uint32 capsule_count;
 	uint32 bound_count;
+	uint32 triangle_count;
 };
 
 struct entity_light_component {
@@ -292,22 +294,16 @@ uint32 entity_component_get_entity_index(level *level, uint32 component_index, e
 	return UINT32_MAX;
 }
 
-entity_collision_component deep_copy_collision_component (entity_collision_component *cc, memory_arena *memory_arena,
-																													plane *new_planes = nullptr, uint32 new_plane_count = 0,
-																													sphere *new_spheres = nullptr, uint32 new_sphere_count = 0,
-																													aa_bound *new_bounds = nullptr, uint32 new_bound_count = 0) {
+entity_collision_component deep_copy_collision_component(entity_collision_component *cc, memory_arena *memory_arena,
+																												 sphere *new_spheres = nullptr, uint32 new_sphere_count = 0,
+																												 capsule *new_capsules = nullptr, uint32 new_capsule_count = 0,
+																												 aa_bound *new_bounds = nullptr, uint32 new_bound_count = 0,
+																												 triangle *new_triangles = nullptr, uint32 new_triangle_count = 0) {
 	entity_collision_component collision_component = *cc;
-	collision_component.plane_count += new_plane_count;
 	collision_component.sphere_count += new_sphere_count;
+	collision_component.capsule_count += new_capsule_count;
 	collision_component.bound_count += new_bound_count;
-	if (collision_component.plane_count > 0) {
-		plane *planes = memory_arena_allocate<struct plane>(memory_arena, collision_component.plane_count);
-		memcpy(planes, cc->planes, cc->plane_count * sizeof(struct plane));
-		if (new_plane_count > 0) {
-			memcpy(planes + cc->plane_count, new_planes, new_plane_count * sizeof(struct plane));
-		}
-		collision_component.planes = planes;
-	}
+	collision_component.triangle_count += new_triangle_count;
 	if (collision_component.sphere_count > 0) {
 		sphere *spheres = memory_arena_allocate<struct sphere>(memory_arena, collision_component.sphere_count);
 		memcpy(spheres, cc->spheres, cc->sphere_count * sizeof(struct sphere));
@@ -316,6 +312,14 @@ entity_collision_component deep_copy_collision_component (entity_collision_compo
 		}
 		collision_component.spheres = spheres;
 	}
+	if (collision_component.capsule_count > 0) {
+		capsule *capsules = memory_arena_allocate<struct capsule>(memory_arena, collision_component.capsule_count);
+		memcpy(capsules, cc->capsules, cc->capsule_count * sizeof(struct capsule));
+		if (new_capsule_count > 0) {
+			memcpy(capsules + cc->capsule_count, new_capsules, new_capsule_count * sizeof(struct capsule));
+		}
+		collision_component.capsules = capsules;
+	}
 	if (collision_component.bound_count > 0) {
 		aa_bound *bounds = memory_arena_allocate<struct aa_bound>(memory_arena, collision_component.bound_count);
 		memcpy(bounds, cc->bounds, cc->bound_count * sizeof(struct aa_bound));
@@ -323,6 +327,14 @@ entity_collision_component deep_copy_collision_component (entity_collision_compo
 			memcpy(bounds + cc->bound_count, new_bounds, new_bound_count * sizeof(struct aa_bound));
 		}
 		collision_component.bounds = bounds;
+	}
+	if (collision_component.triangle_count > 0) {
+		triangle *triangles = memory_arena_allocate<struct triangle>(memory_arena, collision_component.triangle_count);
+		memcpy(triangles, cc->triangles, cc->triangle_count * sizeof(struct triangle));
+		if (new_triangle_count > 0) {
+			memcpy(triangles + cc->triangle_count, new_triangles, new_triangle_count * sizeof(struct triangle));
+		}
+		collision_component.triangles = triangles;
 	}
 	return collision_component;
 };
@@ -509,175 +521,177 @@ uint32 level_add_model(level *level, vulkan *vulkan, const char *file_name, bool
 	model->bound = gpk_model_header->bound;
 	snprintf(model->file_name, sizeof(model->file_name), "%s", file_name);
 	model->mesh_count = gpk_model_header->mesh_count;
-	model->meshes = memory_arena_allocate<struct model_mesh>(&level->assets_memory_arena, model->mesh_count);
-	m_assert(model->meshes);
-	for (uint32 i = 0; i < model->mesh_count; i += 1) {
-		gpk_model_mesh_header *gpk_model_mesh_header = (struct gpk_model_mesh_header *)((uint8 *)gpk_model_header + gpk_model_header->mesh_offsets[i]);
-		gpk_model_mesh_instance *gpk_model_mesh_instances = (struct gpk_model_mesh_instance *)((uint8 *)gpk_model_mesh_header + gpk_model_mesh_header->instances_offset);
-		uint8 *gpk_model_mesh_vertices = ((uint8 *)gpk_model_mesh_header) + gpk_model_mesh_header->vertices_offset;
-		uint8 *gpk_model_mesh_indices = ((uint8 *)gpk_model_mesh_header) + gpk_model_mesh_header->indices_offset;
-		model_mesh *model_mesh = &model->meshes[i];
-		*model_mesh = {};
-		array_copy(model_mesh->name, gpk_model_mesh_header->name);
-		model_mesh->material_index = gpk_model_mesh_header->material_index;
-		model_mesh->instance_count = gpk_model_mesh_header->instance_count;
-		model_mesh->instances = memory_arena_allocate<model_mesh_instance>(&level->assets_memory_arena, model_mesh->instance_count);
-		memcpy(model_mesh->instances, gpk_model_mesh_instances, sizeof(struct gpk_model_mesh_instance) * gpk_model_mesh_header->instance_count);
-		model_mesh->vertex_size = gpk_model_mesh_header->vertex_size;
-		model_mesh->vertex_count = gpk_model_mesh_header->vertex_count;
-		vulkan->buffers.level_vertex_buffer_offset = round_up(vulkan->buffers.level_vertex_buffer_offset, model_mesh->vertex_size);
-		model_mesh->vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		model_mesh->index_size = 2;
-		model_mesh->index_count = gpk_model_mesh_header->index_count;
-		uint32 vertices_data_size = model_mesh->vertex_size * model_mesh->vertex_count;
-		vulkan->buffers.level_vertex_buffer_offset = round_up(vulkan->buffers.level_vertex_buffer_offset + vertices_data_size, 4);
-		model_mesh->index_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		uint32 indices_data_size = model_mesh->index_size * model_mesh->index_count;
-		vulkan->buffers.level_vertex_buffer_offset += indices_data_size;
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->vertex_buffer_offset, gpk_model_mesh_vertices, vertices_data_size);
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->index_buffer_offset, gpk_model_mesh_indices, indices_data_size);
-		if (store_vertices) {
-			model_mesh->vertices_data = memory_arena_allocate<uint8>(&level->assets_memory_arena, vertices_data_size);
-			model_mesh->indices_data = memory_arena_allocate<uint8>(&level->assets_memory_arena, indices_data_size);
-			memcpy(model_mesh->vertices_data, gpk_model_mesh_vertices, vertices_data_size);
-			memcpy(model_mesh->indices_data, gpk_model_mesh_indices, indices_data_size);
+	if (model->mesh_count > 0) {
+		model->meshes = memory_arena_allocate<struct model_mesh>(&level->assets_memory_arena, model->mesh_count);
+		for (uint32 i = 0; i < model->mesh_count; i += 1) {
+			gpk_model_mesh_header *gpk_model_mesh_header = (struct gpk_model_mesh_header *)((uint8 *)gpk_model_header + gpk_model_header->mesh_offsets[i]);
+			gpk_model_mesh_instance *gpk_model_mesh_instances = (struct gpk_model_mesh_instance *)((uint8 *)gpk_model_mesh_header + gpk_model_mesh_header->instances_offset);
+			uint8 *gpk_model_mesh_vertices = ((uint8 *)gpk_model_mesh_header) + gpk_model_mesh_header->vertices_offset;
+			uint8 *gpk_model_mesh_indices = ((uint8 *)gpk_model_mesh_header) + gpk_model_mesh_header->indices_offset;
+			model_mesh *model_mesh = &model->meshes[i];
+			*model_mesh = {};
+			array_copy(model_mesh->name, gpk_model_mesh_header->name);
+			model_mesh->material_index = gpk_model_mesh_header->material_index;
+			model_mesh->instance_count = gpk_model_mesh_header->instance_count;
+			model_mesh->instances = memory_arena_allocate<model_mesh_instance>(&level->assets_memory_arena, model_mesh->instance_count);
+			memcpy(model_mesh->instances, gpk_model_mesh_instances, sizeof(struct gpk_model_mesh_instance) * gpk_model_mesh_header->instance_count);
+			model_mesh->vertex_size = gpk_model_mesh_header->vertex_size;
+			model_mesh->vertex_count = gpk_model_mesh_header->vertex_count;
+			vulkan->buffers.level_vertex_buffer_offset = round_up(vulkan->buffers.level_vertex_buffer_offset, model_mesh->vertex_size);
+			model_mesh->vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+			model_mesh->index_size = 2;
+			model_mesh->index_count = gpk_model_mesh_header->index_count;
+			uint32 vertices_data_size = model_mesh->vertex_size * model_mesh->vertex_count;
+			vulkan->buffers.level_vertex_buffer_offset = round_up(vulkan->buffers.level_vertex_buffer_offset + vertices_data_size, 4);
+			model_mesh->index_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+			uint32 indices_data_size = model_mesh->index_size * model_mesh->index_count;
+			vulkan->buffers.level_vertex_buffer_offset += indices_data_size;
+			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->vertex_buffer_offset, gpk_model_mesh_vertices, vertices_data_size);
+			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->index_buffer_offset, gpk_model_mesh_indices, indices_data_size);
+			if (store_vertices) {
+				model_mesh->vertices_data = memory_arena_allocate<uint8>(&level->assets_memory_arena, vertices_data_size);
+				model_mesh->indices_data = memory_arena_allocate<uint8>(&level->assets_memory_arena, indices_data_size);
+				memcpy(model_mesh->vertices_data, gpk_model_mesh_vertices, vertices_data_size);
+				memcpy(model_mesh->indices_data, gpk_model_mesh_indices, indices_data_size);
+			}
 		}
 	}
 	model->material_count = gpk_model_header->material_count;
-	model->materials = memory_arena_allocate<struct model_material>(&level->assets_memory_arena, model->material_count);
-	m_assert(model->materials);
-	for (uint32 i = 0; i < model->material_count; i += 1) {
-		gpk_model_material_header *gpk_model_material_header = (struct gpk_model_material_header *)((uint8 *)gpk_model_header + gpk_model_header->material_offsets[i]);
-		model_material *model_material = &model->materials[i];
-		array_copy(model_material->name, gpk_model_material_header->name);
-		model_material->albedo_map_image = vulkan->images.default_albedo_map_image;
-		model_material->normal_map_image = vulkan->images.default_normal_map_image;
-		model_material->metallic_map_image = vulkan->images.default_metallic_map_image;
-		model_material->roughness_map_image = vulkan->images.default_roughness_map_image;
-		model_material->ao_map_image = vulkan->images.default_ao_map_image;
-		model_material->height_map_image = vulkan->images.default_height_map_image;
-		if (gpk_model_material_header->albedo_map_mipmap_count > 0) {
-			VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-			image_create_info.imageType = VK_IMAGE_TYPE_2D;
-			image_create_info.format = VK_FORMAT_BC1_RGB_SRGB_BLOCK;
-			image_create_info.extent = {gpk_model_material_header->albedo_map_width, gpk_model_material_header->albedo_map_height, 1};
-			image_create_info.mipLevels = gpk_model_material_header->albedo_map_mipmap_count;
-			image_create_info.arrayLayers = 1;
-			image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-			image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-			image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-			VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-			image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			image_view_create_info.format = image_create_info.format;
-			image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
-			image_view_create_info.subresourceRange.layerCount = 1;
-			vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->albedo_map_image);
-			uint8 *albedo_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->albedo_map_offset;
-			vulkan_image_transfer(vulkan, &model_material->albedo_map_image, albedo_map_image_data, gpk_model_material_header->albedo_map_size, 4, 4);
+	if (model->material_count > 0) {
+		model->materials = memory_arena_allocate<struct model_material>(&level->assets_memory_arena, model->material_count);
+		for (uint32 i = 0; i < model->material_count; i += 1) {
+			gpk_model_material_header *gpk_model_material_header = (struct gpk_model_material_header *)((uint8 *)gpk_model_header + gpk_model_header->material_offsets[i]);
+			model_material *model_material = &model->materials[i];
+			array_copy(model_material->name, gpk_model_material_header->name);
+			model_material->albedo_map_image = vulkan->images.default_albedo_map_image;
+			model_material->normal_map_image = vulkan->images.default_normal_map_image;
+			model_material->metallic_map_image = vulkan->images.default_metallic_map_image;
+			model_material->roughness_map_image = vulkan->images.default_roughness_map_image;
+			model_material->ao_map_image = vulkan->images.default_ao_map_image;
+			model_material->height_map_image = vulkan->images.default_height_map_image;
+			if (gpk_model_material_header->albedo_map_mipmap_count > 0) {
+				VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+				image_create_info.imageType = VK_IMAGE_TYPE_2D;
+				image_create_info.format = VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+				image_create_info.extent = {gpk_model_material_header->albedo_map_width, gpk_model_material_header->albedo_map_height, 1};
+				image_create_info.mipLevels = gpk_model_material_header->albedo_map_mipmap_count;
+				image_create_info.arrayLayers = 1;
+				image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+				image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+				image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+				VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+				image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+				image_view_create_info.format = image_create_info.format;
+				image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
+				image_view_create_info.subresourceRange.layerCount = 1;
+				vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->albedo_map_image);
+				uint8 *albedo_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->albedo_map_offset;
+				vulkan_image_transfer(vulkan, &model_material->albedo_map_image, albedo_map_image_data, gpk_model_material_header->albedo_map_size, 4, 4);
+			}
+			if (gpk_model_material_header->normal_map_mipmap_count > 0) {
+				VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+				image_create_info.imageType = VK_IMAGE_TYPE_2D;
+				image_create_info.format = VK_FORMAT_BC5_UNORM_BLOCK;
+				image_create_info.extent = {gpk_model_material_header->normal_map_width, gpk_model_material_header->normal_map_height, 1};
+				image_create_info.mipLevels = gpk_model_material_header->normal_map_mipmap_count;
+				image_create_info.arrayLayers = 1;
+				image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+				image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+				image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+				VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+				image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+				image_view_create_info.format = image_create_info.format;
+				image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
+				image_view_create_info.subresourceRange.layerCount = 1;
+				vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->normal_map_image);
+				uint8 *normal_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->normal_map_offset;
+				vulkan_image_transfer(vulkan, &model_material->normal_map_image, normal_map_image_data, gpk_model_material_header->normal_map_size, 8, 4);
+			}
+			if (gpk_model_material_header->metallic_map_mipmap_count > 0) {
+				VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+				image_create_info.imageType = VK_IMAGE_TYPE_2D;
+				image_create_info.format = VK_FORMAT_BC4_UNORM_BLOCK;
+				image_create_info.extent = {gpk_model_material_header->metallic_map_width, gpk_model_material_header->metallic_map_height, 1};
+				image_create_info.mipLevels = gpk_model_material_header->metallic_map_mipmap_count;
+				image_create_info.arrayLayers = 1;
+				image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+				image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+				image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+				VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+				image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+				image_view_create_info.format = image_create_info.format;
+				image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
+				image_view_create_info.subresourceRange.layerCount = 1;
+				vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->metallic_map_image);
+				uint8 *metallic_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->metallic_map_offset;
+				vulkan_image_transfer(vulkan, &model_material->metallic_map_image, metallic_map_image_data, gpk_model_material_header->metallic_map_size, 4, 4);
+			}
+			if (gpk_model_material_header->roughness_map_mipmap_count > 0) {
+				VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+				image_create_info.imageType = VK_IMAGE_TYPE_2D;
+				image_create_info.format = VK_FORMAT_BC4_UNORM_BLOCK;
+				image_create_info.extent = {gpk_model_material_header->roughness_map_width, gpk_model_material_header->roughness_map_height, 1};
+				image_create_info.mipLevels = gpk_model_material_header->roughness_map_mipmap_count;
+				image_create_info.arrayLayers = 1;
+				image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+				image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+				image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+				VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+				image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+				image_view_create_info.format = image_create_info.format;
+				image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
+				image_view_create_info.subresourceRange.layerCount = 1;
+				vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->roughness_map_image);
+				uint8 *roughness_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->roughness_map_offset;
+				vulkan_image_transfer(vulkan, &model_material->roughness_map_image, roughness_map_image_data, gpk_model_material_header->roughness_map_size, 4, 4);
+			}
+			if (gpk_model_material_header->height_map_mipmap_count > 0) {
+				VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+				image_create_info.imageType = VK_IMAGE_TYPE_2D;
+				image_create_info.format = VK_FORMAT_BC4_UNORM_BLOCK;
+				image_create_info.extent = {gpk_model_material_header->height_map_width, gpk_model_material_header->height_map_height, 1};
+				image_create_info.mipLevels = gpk_model_material_header->height_map_mipmap_count;
+				image_create_info.arrayLayers = 1;
+				image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+				image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+				image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+				VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+				image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+				image_view_create_info.format = image_create_info.format;
+				image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
+				image_view_create_info.subresourceRange.layerCount = 1;
+				vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->height_map_image);
+				uint8 *height_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->height_map_offset;
+				vulkan_image_transfer(vulkan, &model_material->height_map_image, height_map_image_data, gpk_model_material_header->height_map_size, 4, 4);
+			}
+			VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+			descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
+			descriptor_set_allocate_info.descriptorSetCount = 1;
+			descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.sampled_images_set_layouts[5];
+			m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &model_material->descriptor_set));
+			VkDescriptorImageInfo descriptor_image_infos[6] = {};
+			descriptor_image_infos[0] = {vulkan->samplers.mipmap_image_samplers[model_material->albedo_map_image.mipmap_count], model_material->albedo_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			descriptor_image_infos[1] = {vulkan->samplers.mipmap_image_samplers[model_material->normal_map_image.mipmap_count], model_material->normal_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			descriptor_image_infos[2] = {vulkan->samplers.mipmap_image_samplers[model_material->metallic_map_image.mipmap_count], model_material->metallic_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			descriptor_image_infos[3] = {vulkan->samplers.mipmap_image_samplers[model_material->roughness_map_image.mipmap_count], model_material->roughness_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			descriptor_image_infos[4] = {vulkan->samplers.mipmap_image_samplers[model_material->ao_map_image.mipmap_count], model_material->ao_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			descriptor_image_infos[5] = {vulkan->samplers.mipmap_image_samplers[model_material->height_map_image.mipmap_count], model_material->height_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			VkWriteDescriptorSet write_descriptor_sets[6] = {};
+			for (uint32 i = 0; i < m_countof(write_descriptor_sets); i += 1) {
+				write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				write_descriptor_sets[i].dstSet = model_material->descriptor_set;
+				write_descriptor_sets[i].dstBinding = i;
+				write_descriptor_sets[i].descriptorCount = 1;
+				write_descriptor_sets[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+				write_descriptor_sets[i].pImageInfo = &descriptor_image_infos[i];
+			}
+			vkUpdateDescriptorSets(vulkan->device.device, m_countof(write_descriptor_sets), write_descriptor_sets, 0, nullptr);
 		}
-		if (gpk_model_material_header->normal_map_mipmap_count > 0) {
-			VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-			image_create_info.imageType = VK_IMAGE_TYPE_2D;
-			image_create_info.format = VK_FORMAT_BC5_UNORM_BLOCK;
-			image_create_info.extent = {gpk_model_material_header->normal_map_width, gpk_model_material_header->normal_map_height, 1};
-			image_create_info.mipLevels = gpk_model_material_header->normal_map_mipmap_count;
-			image_create_info.arrayLayers = 1;
-			image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-			image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-			image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-			VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-			image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			image_view_create_info.format = image_create_info.format;
-			image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
-			image_view_create_info.subresourceRange.layerCount = 1;
-			vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->normal_map_image);
-			uint8 *normal_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->normal_map_offset;
-			vulkan_image_transfer(vulkan, &model_material->normal_map_image, normal_map_image_data, gpk_model_material_header->normal_map_size, 8, 4);
-		}
-		if (gpk_model_material_header->metallic_map_mipmap_count > 0) {
-			VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-			image_create_info.imageType = VK_IMAGE_TYPE_2D;
-			image_create_info.format = VK_FORMAT_BC4_UNORM_BLOCK;
-			image_create_info.extent = {gpk_model_material_header->metallic_map_width, gpk_model_material_header->metallic_map_height, 1};
-			image_create_info.mipLevels = gpk_model_material_header->metallic_map_mipmap_count;
-			image_create_info.arrayLayers = 1;
-			image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-			image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-			image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-			VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-			image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			image_view_create_info.format = image_create_info.format;
-			image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
-			image_view_create_info.subresourceRange.layerCount = 1;
-			vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->metallic_map_image);
-			uint8 *metallic_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->metallic_map_offset;
-			vulkan_image_transfer(vulkan, &model_material->metallic_map_image, metallic_map_image_data, gpk_model_material_header->metallic_map_size, 4, 4);
-		}
-		if (gpk_model_material_header->roughness_map_mipmap_count > 0) {
-			VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-			image_create_info.imageType = VK_IMAGE_TYPE_2D;
-			image_create_info.format = VK_FORMAT_BC4_UNORM_BLOCK;
-			image_create_info.extent = {gpk_model_material_header->roughness_map_width, gpk_model_material_header->roughness_map_height, 1};
-			image_create_info.mipLevels = gpk_model_material_header->roughness_map_mipmap_count;
-			image_create_info.arrayLayers = 1;
-			image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-			image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-			image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-			VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-			image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			image_view_create_info.format = image_create_info.format;
-			image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
-			image_view_create_info.subresourceRange.layerCount = 1;
-			vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->roughness_map_image);
-			uint8 *roughness_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->roughness_map_offset;
-			vulkan_image_transfer(vulkan, &model_material->roughness_map_image, roughness_map_image_data, gpk_model_material_header->roughness_map_size, 4, 4);
-		}
-		if (gpk_model_material_header->height_map_mipmap_count > 0) {
-			VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-			image_create_info.imageType = VK_IMAGE_TYPE_2D;
-			image_create_info.format = VK_FORMAT_BC4_UNORM_BLOCK;
-			image_create_info.extent = {gpk_model_material_header->height_map_width, gpk_model_material_header->height_map_height, 1};
-			image_create_info.mipLevels = gpk_model_material_header->height_map_mipmap_count;
-			image_create_info.arrayLayers = 1;
-			image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-			image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-			image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-			VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-			image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			image_view_create_info.format = image_create_info.format;
-			image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			image_view_create_info.subresourceRange.levelCount = image_create_info.mipLevels;
-			image_view_create_info.subresourceRange.layerCount = 1;
-			vulkan_image_create(vulkan, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, &model_material->height_map_image);
-			uint8 *height_map_image_data = ((uint8 *)gpk_model_material_header) + gpk_model_material_header->height_map_offset;
-			vulkan_image_transfer(vulkan, &model_material->height_map_image, height_map_image_data, gpk_model_material_header->height_map_size, 4, 4);
-		}
-		VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-		descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
-		descriptor_set_allocate_info.descriptorSetCount = 1;
-		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.sampled_images_set_layouts[5];
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &model_material->descriptor_set));
-		VkDescriptorImageInfo descriptor_image_infos[6] = {};
-		descriptor_image_infos[0] = {vulkan->samplers.mipmap_image_samplers[model_material->albedo_map_image.mipmap_count], model_material->albedo_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[1] = {vulkan->samplers.mipmap_image_samplers[model_material->normal_map_image.mipmap_count], model_material->normal_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[2] = {vulkan->samplers.mipmap_image_samplers[model_material->metallic_map_image.mipmap_count], model_material->metallic_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[3] = {vulkan->samplers.mipmap_image_samplers[model_material->roughness_map_image.mipmap_count], model_material->roughness_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[4] = {vulkan->samplers.mipmap_image_samplers[model_material->ao_map_image.mipmap_count], model_material->ao_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[5] = {vulkan->samplers.mipmap_image_samplers[model_material->height_map_image.mipmap_count], model_material->height_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		VkWriteDescriptorSet write_descriptor_sets[6] = {};
-		for (uint32 i = 0; i < m_countof(write_descriptor_sets); i += 1) {
-			write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			write_descriptor_sets[i].dstSet = model_material->descriptor_set;
-			write_descriptor_sets[i].dstBinding = i;
-			write_descriptor_sets[i].descriptorCount = 1;
-			write_descriptor_sets[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			write_descriptor_sets[i].pImageInfo = &descriptor_image_infos[i];
-		}
-		vkUpdateDescriptorSets(vulkan->device.device, m_countof(write_descriptor_sets), write_descriptor_sets, 0, nullptr);
 	}
 	return level->model_count++;
 }
@@ -776,28 +790,38 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	};
 	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, entity_collision_component *entity_collision_component) {
 		memory_arena *memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
-		if (collision_component_json.HasMember("planes")) {
-			rapidjson::Value::Array planes = collision_component_json["planes"].GetArray();
-			if (planes.Size() > 0) {
-				entity_collision_component->planes = memory_arena_allocate<plane>(memory_arena, planes.Size());
-				entity_collision_component->plane_count = planes.Size();
-				for (uint32 i = 0; i < planes.Size(); i += 1) {
-				}
-			}
-		}
 		if (collision_component_json.HasMember("spheres")) {
 			rapidjson::Value::Array spheres = collision_component_json["spheres"].GetArray();
 			if (spheres.Size() > 0) {
-				entity_collision_component->spheres = memory_arena_allocate<sphere>(memory_arena, spheres.Size());
+				entity_collision_component->spheres = memory_arena_allocate<struct sphere>(memory_arena, spheres.Size());
 				entity_collision_component->sphere_count = spheres.Size();
 				for (uint32 i = 0; i < spheres.Size(); i += 1) {
+					rapidjson::Value::Object sphere = spheres[i].GetObject();
+					rapidjson::Value::Array center = sphere["center"].GetArray();
+					entity_collision_component->spheres[i].center = {center[0].GetFloat(), center[1].GetFloat(), center[2].GetFloat()};
+					entity_collision_component->spheres[i].radius = sphere["radius"].GetFloat();
+				}
+			}
+		}
+		if (collision_component_json.HasMember("capsules")) {
+			rapidjson::Value::Array capsules = collision_component_json["capsules"].GetArray();
+			if (capsules.Size() > 0) {
+				entity_collision_component->capsules = memory_arena_allocate<struct capsule>(memory_arena, capsules.Size());
+				entity_collision_component->capsule_count = capsules.Size();
+				for (uint32 i = 0; i < capsules.Size(); i += 1) {
+					rapidjson::Value::Object capsule = capsules[i].GetObject();
+					rapidjson::Value::Array begin = capsule["begin"].GetArray();
+					rapidjson::Value::Array end = capsule["end"].GetArray();
+					entity_collision_component->capsules[i].begin = {begin[0].GetFloat(), begin[1].GetFloat(), begin[2].GetFloat()};
+					entity_collision_component->capsules[i].end = {end[0].GetFloat(), end[1].GetFloat(), end[2].GetFloat()};
+					entity_collision_component->capsules[i].radius = capsule["radius"].GetFloat();
 				}
 			}
 		}
 		if (collision_component_json.HasMember("bounds")) {
 			rapidjson::Value::Array bounds = collision_component_json["bounds"].GetArray();
 			if (bounds.Size() > 0) {
-				entity_collision_component->bounds = memory_arena_allocate<aa_bound>(memory_arena, bounds.Size());
+				entity_collision_component->bounds = memory_arena_allocate<struct aa_bound>(memory_arena, bounds.Size());
 				entity_collision_component->bound_count = bounds.Size();
 				for (uint32 i = 0; i < bounds.Size(); i += 1) {
 					rapidjson::Value::Object bound = bounds[i].GetObject();
@@ -809,6 +833,22 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 					entity_collision_component->bounds[i].max.x = max[0].GetFloat();
 					entity_collision_component->bounds[i].max.y = max[1].GetFloat();
 					entity_collision_component->bounds[i].max.z = max[2].GetFloat();
+				}
+			}
+		}
+		if (collision_component_json.HasMember("triangles")) {
+			rapidjson::Value::Array triangles = collision_component_json["triangles"].GetArray();
+			if (triangles.Size() > 0) {
+				entity_collision_component->triangles = memory_arena_allocate<struct triangle>(memory_arena, triangles.Size());
+				entity_collision_component->triangle_count = triangles.Size();
+				for (uint32 i = 0; i < triangles.Size(); i += 1) {
+					rapidjson::Value::Object triangle = triangles[i].GetObject();
+					rapidjson::Value::Array a = triangle["a"].GetArray();
+					rapidjson::Value::Array b = triangle["b"].GetArray();
+					rapidjson::Value::Array c = triangle["c"].GetArray();
+					entity_collision_component->triangles[i].a = {a[0].GetFloat(), a[1].GetFloat(), a[2].GetFloat()};
+					entity_collision_component->triangles[i].b = {b[0].GetFloat(), b[1].GetFloat(), b[2].GetFloat()};
+					entity_collision_component->triangles[i].c = {c[0].GetFloat(), c[1].GetFloat(), c[2].GetFloat()};
 				}
 			}
 		}
@@ -987,24 +1027,6 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 		writer.Key("collision_component");
 		writer.StartObject();
 		{
-			writer.Key("planes");
-			writer.StartArray();
-			for (uint32 i = 0; i < component->plane_count; i += 1) {
-				plane *plane = &component->planes[i];
-				writer.StartObject();
-				writer.Key("normal");
-				writer.StartArray();
-				writer.Double(plane->normal.x);
-				writer.Double(plane->normal.y);
-				writer.Double(plane->normal.z);
-				writer.EndArray();
-				writer.Key("distance");
-				writer.Double(plane->distance);
-				writer.EndObject();
-			}
-			writer.EndArray();
-		}
-		{
 			writer.Key("spheres");
 			writer.StartArray();
 			for (uint32 i = 0; i < component->sphere_count; i += 1) {
@@ -1018,6 +1040,30 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 				writer.EndArray();
 				writer.Key("radius");
 				writer.Double(sphere->radius);
+				writer.EndObject();
+			}
+			writer.EndArray();
+		}
+		{
+			writer.Key("capsules");
+			writer.StartArray();
+			for (uint32 i = 0; i < component->capsule_count; i += 1) {
+				capsule *capsule = &component->capsules[i];
+				writer.StartObject();
+				writer.Key("begin");
+				writer.StartArray();
+				writer.Double(capsule->begin.x);
+				writer.Double(capsule->begin.y);
+				writer.Double(capsule->begin.z);
+				writer.EndArray();
+				writer.Key("end");
+				writer.StartArray();
+				writer.Double(capsule->end.x);
+				writer.Double(capsule->end.y);
+				writer.Double(capsule->end.z);
+				writer.EndArray();
+				writer.Key("radius");
+				writer.Double(capsule->radius);
 				writer.EndObject();
 			}
 			writer.EndArray();
@@ -1039,6 +1085,34 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 				writer.Double(bound->max.x);
 				writer.Double(bound->max.y);
 				writer.Double(bound->max.z);
+				writer.EndArray();
+				writer.EndObject();
+			}
+			writer.EndArray();
+		}
+		{
+			writer.Key("triangles");
+			writer.StartArray();
+			for (uint32 i = 0; i < component->triangle_count; i += 1) {
+				triangle *triangle = &component->triangles[i];
+				writer.StartObject();
+				writer.Key("a");
+				writer.StartArray();
+				writer.Double(triangle->a.x);
+				writer.Double(triangle->a.y);
+				writer.Double(triangle->a.z);
+				writer.EndArray();
+				writer.Key("b");
+				writer.StartArray();
+				writer.Double(triangle->b.x);
+				writer.Double(triangle->b.y);
+				writer.Double(triangle->b.z);
+				writer.EndArray();
+				writer.Key("c");
+				writer.StartArray();
+				writer.Double(triangle->c.x);
+				writer.Double(triangle->c.y);
+				writer.Double(triangle->c.z);
 				writer.EndArray();
 				writer.EndObject();
 			}

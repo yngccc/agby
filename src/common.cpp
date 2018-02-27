@@ -273,7 +273,7 @@ struct memory_arena {
 
 template <typename T>
 T *memory_arena_allocate(memory_arena *memory_arena, uint64 num_t, uint64 alignment = alignof(T)) {
-	m_debug_assert(is_pow_2(alignment));
+	m_debug_assert(num_t > 0 && is_pow_2(alignment));
 	uint8 *memory = (uint8 *)memory_arena->memory + memory_arena->size;
 	uint64 remainder = (uintptr_t)memory % alignment;
 	uint64 offset = (remainder == 0) ? 0 : (alignment - remainder);

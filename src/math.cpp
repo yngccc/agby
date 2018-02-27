@@ -739,14 +739,26 @@ struct plane {
 	float distance;
 };
 
+struct triangle {
+	vec3 a;
+	vec3 b;
+	vec3 c;
+};
+
 struct sphere {
 	vec3 center;
 	float radius;
 };
 
+struct capsule {
+	vec3 begin;
+	vec3 end;
+	float radius;
+};
+
 struct aa_bound {
-	vec3 min; // bottom_left_back
-	vec3 max; // top_right_front
+	vec3 min;
+	vec3 max;
 };
 
 float aa_bound_volume(const aa_bound &bound) {
