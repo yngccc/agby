@@ -112,6 +112,8 @@ struct entity_light_component {
 
 struct entity_physics_component {
 	vec3 velocity;
+	float max_speed;
+	float gravity;
 };
 
 struct entity_modification {
@@ -770,8 +772,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	};
 	auto read_json_render_component = [level](rapidjson::Value::Object render_component_json, entity_render_component *entity_render_component) {
 		entity_render_component->model_index = level_get_model_index(level, render_component_json["model_file_name"].GetString());
-		if (render_component_json.HasMember("uv_scale")) {
-			rapidjson::Value::Array uv_scale = render_component_json["uv_scale"].GetArray();
+		auto uv_scale_member = render_component_json.FindMember("uv_scale");
+		if (uv_scale_member != render_component_json.MemberEnd()) {
+			rapidjson::Value::Array uv_scale = uv_scale_member->value.GetArray();
 			entity_render_component->uv_scale[0] = uv_scale[0].GetFloat();
 			entity_render_component->uv_scale[1] = uv_scale[1].GetFloat();
 		}
@@ -779,8 +782,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			entity_render_component->uv_scale[0] = 1;
 			entity_render_component->uv_scale[1] = 1;
 		}
-		if (render_component_json.HasMember("height_map_scale")) {
-			entity_render_component->height_map_scale = render_component_json["height_map_scale"].GetFloat();
+		auto height_map_scale_member = render_component_json.FindMember("height_map_scale");
+		if (height_map_scale_member != render_component_json.MemberEnd()) {
+			entity_render_component->height_map_scale = height_map_scale_member->value.GetFloat();
 		}
 		else {
 			entity_render_component->height_map_scale = 0;
@@ -788,8 +792,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	};
 	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, entity_collision_component *entity_collision_component) {
 		memory_arena *memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
-		if (collision_component_json.HasMember("spheres")) {
-			rapidjson::Value::Array spheres = collision_component_json["spheres"].GetArray();
+		auto spheres_member = collision_component_json.FindMember("spheres");
+		if (spheres_member != collision_component_json.MemberEnd()) {
+			rapidjson::Value::Array spheres = spheres_member->value.GetArray();
 			if (spheres.Size() > 0) {
 				entity_collision_component->spheres = memory_arena_allocate<struct sphere>(memory_arena, spheres.Size());
 				entity_collision_component->sphere_count = spheres.Size();
@@ -801,8 +806,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				}
 			}
 		}
-		if (collision_component_json.HasMember("capsules")) {
-			rapidjson::Value::Array capsules = collision_component_json["capsules"].GetArray();
+		auto capsules_member = collision_component_json.FindMember("capsules");
+		if (capsules_member != collision_component_json.MemberEnd()) {
+			rapidjson::Value::Array capsules = capsules_member->value.GetArray();
 			if (capsules.Size() > 0) {
 				entity_collision_component->capsules = memory_arena_allocate<struct capsule>(memory_arena, capsules.Size());
 				entity_collision_component->capsule_count = capsules.Size();
@@ -816,8 +822,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				}
 			}
 		}
-		if (collision_component_json.HasMember("bounds")) {
-			rapidjson::Value::Array bounds = collision_component_json["bounds"].GetArray();
+		auto bounds_member = collision_component_json.FindMember("bounds");
+		if (bounds_member != collision_component_json.MemberEnd()) {
+			rapidjson::Value::Array bounds = bounds_member->value.GetArray();
 			if (bounds.Size() > 0) {
 				entity_collision_component->bounds = memory_arena_allocate<struct aa_bound>(memory_arena, bounds.Size());
 				entity_collision_component->bound_count = bounds.Size();
@@ -834,8 +841,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				}
 			}
 		}
-		if (collision_component_json.HasMember("triangles")) {
-			rapidjson::Value::Array triangles = collision_component_json["triangles"].GetArray();
+		auto triangles_member = collision_component_json.FindMember("triangles");
+		if (triangles_member != collision_component_json.MemberEnd()) {
+			rapidjson::Value::Array triangles = triangles_member->value.GetArray();
 			if (triangles.Size() > 0) {
 				entity_collision_component->triangles = memory_arena_allocate<struct triangle>(memory_arena, triangles.Size());
 				entity_collision_component->triangle_count = triangles.Size();
@@ -889,11 +897,20 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		}
 	};
 	auto read_json_physics_component = [level](rapidjson::Value::Object physics_component_json, entity_physics_component *entity_physics_component) {
-		if (physics_component_json.HasMember("velocity")) {
-			rapidjson::Value::Array velocity = physics_component_json["velocity"].GetArray();
+		auto velocity_member = physics_component_json.FindMember("velocity");
+		if (velocity_member != physics_component_json.MemberEnd()) {
+			rapidjson::Value::Array velocity = velocity_member->value.GetArray();
 			entity_physics_component->velocity.x = velocity[0].GetFloat();
 			entity_physics_component->velocity.y = velocity[1].GetFloat();
 			entity_physics_component->velocity.z = velocity[2].GetFloat();
+		}
+		auto max_speed_member = physics_component_json.FindMember("max_speed");
+		if (max_speed_member != physics_component_json.MemberEnd()) {
+			entity_physics_component->max_speed = max_speed_member->value.GetFloat();
+		}
+		auto gravity_member = physics_component_json.FindMember("gravity");
+		if (gravity_member != physics_component_json.MemberEnd()) {
+			entity_physics_component->gravity = gravity_member->value.GetFloat();
 		}
 	};
 
@@ -949,29 +966,42 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		*entity_flag = 0;
 		*entity_transform = transform_identity();
 		m_assert(snprintf(entity_info->name, sizeof(entity_info->name), "%s", entity_json["name"].GetString()) < sizeof(entity_info->name));
-		if (entity_json.HasMember("transform")) {
-			read_json_transform_object(entity_json["transform"].GetObject(), entity_transform);
+		auto transform_member = entity_json.FindMember("transform");
+		if (transform_member != entity_json.MemberEnd()) {
+			read_json_transform_object(transform_member->value.GetObject(), entity_transform);
 		}
-		if (entity_json.HasMember("render_component")) {
+		auto render_component_member = entity_json.FindMember("render_component");
+		if (render_component_member != entity_json.MemberEnd()) {
 			*entity_flag = *entity_flag | entity_component_flag_render;
-			read_json_render_component(entity_json["render_component"].GetObject(), &level->render_components[render_component_index++]);
+			read_json_render_component(render_component_member->value.GetObject(), &level->render_components[render_component_index++]);
 		}
-		if (entity_json.HasMember("collision_component")) {
+		auto collision_component_member = entity_json.FindMember("collision_component");
+		if (collision_component_member != entity_json.MemberEnd()) {
 			*entity_flag = *entity_flag | entity_component_flag_collision;
-			read_json_collision_component(entity_json["collision_component"].GetObject(), &level->collision_components[collision_component_index++]);
+			read_json_collision_component(collision_component_member->value.GetObject(), &level->collision_components[collision_component_index++]);
 		}
-		if (entity_json.HasMember("light_component")) {
+		auto light_component_member = entity_json.FindMember("light_component");
+		if (light_component_member != entity_json.MemberEnd()) {
 			*entity_flag = *entity_flag | entity_component_flag_light;
-			read_json_light_component(entity_json["light_component"].GetObject(), &level->light_components[light_component_index++]);
+			read_json_light_component(light_component_member->value.GetObject(), &level->light_components[light_component_index++]);
 		}
-		if (entity_json.HasMember("physics_component")) {
+		auto physics_component_member = entity_json.FindMember("physics_component");
+		if (physics_component_member != entity_json.MemberEnd()) {
 			*entity_flag = *entity_flag | entity_component_flag_physics;
-			read_json_physics_component(entity_json["physics_component"].GetObject(), &level->physics_components[physics_component_index++]);
+			read_json_physics_component(physics_component_member->value.GetObject(), &level->physics_components[physics_component_index++]);
 		}
 	}
 
+	level->player_entity_index = UINT32_MAX;
 	rapidjson::Value::Object player = json_doc["player"].GetObject();
-	level->player_entity_index = player["entity_index"].GetUint();
+	const char *player_entity_name = player["entity_name"].GetString();
+	for (uint32 i = 0; i < level->entity_count; i += 1) {
+		if (!strcmp(player_entity_name, level->entity_infos[i].name)) {
+			level->player_entity_index = i;
+			break;
+		}
+	}
+	m_assert(level->player_entity_index != UINT32_MAX);
 
 	extra_load(&json_doc);
 }
@@ -1226,8 +1256,8 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 	{
 		writer.Key("player");
 		writer.StartObject();
-		writer.Key("entity_index");
-		writer.Uint(level->player_entity_index);
+		writer.Key("entity_name");
+		writer.String(level->entity_infos[level->player_entity_index].name);
 		writer.EndObject();
 	}	
 	extra_dump(&writer);
@@ -1572,14 +1602,6 @@ void level_generate_render_commands(level *level, vulkan *vulkan, camera camera,
 		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.skybox_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_const), &push_const);
 		  vkCmdDraw(cmd_buffer, 36, 1, 0, 0);
 		}
-		// if (level->render_data.text_frame_vertex_count > 0) {
-		// 	vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.text_pipeline.pipeline);
-		// 	VkDeviceSize vertices_offset = 0;
-		// 	vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertices_buffer.buffer, &vertices_offset);
-		// 	VkDescriptorSet descriptor_sets[2] = {vulkan->descriptor_sets.text_uniform_descriptor_set, vulkan->descriptor_sets.text_image_descriptor_set};
-		// 	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.text_pipeline.layout, 0, m_countof(descriptor_sets), descriptor_sets, 1, &level->render_data.text_frame_uniforms_buffer_offset);
-		// 	vkCmdDraw(cmd_buffer, level->render_data.text_frame_vertex_count, 1, level->render_data.text_frame_vertices_buffer_offset / 24, 0);
-		// }
 		extra_main_render_pass_render_commands();
 		vkCmdEndRenderPass(cmd_buffer);
 	}

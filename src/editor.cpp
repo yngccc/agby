@@ -29,6 +29,9 @@ enum gizmo_mode {
 	gizmo_mode_point_light_translate,
 	gizmo_mode_collision_sphere_scale,
 	gizmo_mode_collision_sphere_translate,
+	gizmo_mode_collision_capsule_enlarge,
+	gizmo_mode_collision_capsule_stretch,
+	gizmo_mode_collision_capsule_rotate,
 	gizmo_mode_collision_bound_min,
 	gizmo_mode_collision_bound_max
 };
@@ -537,18 +540,29 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					else if (entity_flags & entity_component_flag_collision) {
 						entity_collision_component *collision_component = entity_get_collision_component(level, editor->entity_index);
 						if (editor->entity_collision_object_type == collision_object_type_sphere && editor->entity_collision_object_index < collision_component->sphere_count) {
-							if (ImGui::MenuItem("collision sphere scale##gizmo_mode_collision_sphere_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_scale)) {
+							if (ImGui::MenuItem("sphere scale##gizmo_mode_collision_sphere_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_scale)) {
 								editor->gizmo_mode = gizmo_mode_collision_sphere_scale;
 							}
-							if (ImGui::MenuItem("collision sphere translate##gizmo_mode_collision_sphere_translate", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_translate)) {
+							if (ImGui::MenuItem("sphere translate##gizmo_mode_collision_sphere_translate", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_translate)) {
 								editor->gizmo_mode = gizmo_mode_collision_sphere_translate;
 							}
 						}
+						else if (editor->entity_collision_object_type == collision_object_type_capsule && editor->entity_collision_object_index < collision_component->capsule_count) {
+							if (ImGui::MenuItem("capsule enlarge##gizmo_mode_collision_capsule_enlarge", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_enlarge)) {
+								editor->gizmo_mode = gizmo_mode_collision_capsule_enlarge;
+							}
+							if (ImGui::MenuItem("capsule stretch##gizmo_mode_collision_capsule_stretch", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_stretch)) {
+								editor->gizmo_mode = gizmo_mode_collision_capsule_stretch;
+							}
+							if (ImGui::MenuItem("capsule rotate##gizmo_mode_collision_capsule_rotate", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_rotate)) {
+								editor->gizmo_mode = gizmo_mode_collision_capsule_rotate;
+							}
+						}
 						else if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < collision_component->bound_count) {
-							if (ImGui::MenuItem("collision bound min##gizmo_mode_collision_bound_min", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_min)) {
+							if (ImGui::MenuItem("bound min##gizmo_mode_collision_bound_min", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_min)) {
 								editor->gizmo_mode = gizmo_mode_collision_bound_min;
 							}
-							if (ImGui::MenuItem("collision bound max##gizmo_mode_collision_bound_max", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_max)) {
+							if (ImGui::MenuItem("bound max##gizmo_mode_collision_bound_max", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_max)) {
 								editor->gizmo_mode = gizmo_mode_collision_bound_max;
 							}
 						}
