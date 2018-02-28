@@ -83,7 +83,7 @@ void *allocate_virtual_memory(uint64 size) {
 		GetSystemInfo(&system_info);
 		return system_info;
 	}();
-	size = round_up(size, system_info.dwPageSize);
+	size = round_up(size, (uint64)system_info.dwPageSize);
 	char *mem = (char *)VirtualAlloc(nullptr, size + 2 * system_info.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 	if (!mem) {
 		return false;

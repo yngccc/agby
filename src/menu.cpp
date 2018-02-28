@@ -53,7 +53,7 @@ void imgui_frame_stats_update(bool *show_frame_stats, double last_frame_time) {
 }
 
 void imgui_update_render_memory(vulkan *vulkan, uint32 *frame_vertices_buffer_offset) {
-	vulkan->buffers.frame_vertices_buffer_offset = round_up(vulkan->buffers.frame_vertices_buffer_offset, (uint32)sizeof(ImDrawVert));
+	round_up(&vulkan->buffers.frame_vertices_buffer_offset, sizeof(ImDrawVert));
 	*frame_vertices_buffer_offset = vulkan->buffers.frame_vertices_buffer_offset;
 	ImDrawData *imgui_draw_data = ImGui::GetDrawData();
 	for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
@@ -93,7 +93,7 @@ void imgui_submit_render_commands(vulkan *vulkan, uint32 frame_vertices_buffer_o
 			vkCmdDrawIndexed(cmd_buffer, dcmd->ElemCount, 1, element_index, vertex_index, 0);
 			element_index += dcmd->ElemCount;
 		}
-		frame_vertices_buffer_offset += round_up(vertices_size + elements_size, (uint32)sizeof(ImDrawVert));
+		frame_vertices_buffer_offset += round_up(vertices_size + elements_size, sizeof(ImDrawVert));
 	}
 };
 

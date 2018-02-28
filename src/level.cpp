@@ -227,9 +227,6 @@ void initialize_level(level *level, vulkan *vulkan) {
 	level->skybox_capacity = 16;
 	level->skybox_count = 0;
 	level->skyboxes = memory_arena_allocate<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
-
-	vulkan->buffers.level_vertex_buffer_offset = 0;
-	vulkan->memories.level_images_memory.size = 0;
 }
 
 entity_render_component *entity_get_render_component(level *level, uint32 entity_index) {
@@ -537,12 +534,13 @@ uint32 level_add_model(level *level, vulkan *vulkan, const char *file_name, bool
 			memcpy(model_mesh->instances, gpk_model_mesh_instances, sizeof(struct gpk_model_mesh_instance) * gpk_model_mesh_header->instance_count);
 			model_mesh->vertex_size = gpk_model_mesh_header->vertex_size;
 			model_mesh->vertex_count = gpk_model_mesh_header->vertex_count;
-			vulkan->buffers.level_vertex_buffer_offset = round_up(vulkan->buffers.level_vertex_buffer_offset, model_mesh->vertex_size);
+			round_up(&vulkan->buffers.level_vertex_buffer_offset, model_mesh->vertex_size);
 			model_mesh->vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
 			model_mesh->index_size = 2;
 			model_mesh->index_count = gpk_model_mesh_header->index_count;
 			uint32 vertices_data_size = model_mesh->vertex_size * model_mesh->vertex_count;
-			vulkan->buffers.level_vertex_buffer_offset = round_up(vulkan->buffers.level_vertex_buffer_offset + vertices_data_size, 4);
+			vulkan->buffers.level_vertex_buffer_offset += vertices_data_size;
+			round_up(&vulkan->buffers.level_vertex_buffer_offset, 4u);
 			model_mesh->index_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
 			uint32 indices_data_size = model_mesh->index_size * model_mesh->index_count;
 			vulkan->buffers.level_vertex_buffer_offset += indices_data_size;
@@ -1324,7 +1322,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 			uint32 point_light_count;
 			uint32 spot_light_count;
 		};
-		vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index]= round_up(vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
+		round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
 		level->render_data.common_data_frame_uniform_buffer_offset = vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
 		common_uniform *uniform = (struct common_uniform *)(vulkan->buffers.frame_uniform_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index]);
 		uniform->camera_view_proj_mat = mat4_vulkan_clip() * camera_view_projection_mat4(camera);
@@ -1345,7 +1343,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 		vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] += sizeof(struct common_uniform);
 	}
 	{ // models
-		vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
+		round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
 		level->render_data.models = memory_arena_allocate<struct model_render_data>(&level->frame_memory_arena, level->render_component_count);
 		level->render_data.model_count = 0;
 		auto add_model_render_data = [level, vulkan, uniform_alignment](entity_render_component *entity_render_component, mat4 transform) {
@@ -1389,8 +1387,8 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 		//   uint32 transform_mat_index;
 		// };
 		// static_assert(sizeof(struct vertex) == 24, "");
-		// vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(struct vertex));
-		// vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
+	  // round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(struct vertex));
+	  // round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
 		// level->render_data.text_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
 		// level->render_data.text_frame_uniform_buffer_offset = vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
 		// level->render_data.text_frame_vertex_count = 0;

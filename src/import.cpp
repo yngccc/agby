@@ -534,14 +534,14 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 		model_total_size += sizeof(struct gpk_model_header);
 		model_header.mesh_count = mesh_count;
 		for (uint32 i = 0; i < mesh_count; i += 1) {
-			model_total_size = round_up(model_total_size, 16);
+			round_up(&model_total_size, 16u);
 			model_header.mesh_offsets[i] = model_total_size;
-			mesh_headers[i].instances_offset = round_up((uint32)sizeof(struct gpk_model_mesh_header), 16);
+			mesh_headers[i].instances_offset = round_up((uint32)sizeof(struct gpk_model_mesh_header), 16u);
 			mesh_headers[i].instance_count = meshes[i].instance_count;
-			mesh_headers[i].vertices_offset = round_up(mesh_headers[i].instances_offset + mesh_headers[i].instance_count * (uint32)sizeof(gpk_model_mesh_instance), 16);
+			mesh_headers[i].vertices_offset = round_up(mesh_headers[i].instances_offset + mesh_headers[i].instance_count * (uint32)sizeof(gpk_model_mesh_instance), 16u);
 			mesh_headers[i].vertex_size = sizeof(struct vertex);
 			mesh_headers[i].vertex_count = meshes[i].vertex_count;
-			mesh_headers[i].indices_offset = round_up(mesh_headers[i].vertices_offset + mesh_headers[i].vertex_size * mesh_headers[i].vertex_count, 16);
+			mesh_headers[i].indices_offset = round_up(mesh_headers[i].vertices_offset + mesh_headers[i].vertex_size * mesh_headers[i].vertex_count, 16u);
 			mesh_headers[i].index_size = 2;
 			mesh_headers[i].index_count = meshes[i].index_count;
 			mesh_headers[i].material_index = meshes[i].material_index;
@@ -550,12 +550,12 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 		}
 		model_header.material_count = material_count;
 		for (uint32 i = 0; i < material_count; i += 1) {
-			model_total_size = round_up(model_total_size, 16);
+			round_up(&model_total_size, 16u);
 			model_header.material_offsets[i] = model_total_size;
 			snprintf(material_headers[i].name, sizeof(material_headers[i].name), "%s", materials[i].name);
-			uint32 material_size = round_up((uint32)sizeof(struct gpk_model_material_header), 16);
+			uint32 material_size = round_up((uint32)sizeof(struct gpk_model_material_header), 16u);
 			if (materials[i].albedo_map_data) {
-				material_headers[i].albedo_map_offset = round_up(material_size, 16);
+				material_headers[i].albedo_map_offset = round_up(material_size, 16u);
 				material_headers[i].albedo_map_width = materials[i].albedo_map_width;
 				material_headers[i].albedo_map_height = materials[i].albedo_map_height;
 				material_headers[i].albedo_map_mipmap_count = materials[i].albedo_map_mipmap_count;
@@ -563,7 +563,7 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 				material_size = material_headers[i].albedo_map_offset + material_headers[i].albedo_map_size;
 			}
 			if (materials[i].normal_map_data) {
-				material_headers[i].normal_map_offset = round_up(material_size, 16);
+				material_headers[i].normal_map_offset = round_up(material_size, 16u);
 				material_headers[i].normal_map_width = materials[i].normal_map_width;
 				material_headers[i].normal_map_height = materials[i].normal_map_height;
 				material_headers[i].normal_map_mipmap_count = materials[i].normal_map_mipmap_count;
@@ -571,7 +571,7 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 				material_size = material_headers[i].normal_map_offset + material_headers[i].normal_map_size;
 			}
 			if (materials[i].metallic_map_data) {
-				material_headers[i].metallic_map_offset = round_up(material_size, 16);
+				material_headers[i].metallic_map_offset = round_up(material_size, 16u);
 				material_headers[i].metallic_map_width = materials[i].metallic_map_width;
 				material_headers[i].metallic_map_height = materials[i].metallic_map_height;
 				material_headers[i].metallic_map_mipmap_count = materials[i].metallic_map_mipmap_count;
@@ -579,7 +579,7 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 				material_size = material_headers[i].metallic_map_offset + material_headers[i].metallic_map_size;
 			}
 			if (materials[i].roughness_map_data) {
-				material_headers[i].roughness_map_offset = round_up(material_size, 16);
+				material_headers[i].roughness_map_offset = round_up(material_size, 16u);
 				material_headers[i].roughness_map_width = materials[i].roughness_map_width;
 				material_headers[i].roughness_map_height = materials[i].roughness_map_height;
 				material_headers[i].roughness_map_mipmap_count = materials[i].roughness_map_mipmap_count;
@@ -587,7 +587,7 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 				material_size = material_headers[i].roughness_map_offset + material_headers[i].roughness_map_size;
 			}
 			if (materials[i].height_map_data) {
-				material_headers[i].height_map_offset = round_up(material_size, 16);
+				material_headers[i].height_map_offset = round_up(material_size, 16u);
 				material_headers[i].height_map_width = materials[i].height_map_width;
 				material_headers[i].height_map_height = materials[i].height_map_height;
 				material_headers[i].height_map_mipmap_count = materials[i].height_map_mipmap_count;
@@ -695,7 +695,7 @@ void skybox_to_gpk(gpk_import_cmd_line cmdl) {
 		}
 	}
 	uint32 cubemap_image_size = cubemap_sizes[0] * cubemap_sizes[1] * 4;
-	uint32 cubemap_offset = round_up((uint32)sizeof(struct gpk_skybox_header), 16);
+	uint32 cubemap_offset = round_up((uint32)sizeof(struct gpk_skybox_header), 16u);
 	uint32 file_size = cubemap_offset + cubemap_image_size * 6;
 	file_mapping import_file_mapping;
 	if (!create_file_mapping(cmdl.import_file, file_size, &import_file_mapping)) {

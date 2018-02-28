@@ -765,6 +765,10 @@ float aa_bound_volume(const aa_bound &bound) {
 	return fabsf(bound.min.x - bound.max.x) * fabsf(bound.min.y - bound.max.y) * fabsf(bound.min.z - bound.max.z);
 }
 
+vec3 aa_bound_size(const aa_bound &bound) {
+	return vec3{bound.max.x - bound.min.x, bound.max.y - bound.min.y, bound.max.z - bound.min.z};
+}
+
 vec3 aa_bound_center(const aa_bound &bound) {
 	return (bound.min + bound.max) * 0.5f;
 }
@@ -830,6 +834,24 @@ struct ray {
 	vec3 direction;
 	float len;
 };
+
+bool ray_intersect_sphere(const ray &ray, const sphere &sphere, float *intersection = nullptr) {
+	vec3 m = ray.origin - sphere.center;
+	float b = vec3_dot(m, ray.direction);
+	float c = vec3_dot(m, m) - sphere.radius * sphere.radius;
+	if (b > 0 && c > 0) {
+		return false;
+	}
+	float discr = b * b - c;
+	if (discr < 0) {
+		return false;
+	}
+	if (intersection) {
+		float t = -b - sqrtf(discr);
+		*intersection = t < 0 ? 0 : t;
+	}
+	return true;
+}
 
 bool ray_intersect_bound(const ray &ray, const aa_bound &bound, vec2 *intersection = nullptr) {
 	float t0 = 0;

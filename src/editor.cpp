@@ -27,6 +27,8 @@ enum gizmo_mode {
 	gizmo_mode_transform_scale,
 	gizmo_mode_directional_light_rotate,
 	gizmo_mode_point_light_translate,
+	gizmo_mode_collision_sphere_scale,
+	gizmo_mode_collision_sphere_translate,
 	gizmo_mode_collision_bound_min,
 	gizmo_mode_collision_bound_max
 };
@@ -38,9 +40,24 @@ enum collision_object_type {
 	collision_object_type_triangle
 };
 
+struct collision_object_render_data {
+	mat4 transform;
+	vec4 color;
+};
+
 struct editor_render_data {
 	uint32 lines_frame_vertex_buffer_offset;
 	uint32 lines_vertex_count;
+
+	collision_object_render_data *collision_spheres;
+	uint32 collision_sphere_count;
+	collision_object_render_data *collision_capsules;
+	uint32 collision_capsule_count;
+	collision_object_render_data *collision_bounds;
+	uint32 collision_bound_count;
+	collision_object_render_data *collision_triangles;
+	uint32 collision_triangle_count;
+
 	uint32 imgui_frame_vertex_buffer_offset;
 };
 
@@ -71,6 +88,11 @@ struct editor {
 	float font_size;
 	uint32 font_atlas_width;
 	uint32 font_atlas_height;
+
+	uint32 bound_vertices_level_vertex_buffer_offset;
+	uint32 sphere_vertices_level_vertex_buffer_offset;
+	uint32 cylinder_vertices_level_vertex_buffer_offset;
+	uint32 capsule_vertices_level_vertex_buffer_offset;
 
 	editor_render_data render_data;
 	
@@ -218,6 +240,25 @@ bool initialize_editor(editor *editor, vulkan *vulkan) {
 		write_descriptor_set.pImageInfo = &descriptor_image_info;
 		vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
 	}
+	{ // geometry vertices
+		round_up(&vulkan->buffers.level_vertex_buffer_offset, 12u);
+
+		editor->bound_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, bound_vertices, sizeof(bound_vertices));
+		vulkan->buffers.level_vertex_buffer_offset += sizeof(bound_vertices);
+
+		editor->sphere_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, sphere_vertices, sizeof(sphere_vertices));
+		vulkan->buffers.level_vertex_buffer_offset += sizeof(sphere_vertices);
+
+		editor->cylinder_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, cylinder_vertices, sizeof(cylinder_vertices));
+		vulkan->buffers.level_vertex_buffer_offset += sizeof(cylinder_vertices);
+
+		editor->capsule_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, capsule_vertices, sizeof(capsule_vertices));
+		vulkan->buffers.level_vertex_buffer_offset += sizeof(capsule_vertices);
+	}
 	{ // misc
 		editor->camera.position = vec3{4, 8, 8};
 		editor->camera.view = vec3_normalize(-editor->camera.position);
@@ -252,6 +293,7 @@ void editor_select_new_entity(editor* editor, uint32 entity_index) {
 	editor->entity_index = entity_index;
 	editor->entity_mesh_index = UINT32_MAX;
 	editor->entity_collision_object_index = UINT32_MAX;
+	editor->gizmo_mode = gizmo_mode_transform_translate;
 }
 
 bool ray_intersect_model(ray ray, model *model, mat4 model_transform, uint32 *mesh_index, float *distance) {
@@ -468,26 +510,49 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				ImGui::Dummy(ImVec2{0, 10});
 				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "gizmo mode");
 				ImGui::Separator();
-				if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor->gizmo_mode == gizmo_mode_transform_translate)) {
-					editor->gizmo_mode = gizmo_mode_transform_translate;
-				}
-				if (ImGui::MenuItem("transform rotate##gizmo_mode_transform_rotate", nullptr, editor->gizmo_mode == gizmo_mode_transform_rotate)) {
-					editor->gizmo_mode = gizmo_mode_transform_rotate;
-				}
-				if (ImGui::MenuItem("transform scale##gizmo_mode_transform_scale", nullptr, editor->gizmo_mode == gizmo_mode_transform_scale)) {
-					editor->gizmo_mode = gizmo_mode_transform_scale;
-				}
-				if (ImGui::MenuItem("dir light rotate##gizmo_mode_dir_light_rotate", nullptr, editor->gizmo_mode == gizmo_mode_directional_light_rotate)) {
-					editor->gizmo_mode = gizmo_mode_directional_light_rotate;
-				}
-				if (ImGui::MenuItem("point light translate##gizmo_mode_point_light_translate", nullptr, editor->gizmo_mode == gizmo_mode_point_light_translate)) {
-					editor->gizmo_mode = gizmo_mode_point_light_translate;
-				}
-				if (ImGui::MenuItem("collision bound min##gizmo_mode_collision_bound_min", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_min)) {
-					editor->gizmo_mode = gizmo_mode_collision_bound_min;
-				}
-				if (ImGui::MenuItem("collision bound max##gizmo_mode_collision_bound_max", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_max)) {
-					editor->gizmo_mode = gizmo_mode_collision_bound_max;
+				if (editor->entity_index < level->entity_count) {
+					uint32 entity_flags = level->entity_flags[editor->entity_index];
+					if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor->gizmo_mode == gizmo_mode_transform_translate)) {
+						editor->gizmo_mode = gizmo_mode_transform_translate;
+					}
+					if (ImGui::MenuItem("transform rotate##gizmo_mode_transform_rotate", nullptr, editor->gizmo_mode == gizmo_mode_transform_rotate)) {
+						editor->gizmo_mode = gizmo_mode_transform_rotate;
+					}
+					if (ImGui::MenuItem("transform scale##gizmo_mode_transform_scale", nullptr, editor->gizmo_mode == gizmo_mode_transform_scale)) {
+						editor->gizmo_mode = gizmo_mode_transform_scale;
+					}
+					if (entity_flags & entity_component_flag_light) {
+						entity_light_component *light_component = entity_get_light_component(level, editor->entity_index);
+						if (light_component->light_type == light_type_directional) {
+							if (ImGui::MenuItem("dir light rotate##gizmo_mode_dir_light_rotate", nullptr, editor->gizmo_mode == gizmo_mode_directional_light_rotate)) {
+								editor->gizmo_mode = gizmo_mode_directional_light_rotate;
+							}
+						}
+						else if (light_component->light_type == light_type_point) {
+							if (ImGui::MenuItem("point light translate##gizmo_mode_point_light_translate", nullptr, editor->gizmo_mode == gizmo_mode_point_light_translate)) {
+								editor->gizmo_mode = gizmo_mode_point_light_translate;
+							}
+						}
+					}
+					else if (entity_flags & entity_component_flag_collision) {
+						entity_collision_component *collision_component = entity_get_collision_component(level, editor->entity_index);
+						if (editor->entity_collision_object_type == collision_object_type_sphere && editor->entity_collision_object_index < collision_component->sphere_count) {
+							if (ImGui::MenuItem("collision sphere scale##gizmo_mode_collision_sphere_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_scale)) {
+								editor->gizmo_mode = gizmo_mode_collision_sphere_scale;
+							}
+							if (ImGui::MenuItem("collision sphere translate##gizmo_mode_collision_sphere_translate", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_translate)) {
+								editor->gizmo_mode = gizmo_mode_collision_sphere_translate;
+							}
+						}
+						else if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < collision_component->bound_count) {
+							if (ImGui::MenuItem("collision bound min##gizmo_mode_collision_bound_min", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_min)) {
+								editor->gizmo_mode = gizmo_mode_collision_bound_min;
+							}
+							if (ImGui::MenuItem("collision bound max##gizmo_mode_collision_bound_max", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_max)) {
+								editor->gizmo_mode = gizmo_mode_collision_bound_max;
+							}
+						}
+					}
 				}
 				ImGui::EndPopup();
 			}
@@ -533,20 +598,33 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				else if (editor->selection_mode == selection_mode_collision_object) {
 					if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision && editor->collision_object_show_bounds) {
 						entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
+						transform transform = level->entity_transforms[editor->entity_index];
 						float min_distance = ray.len;
-						uint32 bound_index = UINT32_MAX;
+						collision_object_type object_type = editor->entity_collision_object_type;
+						uint32 object_index = UINT32_MAX;
+						for (uint32 i = 0; i < entity_collision_component->sphere_count; i += 1) {
+							sphere sphere = entity_collision_component->spheres[i];
+							sphere.radius *= max(max(transform.scale.x, transform.scale.y), transform.scale.z);
+							sphere.center += transform.translate;
+							float intersection = 0;
+							if (ray_intersect_sphere(ray, sphere, &intersection) && intersection < min_distance) {
+								object_type = collision_object_type_sphere;
+								min_distance = intersection;
+								object_index = i;
+							}
+						}
 						for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
-							transform transform = level->entity_transforms[editor->entity_index];
 							aa_bound bound = entity_collision_component->bounds[i];
 							bound = aa_bound_translate(aa_bound_scale(bound, transform.scale), transform.translate);
 							vec2 intersection = {};
 							if (ray_intersect_bound(ray, bound, &intersection) && intersection.x < min_distance) {
+								object_type = collision_object_type_bound;
 								min_distance = intersection.x;
-								bound_index = i;
+								object_index = i;
 							}
 						}
-						editor->entity_collision_object_type = collision_object_type_bound;
-						editor->entity_collision_object_index = bound_index;
+						editor->entity_collision_object_type = object_type;
+						editor->entity_collision_object_index = object_index;
 					}
 				}
 			}
@@ -1220,6 +1298,37 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						entity_light_component->point_light.position = mat4_get_translation(transform_mat);
 					}
 				}
+				else if (editor->gizmo_mode == gizmo_mode_collision_sphere_scale && entity_flag & entity_component_flag_collision) {
+					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
+					if (editor->entity_collision_object_type == collision_object_type_sphere && editor->entity_collision_object_index < entity_collision_component->sphere_count) {
+						ImGuizmo::BeginFrame();
+						sphere *sphere = &entity_collision_component->spheres[editor->entity_collision_object_index];
+						vec3 translate = entity_transform->translate + sphere->center;
+						mat4 transform_mat = mat4_from_translation(translate);
+						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::SCALE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+						static vec3 final_scale = {1, 1, 1};
+						vec3 scale = mat4_get_scaling(transform_mat);
+						if (scale == vec3{1, 1, 1}) {
+							sphere->radius *= max(max(final_scale.x, final_scale.y), final_scale.z);
+							final_scale = {1, 1, 1};
+						}
+						else {
+							final_scale = scale;
+						}
+					}					
+				}
+				else if (editor->gizmo_mode == gizmo_mode_collision_sphere_translate && entity_flag & entity_component_flag_collision) {
+					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
+					if (editor->entity_collision_object_type == collision_object_type_sphere && editor->entity_collision_object_index < entity_collision_component->sphere_count) {
+						ImGuizmo::BeginFrame();
+						sphere *sphere = &entity_collision_component->spheres[editor->entity_collision_object_index];
+						vec3 translate = entity_transform->translate + sphere->center;
+						mat4 transform_mat = mat4_from_translation(translate);
+						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+						vec3 delta_translate = mat4_get_translation(transform_mat) - translate;
+						sphere->center += delta_translate;
+					}					
+				}
 				else if (editor->gizmo_mode == gizmo_mode_collision_bound_min && entity_flag & entity_component_flag_collision) {
 					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < entity_collision_component->bound_count) {
@@ -1256,15 +1365,15 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
 		auto generate_render_data = [&] {
 			editor->render_data = {};
-			vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], 16);
-			editor->render_data.lines_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
-			struct line_point {
-				vec3 position;
-				u8vec4 color;
-			};
-			static_assert(sizeof(struct line_point) == 16, "");
-			line_point *line_points = (struct line_point *)(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + editor->render_data.lines_frame_vertex_buffer_offset);
-			{ // reference grid
+			{ // lines
+				round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], 16u);
+				editor->render_data.lines_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
+				struct line_point {
+					vec3 position;
+					u8vec4 color;
+				};
+				static_assert(sizeof(struct line_point) == 16, "");
+				line_point *line_points = (struct line_point *)(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + editor->render_data.lines_frame_vertex_buffer_offset);
 				u8vec4 color = u8vec4{200, 200, 200, 255};
 				line_point horizontal_points[20];
 				float horizontal_z = -4.5f;
@@ -1286,31 +1395,42 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				editor->render_data.lines_vertex_count += m_countof(horizontal_points) + m_countof(vertical_points);
 				vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(horizontal_points) + sizeof(vertical_points);
 			}
-			{ // collision component bounds
-				if (editor->collision_object_show_bounds && editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
+			{ // collision objects
+				if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
 					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
-					for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
-						transform *transform = &level->entity_transforms[editor->entity_index];
-						aa_bound bound = aa_bound_translate(aa_bound_scale(entity_collision_component->bounds[i], transform->scale), transform->translate);
-						bool selected = editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index == i;
-						u8vec4 color = selected ? u8vec4{255, 0, 0, 255} : u8vec4{0, 255, 0, 255};
-						vec3 size = bound.max - bound.min;
-						vec3 points[8];
-						points[0] = bound.min;
-						points[1] = points[0] + vec3{size.x, 0, 0};
-						points[2] = points[1] + vec3{0, 0, size.z};
-						points[3] = points[2] - vec3{size.x, 0, 0};
-						points[4] = points[0] + vec3{0, size.y, 0};
-						points[5] = points[1] + vec3{0, size.y, 0};
-						points[6] = points[2] + vec3{0, size.y, 0};
-						points[7] = points[3] + vec3{0, size.y, 0};
-						line_point bound_points[] = {{points[0], color}, {points[1], color}, {points[1], color}, {points[2], color}, {points[2], color}, {points[3], color}, {points[3], color}, {points[0], color},  // buttom
-																				 {points[4], color}, {points[5], color}, {points[5], color}, {points[6], color}, {points[6], color}, {points[7], color}, {points[7], color}, {points[4], color},  // top
-																				 {points[0], color}, {points[4], color}, {points[1], color}, {points[5], color}, {points[2], color}, {points[6], color}, {points[3], color}, {points[7], color}}; // columns
-						memcpy(line_points, bound_points, sizeof(bound_points));
-						line_points += m_countof(bound_points);
-						editor->render_data.lines_vertex_count += m_countof(bound_points);
-						vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(bound_points);
+					if (entity_collision_component->sphere_count > 0 && editor->collision_object_show_spheres) {
+						editor->render_data.collision_sphere_count = entity_collision_component->sphere_count;
+						editor->render_data.collision_spheres = memory_arena_allocate<collision_object_render_data>(&level->frame_memory_arena, entity_collision_component->sphere_count);
+						for (uint32 i = 0; i < entity_collision_component->sphere_count; i += 1) {
+							sphere *sphere = &entity_collision_component->spheres[i];
+							transform *transform = &level->entity_transforms[editor->entity_index];
+							float transform_scale = max(max(transform->scale.x, transform->scale.y), transform->scale.z);
+							bool selected = editor->entity_collision_object_type == collision_object_type_sphere && editor->entity_collision_object_index == i;
+							editor->render_data.collision_spheres[i].transform = mat4_from_translation(transform->translate + sphere->center) * mat4_from_scaling(transform_scale * sphere->radius);
+							editor->render_data.collision_spheres[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
+						}
+					}
+					// if (entity_collision_component->capsule_count > 0 && editor->collision_object_show_capsules) {
+					// 	editor->render_data.collision_capsule_count = entity_collision_component->capsule_count;
+					// 	editor->render_data.collision_capsules = memory_arena_allocate<collision_object_render_data>(&level->frame_memory_arena, entity_collision_component->capsule_count);
+					// 	for (uint32 i = 0; i < entity_collision_component->capsule_count; i += 1) {
+					// 		capsule *capsule = &entity_collision_component->capsules[i];
+					// 		transform *transform = &level->entity_transforms[editor->entity_index];
+					// 		bool selected = editor->entity_collision_object_type == collision_object_type_capsule && editor->entity_collision_object_index == i;
+					// 		editor->render_data.collision_capsules[i].transform = mat4_from_scaling(transform->scale * capsule->radius);
+					// 		editor->render_data.collision_capsules[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
+					// 	}
+					// }
+					if (entity_collision_component->bound_count > 0 && editor->collision_object_show_bounds) {
+						editor->render_data.collision_bound_count = entity_collision_component->bound_count;
+						editor->render_data.collision_bounds = memory_arena_allocate<collision_object_render_data>(&level->frame_memory_arena, entity_collision_component->bound_count);
+						for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
+							transform *transform = &level->entity_transforms[editor->entity_index];
+							aa_bound bound = aa_bound_translate(aa_bound_scale(entity_collision_component->bounds[i], transform->scale), transform->translate);
+							bool selected = editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index == i;
+							editor->render_data.collision_bounds[i].transform = mat4_from_translation(aa_bound_center(bound)) * mat4_from_scaling(aa_bound_size(bound));
+							editor->render_data.collision_bounds[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
+						}
 					}
 				}
 			}
@@ -1327,7 +1447,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				}
 			}
 			{ // imgui
-				vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] = round_up(vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(ImDrawVert));
+				round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(ImDrawVert));
 				editor->render_data.imgui_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
 				ImDrawData *imgui_draw_data = ImGui::GetDrawData();
 				for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
@@ -1341,13 +1461,33 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			}
 		};
    	auto extra_main_render_pass_render_commands = [&] {
+			VkDeviceSize vertices_offset = 0;
+			uint32 uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, 0, 0};
+
 			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
 			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.pipeline);
-			VkDeviceSize vertices_offset = 0;
 			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
-			uint32 uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, 0, 0};
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
+			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
 			vkCmdDraw(cmd_buffer, editor->render_data.lines_vertex_count, 1, editor->render_data.lines_frame_vertex_buffer_offset / 16, 0);
+
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_object_pipeline.pipeline);
+			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.level_vertex_buffer.buffer, &vertices_offset);
+			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_object_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
+			for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
+				collision_object_render_data *push_consts = &editor->render_data.collision_spheres[i];
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
+				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+			}
+			// for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
+			// 	collision_object_render_data *push_consts = &editor->render_data.collision_capsules[i];
+			// 	vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
+			// 	vkCmdDraw(cmd_buffer, m_countof(capsule_vertices), 1, editor->capsule_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+			// }
+			for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
+				collision_object_render_data *push_consts = &editor->render_data.collision_bounds[i];
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
+				vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, editor->bound_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+			}
 		};
    	auto extra_swap_chain_render_commands = [&] {
 			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];

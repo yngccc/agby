@@ -74,20 +74,23 @@ T clamp(T n, T min, T max) {
 	return (n < min) ? min : ((n > max) ? max : n);
 }
 
-uint32 round_up(uint32 n, uint32 multi) {
-	uint32 remainder = n % multi;
+template <typename T>
+T round_up(T n, T multi) {
+	T remainder = n % multi;
 	if (remainder == 0) {
 		return n;
 	}
-	return n + (multi - remainder);
+	else {
+		return n + (multi - remainder);
+	}
 }
 
-uint64 round_up(uint64 n, uint64 multi) {
-	uint64 remainder = n % multi;
-	if (remainder == 0) {
-		return n;
+template <typename T>
+void round_up(T *n, T multi) {
+	T remainder = *n % multi;
+	if (remainder != 0) {
+		*n = *n + (multi - remainder);
 	}
-	return n + (multi - remainder);
 }
 
 bool is_pow_2(uint64 n) {
