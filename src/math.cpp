@@ -750,6 +750,12 @@ struct sphere {
 	float radius;
 };
 
+struct cylinder {
+	vec3 begin;
+	vec3 end;
+	float radius;
+};
+
 struct capsule {
 	vec3 begin;
 	vec3 end;
@@ -849,6 +855,81 @@ bool ray_intersect_sphere(const ray &ray, const sphere &sphere, float *intersect
 	if (intersection) {
 		float t = -b - sqrtf(discr);
 		*intersection = t < 0 ? 0 : t;
+	}
+	return true;
+}
+
+bool ray_intersect_cylinder(const ray &ray, const cylinder &cylinder, float *intersection = nullptr) {
+	vec3 sa = ray.origin;
+	vec3 sb = ray.origin + ray.direction * ray.len;
+	vec3 p = cylinder.begin;
+	vec3 q = cylinder.end;
+	float r = cylinder.radius;
+
+	vec3 d = q - p, m = sa - p, n = sb - sa;
+  float md = vec3_dot(m, d);
+  float nd = vec3_dot(n, d);
+  float dd = vec3_dot(d, d);
+  if (md < 0 && md + nd < 0) {
+  	return false; // Segment outside ’p’ side of cylinder
+  }
+  if (md > dd && md + nd > dd) {
+  	return false; // Segment outside ’q’ side of cylinder
+  }
+  float t = 0;
+  float nn = vec3_dot(n, n);
+  float mn = vec3_dot(m, n);
+  float a = dd * nn - nd * nd;
+  float k = vec3_dot(m, m) - r * r;
+  float c = dd * k - md * md;
+  if (fabsf(a) < FLT_EPSILON) { // Segment runs parallel to cylinder axis
+    if (c > 0) {
+    	return false; // ’a’ and thus the segment lie outside cylinder
+    }
+    if (md < 0) {
+	    t = -mn / nn; // Intersect segment against ’p’ endcap
+	  }
+    else if (md > dd) {
+    	t = (nd - mn) / nn; // Intersect segment against ’q’ endcap
+    }
+    else {
+	    t = 0; // ’a’ lies inside cylinder
+	  }
+  }
+  else {
+	  float b = dd * mn - nd * md;
+	  float discr = b * b - a * c;
+	  if (discr < 0) {
+		  return false; // No real roots; no intersection
+		}
+	  t = (-b - sqrtf(discr)) / a;
+	  if (t < 0 || t > 1) {
+	  	return false; // Intersection lies outside segment
+	  }
+	  if (md + t * nd < 0) { // Intersection outside cylinder on ’p’ side
+	    if (nd <= 0) {
+	    	return false; // Segment pointing away from endcap
+	    }
+	    t = -md / nd;
+	    // Keep intersection if Dot(S(t) - p, S(t) - p) <= r∧2
+	    if (k + 2 * t * (mn + t * nn) > 0) {
+	    	return false;
+	    }
+	  }
+	  else if (md + t * nd > dd) { // Intersection outside cylinder on ’q’ side
+	    if (nd >= 0) {
+	    	return false; // Segment pointing away from endcap
+	    }
+	    t = (dd - md) / nd;
+	    // Keep intersection if Dot(S(t) - q, S(t) - q) <= r∧2
+	    if (k + dd - 2 * md + t * (2 * (mn - nd) + t * nn) > 0) {
+	    	return false;
+	    }
+	  }
+	}
+  // Segment intersects cylinder between the endcaps; t is correct
+	if (intersection) {
+		*intersection = ray.len * t;
 	}
 	return true;
 }

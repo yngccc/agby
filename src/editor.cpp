@@ -29,8 +29,8 @@ enum gizmo_mode {
 	gizmo_mode_point_light_translate,
 	gizmo_mode_collision_sphere_scale,
 	gizmo_mode_collision_sphere_translate,
-	gizmo_mode_collision_capsule_enlarge,
-	gizmo_mode_collision_capsule_stretch,
+	gizmo_mode_collision_capsule_scale,
+	gizmo_mode_collision_capsule_translate,
 	gizmo_mode_collision_capsule_rotate,
 	gizmo_mode_collision_bound_min,
 	gizmo_mode_collision_bound_max
@@ -370,8 +370,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				editor->camera.view = {(float)view[0].GetDouble(), (float)view[1].GetDouble(), (float)view[2].GetDouble()};
 				rapidjson::Value::Array up = camera["up"].GetArray();
 				editor->camera.up = {(float)up[0].GetDouble(), (float)up[1].GetDouble(), (float)up[2].GetDouble()};
-				editor->camera.fovy = (float)camera["fovy"].GetDouble();
-				editor->camera.aspect = (float)camera["aspect"].GetDouble();
 				editor->camera.znear = (float)camera["znear"].GetDouble();
 				editor->camera.zfar = (float)camera["zfar"].GetDouble();
 				editor->camera_move_speed = (float)camera["move_speed"].GetDouble();
@@ -495,7 +493,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		}
 		{ // selection/gizmo modes
 			ImGui::PushID("selection_gizmo_mode_popup");
-			if (ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
+			if ((ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('M') && ImGui::GetIO().KeyCtrl) {
 				ImGui::OpenPopup("##popup");
 			}
 			if (ImGui::BeginPopup("##popup")) {
@@ -548,11 +546,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							}
 						}
 						else if (editor->entity_collision_object_type == collision_object_type_capsule && editor->entity_collision_object_index < collision_component->capsule_count) {
-							if (ImGui::MenuItem("capsule enlarge##gizmo_mode_collision_capsule_enlarge", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_enlarge)) {
-								editor->gizmo_mode = gizmo_mode_collision_capsule_enlarge;
+							if (ImGui::MenuItem("capsule scale##gizmo_mode_collision_capsule_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_scale)) {
+								editor->gizmo_mode = gizmo_mode_collision_capsule_scale;
 							}
-							if (ImGui::MenuItem("capsule stretch##gizmo_mode_collision_capsule_stretch", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_stretch)) {
-								editor->gizmo_mode = gizmo_mode_collision_capsule_stretch;
+							if (ImGui::MenuItem("capsule translate##gizmo_mode_collision_capsule_translate", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_translate)) {
+								editor->gizmo_mode = gizmo_mode_collision_capsule_translate;
 							}
 							if (ImGui::MenuItem("capsule rotate##gizmo_mode_collision_capsule_rotate", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_rotate)) {
 								editor->gizmo_mode = gizmo_mode_collision_capsule_rotate;
@@ -610,33 +608,55 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				else if (editor->selection_mode == selection_mode_collision_object) {
-					if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision && editor->collision_object_show_bounds) {
+					if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
 						entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 						transform transform = level->entity_transforms[editor->entity_index];
 						float min_distance = ray.len;
 						collision_object_type object_type = editor->entity_collision_object_type;
 						uint32 object_index = UINT32_MAX;
-						for (uint32 i = 0; i < entity_collision_component->sphere_count; i += 1) {
-							sphere sphere = entity_collision_component->spheres[i];
-							sphere.radius *= max(max(transform.scale.x, transform.scale.y), transform.scale.z);
-							sphere.center += transform.translate;
-							float intersection = 0;
-							if (ray_intersect_sphere(ray, sphere, &intersection) && intersection < min_distance) {
-								object_type = collision_object_type_sphere;
-								min_distance = intersection;
-								object_index = i;
+						if (editor->collision_object_show_spheres) {
+							for (uint32 i = 0; i < entity_collision_component->sphere_count; i += 1) {
+								sphere sphere = entity_collision_component->spheres[i];
+								sphere.radius *= max(max(transform.scale.x, transform.scale.y), transform.scale.z);
+								sphere.center += transform.translate;
+								float intersection = 0;
+								if (ray_intersect_sphere(ray, sphere, &intersection) && intersection < min_distance) {
+									min_distance = intersection;
+									object_type = collision_object_type_sphere;
+									object_index = i;
+								}
 							}
 						}
+						if (editor->collision_object_show_capsules) {
+							for (uint32 i = 0; i < entity_collision_component->capsule_count; i += 1) {
+								capsule capsule = entity_collision_component->capsules[i];
+								capsule.radius *= max(transform.scale.x, transform.scale.z);
+								capsule.begin *= transform.scale.y;
+								capsule.end *= transform.scale.y;
+								capsule.begin = transform.rotate * capsule.begin;
+								capsule.end = transform.rotate * capsule.end;
+								capsule.begin += transform.translate;
+								capsule.end += transform.translate;
+								float intersection = 0;
+								if (ray_intersect_cylinder(ray, {capsule.begin, capsule.end, capsule.radius}, &intersection) && intersection < min_distance) {
+									min_distance = intersection;
+									object_type = collision_object_type_capsule;
+									object_index = i;
+								}
+							}
+						}
+						if (editor->collision_object_show_bounds) {
 						for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
 							aa_bound bound = entity_collision_component->bounds[i];
 							bound = aa_bound_translate(aa_bound_scale(bound, transform.scale), transform.translate);
 							vec2 intersection = {};
 							if (ray_intersect_bound(ray, bound, &intersection) && intersection.x < min_distance) {
-								object_type = collision_object_type_bound;
 								min_distance = intersection.x;
+								object_type = collision_object_type_bound;
 								object_index = i;
 							}
 						}
+					}
 						editor->entity_collision_object_type = object_type;
 						editor->entity_collision_object_index = object_index;
 					}
@@ -752,10 +772,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					writer->Double(editor->camera.up.y);
 					writer->Double(editor->camera.up.z);
 					writer->EndArray();
-					writer->Key("fovy");
-					writer->Double(editor->camera.fovy);
-					writer->Key("aspect");
-					writer->Double(editor->camera.aspect);
 					writer->Key("znear");
 					writer->Double(editor->camera.znear);
 					writer->Key("zfar");
@@ -1416,31 +1432,41 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						editor->render_data.collision_sphere_count = entity_collision_component->sphere_count;
 						editor->render_data.collision_spheres = memory_arena_allocate<collision_object_render_data>(&level->frame_memory_arena, entity_collision_component->sphere_count);
 						for (uint32 i = 0; i < entity_collision_component->sphere_count; i += 1) {
-							sphere *sphere = &entity_collision_component->spheres[i];
-							transform *transform = &level->entity_transforms[editor->entity_index];
-							float transform_scale = max(max(transform->scale.x, transform->scale.y), transform->scale.z);
+							sphere sphere = entity_collision_component->spheres[i];
+							transform transform = level->entity_transforms[editor->entity_index];
+							float transform_scale = max(max(transform.scale.x, transform.scale.y), transform.scale.z);
 							bool selected = editor->entity_collision_object_type == collision_object_type_sphere && editor->entity_collision_object_index == i;
-							editor->render_data.collision_spheres[i].transform = mat4_from_translation(transform->translate + sphere->center) * mat4_from_scaling(transform_scale * sphere->radius);
+							editor->render_data.collision_spheres[i].transform = mat4_from_translation(transform.translate + sphere.center) * mat4_from_scaling(transform_scale * sphere.radius);
 							editor->render_data.collision_spheres[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
 						}
 					}
-					// if (entity_collision_component->capsule_count > 0 && editor->collision_object_show_capsules) {
-					// 	editor->render_data.collision_capsule_count = entity_collision_component->capsule_count;
-					// 	editor->render_data.collision_capsules = memory_arena_allocate<collision_object_render_data>(&level->frame_memory_arena, entity_collision_component->capsule_count);
-					// 	for (uint32 i = 0; i < entity_collision_component->capsule_count; i += 1) {
-					// 		capsule *capsule = &entity_collision_component->capsules[i];
-					// 		transform *transform = &level->entity_transforms[editor->entity_index];
-					// 		bool selected = editor->entity_collision_object_type == collision_object_type_capsule && editor->entity_collision_object_index == i;
-					// 		editor->render_data.collision_capsules[i].transform = mat4_from_scaling(transform->scale * capsule->radius);
-					// 		editor->render_data.collision_capsules[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
-					// 	}
-					// }
+					if (entity_collision_component->capsule_count > 0 && editor->collision_object_show_capsules) {
+						editor->render_data.collision_capsule_count = entity_collision_component->capsule_count;
+						editor->render_data.collision_capsules = memory_arena_allocate<collision_object_render_data>(&level->frame_memory_arena, entity_collision_component->capsule_count);
+						for (uint32 i = 0; i < entity_collision_component->capsule_count; i += 1) {
+							capsule capsule = entity_collision_component->capsules[i];
+							transform transform = level->entity_transforms[editor->entity_index];
+							capsule.radius *= max(transform.scale.x, transform.scale.z);
+							capsule.begin *= transform.scale.y;
+							capsule.end *= transform.scale.y;
+							capsule.begin = transform.rotate * capsule.begin;
+							capsule.end = transform.rotate * capsule.end;
+							capsule.begin += transform.translate;
+							capsule.end += transform.translate;
+							bool selected = editor->entity_collision_object_type == collision_object_type_capsule && editor->entity_collision_object_index == i;
+							mat4 scale_mat = mat4_from_scaling(vec3{capsule.radius, vec3_len(capsule.begin - capsule.end) / 2, capsule.radius});
+							mat4 rotate_mat = quat_to_mat4(quat_from_between({0, vec3_len(capsule.begin - capsule.end), 0}, capsule.begin - capsule.end));
+							mat4 translate_mat = mat4_from_translation((capsule.begin + capsule.end) / 2);
+							editor->render_data.collision_capsules[i].transform = translate_mat * rotate_mat * scale_mat;
+							editor->render_data.collision_capsules[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
+						}
+					}
 					if (entity_collision_component->bound_count > 0 && editor->collision_object_show_bounds) {
 						editor->render_data.collision_bound_count = entity_collision_component->bound_count;
 						editor->render_data.collision_bounds = memory_arena_allocate<collision_object_render_data>(&level->frame_memory_arena, entity_collision_component->bound_count);
 						for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
-							transform *transform = &level->entity_transforms[editor->entity_index];
-							aa_bound bound = aa_bound_translate(aa_bound_scale(entity_collision_component->bounds[i], transform->scale), transform->translate);
+							transform transform = level->entity_transforms[editor->entity_index];
+							aa_bound bound = aa_bound_translate(aa_bound_scale(entity_collision_component->bounds[i], transform.scale), transform.translate);
 							bool selected = editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index == i;
 							editor->render_data.collision_bounds[i].transform = mat4_from_translation(aa_bound_center(bound)) * mat4_from_scaling(aa_bound_size(bound));
 							editor->render_data.collision_bounds[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
@@ -1492,11 +1518,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
 				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
 			}
-			// for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
-			// 	collision_object_render_data *push_consts = &editor->render_data.collision_capsules[i];
-			// 	vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
-			// 	vkCmdDraw(cmd_buffer, m_countof(capsule_vertices), 1, editor->capsule_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
-			// }
+			for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
+				collision_object_render_data *push_consts = &editor->render_data.collision_capsules[i];
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
+				vkCmdDraw(cmd_buffer, m_countof(capsule_vertices), 1, editor->capsule_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+			}
 			for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
 				collision_object_render_data *push_consts = &editor->render_data.collision_bounds[i];
 				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
