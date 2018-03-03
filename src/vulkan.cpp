@@ -2555,7 +2555,7 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
 		depth_stencil_state.depthTestEnable = VK_TRUE;
-		depth_stencil_state.depthWriteEnable = VK_FALSE;
+		depth_stencil_state.depthWriteEnable = VK_TRUE;
 		depth_stencil_state.depthCompareOp = VK_COMPARE_OP_GREATER;
 		depth_stencil_state.stencilTestEnable = VK_FALSE;
 

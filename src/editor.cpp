@@ -21,8 +21,7 @@ enum selection_mode {
 	selection_mode_collision_object
 };
 
-enum gizmo_mode {
-	gizmo_mode_transform_translate,
+enum gizmo_mode {gizmo_mode_transform_translate,
 	gizmo_mode_transform_rotate,
 	gizmo_mode_transform_scale,
 	gizmo_mode_directional_light_rotate,
@@ -32,8 +31,8 @@ enum gizmo_mode {
 	gizmo_mode_collision_capsule_scale,
 	gizmo_mode_collision_capsule_translate,
 	gizmo_mode_collision_capsule_rotate,
-	gizmo_mode_collision_bound_min,
-	gizmo_mode_collision_bound_max
+	gizmo_mode_collision_bound_scale,
+	gizmo_mode_collision_bound_translate
 };
 
 enum collision_object_type {
@@ -46,6 +45,7 @@ enum collision_object_type {
 struct collision_object_render_data {
 	mat4 transform;
 	vec4 color;
+	mat4 capsule_sphere_transforms[2];
 };
 
 struct editor_render_data {
@@ -493,7 +493,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		}
 		{ // selection/gizmo modes
 			ImGui::PushID("selection_gizmo_mode_popup");
-			if ((ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('M') && ImGui::GetIO().KeyCtrl) {
+			if ((ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
 				ImGui::OpenPopup("##popup");
 			}
 			if (ImGui::BeginPopup("##popup")) {
@@ -557,11 +557,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							}
 						}
 						else if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < collision_component->bound_count) {
-							if (ImGui::MenuItem("bound min##gizmo_mode_collision_bound_min", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_min)) {
-								editor->gizmo_mode = gizmo_mode_collision_bound_min;
+							if (ImGui::MenuItem("bound scale##gizmo_mode_collision_bound_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_scale)) {
+								editor->gizmo_mode = gizmo_mode_collision_bound_scale;
 							}
-							if (ImGui::MenuItem("bound max##gizmo_mode_collision_bound_max", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_max)) {
-								editor->gizmo_mode = gizmo_mode_collision_bound_max;
+							if (ImGui::MenuItem("bound translate##gizmo_mode_collision_bound_translate", nullptr, editor->gizmo_mode == gizmo_mode_collision_bound_translate)) {
+								editor->gizmo_mode = gizmo_mode_collision_bound_translate;
 							}
 						}
 					}
@@ -638,7 +638,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 								capsule.begin += transform.translate;
 								capsule.end += transform.translate;
 								float intersection = 0;
-								if (ray_intersect_cylinder(ray, {capsule.begin, capsule.end, capsule.radius}, &intersection) && intersection < min_distance) {
+								if (ray_intersect_capsule(ray, capsule, &intersection) && intersection < min_distance) {
 									min_distance = intersection;
 									object_type = collision_object_type_capsule;
 									object_index = i;
@@ -646,17 +646,16 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							}
 						}
 						if (editor->collision_object_show_bounds) {
-						for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
-							aa_bound bound = entity_collision_component->bounds[i];
-							bound = aa_bound_translate(aa_bound_scale(bound, transform.scale), transform.translate);
-							vec2 intersection = {};
-							if (ray_intersect_bound(ray, bound, &intersection) && intersection.x < min_distance) {
-								min_distance = intersection.x;
-								object_type = collision_object_type_bound;
-								object_index = i;
+							for (uint32 i = 0; i < entity_collision_component->bound_count; i += 1) {
+								aa_bound bound = entity_collision_component->bounds[i]; bound = aa_bound_translate(aa_bound_scale(bound, transform.scale), transform.translate);
+								vec2 intersection = {};
+								if (ray_intersect_bound(ray, bound, &intersection) && intersection.x < min_distance) {
+									min_distance = intersection.x;
+									object_type = collision_object_type_bound;
+									object_index = i;
+								}
 							}
 						}
-					}
 						editor->entity_collision_object_type = object_type;
 						editor->entity_collision_object_index = object_index;
 					}
@@ -1359,34 +1358,36 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						sphere->center += delta_translate;
 					}					
 				}
-				else if (editor->gizmo_mode == gizmo_mode_collision_bound_min && entity_flag & entity_component_flag_collision) {
+				else if (editor->gizmo_mode == gizmo_mode_collision_bound_scale && entity_flag & entity_component_flag_collision) {
 					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < entity_collision_component->bound_count) {
 						ImGuizmo::BeginFrame();
 						aa_bound *bound = &entity_collision_component->bounds[editor->entity_collision_object_index];
 						aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(*bound, entity_transform->scale), entity_transform->translate);
-						mat4 transform_mat = mat4_from_translation(transformed_bound.min);
-						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-						vec3 new_min = mat4_get_translation(transform_mat);
-						new_min.x = min(new_min.x, transformed_bound.max.x);
-						new_min.y = min(new_min.y, transformed_bound.max.y);
-						new_min.z = min(new_min.z, transformed_bound.max.z);
-						bound->min += new_min - transformed_bound.min;
+						mat4 transform_mat = mat4_from_translation(aa_bound_center(transformed_bound));
+						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::SCALE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
+						static vec3 final_scale = {1, 1, 1};
+						vec3 scale = mat4_get_scaling(transform_mat);
+						if (scale == vec3{1, 1, 1}) {
+							*bound = aa_bound_scale(*bound, final_scale);
+							final_scale = {1, 1, 1};
+						}
+						else {
+							final_scale = scale;
+						}
 					}
 				}
-				else if (editor->gizmo_mode == gizmo_mode_collision_bound_max && entity_flag & entity_component_flag_collision) {
+				else if (editor->gizmo_mode == gizmo_mode_collision_bound_translate && entity_flag & entity_component_flag_collision) {
 					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (editor->entity_collision_object_type == collision_object_type_bound && editor->entity_collision_object_index < entity_collision_component->bound_count) {
 						ImGuizmo::BeginFrame();
 						aa_bound *bound = &entity_collision_component->bounds[editor->entity_collision_object_index];
 						aa_bound transformed_bound = aa_bound_translate(aa_bound_scale(*bound, entity_transform->scale), entity_transform->translate);
-						mat4 transform_mat = mat4_from_translation(transformed_bound.max);
+						mat4 transform_mat = mat4_from_translation(aa_bound_center(transformed_bound));
 						ImGuizmo::Manipulate(mat4_float_ptr(camera_view_mat), mat4_float_ptr(camera_proj_mat), ImGuizmo::TRANSLATE, ImGuizmo::WORLD, mat4_float_ptr(transform_mat));
-						vec3 new_max = mat4_get_translation(transform_mat);
-						new_max.x = max(new_max.x, transformed_bound.min.x);
-						new_max.y = max(new_max.y, transformed_bound.min.y);
-						new_max.z = max(new_max.z, transformed_bound.min.z);
-						bound->max += new_max - transformed_bound.max;
+						vec3 delta_translate = mat4_get_translation(transform_mat) - aa_bound_center(transformed_bound);
+						bound->max += delta_translate;
+						bound->min += delta_translate;
 					}
 				}
 			}
@@ -1454,10 +1455,14 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							capsule.begin += transform.translate;
 							capsule.end += transform.translate;
 							bool selected = editor->entity_collision_object_type == collision_object_type_capsule && editor->entity_collision_object_index == i;
-							mat4 scale_mat = mat4_from_scaling(vec3{capsule.radius, vec3_len(capsule.begin - capsule.end) / 2, capsule.radius});
-							mat4 rotate_mat = quat_to_mat4(quat_from_between({0, vec3_len(capsule.begin - capsule.end), 0}, capsule.begin - capsule.end));
-							mat4 translate_mat = mat4_from_translation((capsule.begin + capsule.end) / 2);
-							editor->render_data.collision_capsules[i].transform = translate_mat * rotate_mat * scale_mat;
+							mat4 cylinder_scale_mat = mat4_from_scaling(vec3{capsule.radius, vec3_len(capsule.begin - capsule.end), capsule.radius});
+							mat4 cylinder_rotate_mat = quat_to_mat4(quat_from_between({0, 1, 0}, vec3_normalize(capsule.end - (capsule.begin + capsule.end) / 2)));
+							mat4 cylinder_translate_mat = mat4_from_translation((capsule.begin + capsule.end) / 2);
+							mat4 sphere_scale_mat = mat4_from_scaling(capsule.radius);
+							mat4 sphere_translate_mats[2] = {mat4_from_translation(capsule.begin), mat4_from_translation(capsule.end)};
+							editor->render_data.collision_capsules[i].transform = cylinder_translate_mat * cylinder_rotate_mat * cylinder_scale_mat;
+							editor->render_data.collision_capsules[i].capsule_sphere_transforms[0] = sphere_translate_mats[0] * sphere_scale_mat;
+							editor->render_data.collision_capsules[i].capsule_sphere_transforms[1] = sphere_translate_mats[1] * sphere_scale_mat;
 							editor->render_data.collision_capsules[i].color = selected ? vec4{1, 0, 0, 0.25f} : vec4{0, 1, 0, 0.25f};
 						}
 					}
@@ -1513,19 +1518,31 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_object_pipeline.pipeline);
 			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.level_vertex_buffer.buffer, &vertices_offset);
 			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_object_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
+			struct collision_object_push_consts {
+				mat4 transform;
+				vec4 color;
+			};
 			for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
-				collision_object_render_data *push_consts = &editor->render_data.collision_spheres[i];
-				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
+				collision_object_push_consts push_consts = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color};
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
 				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
 			}
 			for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
-				collision_object_render_data *push_consts = &editor->render_data.collision_capsules[i];
-				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
-				vkCmdDraw(cmd_buffer, m_countof(capsule_vertices), 1, editor->capsule_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+				collision_object_push_consts cylinder_push_consts = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color};
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(cylinder_push_consts), &cylinder_push_consts);
+				vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, editor->cylinder_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+
+				collision_object_push_consts sphere_1_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[0], editor->render_data.collision_capsules[i].color};
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_1_push_consts), &sphere_1_push_consts);
+				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+
+				collision_object_push_consts sphere_2_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[1], editor->render_data.collision_capsules[i].color};
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_2_push_consts), &sphere_2_push_consts);
+				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
 			}
 			for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
-				collision_object_render_data *push_consts = &editor->render_data.collision_bounds[i];
-				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct collision_object_render_data), push_consts);
+				collision_object_push_consts push_consts = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color};
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_object_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
 				vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, editor->bound_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
 			}
 		};

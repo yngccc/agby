@@ -859,22 +859,26 @@ bool ray_intersect_sphere(const ray &ray, const sphere &sphere, float *intersect
 	return true;
 }
 
-bool ray_intersect_cylinder(const ray &ray, const cylinder &cylinder, float *intersection = nullptr) {
-	vec3 sa = ray.origin;
-	vec3 sb = ray.origin + ray.direction * ray.len;
-	vec3 p = cylinder.begin;
-	vec3 q = cylinder.end;
-	float r = cylinder.radius;
+bool ray_intersect_capsule(const ray &ray, const capsule &capsule, float *intersection = nullptr) {
+	const vec3 sa = ray.origin;
+	const vec3 sb = ray.origin + ray.direction * ray.len;
+	const vec3 p = capsule.begin;
+	const vec3 q = capsule.end;
+	const float r = capsule.radius;
+
+	auto test_spheres = [&] {
+		return ray_intersect_sphere(ray, {p, r}, intersection) || ray_intersect_sphere(ray, {q, r}, intersection);
+	};
 
 	vec3 d = q - p, m = sa - p, n = sb - sa;
   float md = vec3_dot(m, d);
   float nd = vec3_dot(n, d);
   float dd = vec3_dot(d, d);
   if (md < 0 && md + nd < 0) {
-  	return false; // Segment outside ’p’ side of cylinder
+  	return test_spheres(); // Segment outside ’p’ side of cylinder
   }
   if (md > dd && md + nd > dd) {
-  	return false; // Segment outside ’q’ side of cylinder
+  	return test_spheres(); // Segment outside ’q’ side of cylinder
   }
   float t = 0;
   float nn = vec3_dot(n, n);
@@ -884,7 +888,7 @@ bool ray_intersect_cylinder(const ray &ray, const cylinder &cylinder, float *int
   float c = dd * k - md * md;
   if (fabsf(a) < FLT_EPSILON) { // Segment runs parallel to cylinder axis
     if (c > 0) {
-    	return false; // ’a’ and thus the segment lie outside cylinder
+    	return test_spheres(); // ’a’ and thus the segment lie outside cylinder
     }
     if (md < 0) {
 	    t = -mn / nn; // Intersect segment against ’p’ endcap
@@ -900,30 +904,30 @@ bool ray_intersect_cylinder(const ray &ray, const cylinder &cylinder, float *int
 	  float b = dd * mn - nd * md;
 	  float discr = b * b - a * c;
 	  if (discr < 0) {
-		  return false; // No real roots; no intersection
+		  return test_spheres(); // No real roots; no intersection
 		}
 	  t = (-b - sqrtf(discr)) / a;
 	  if (t < 0 || t > 1) {
-	  	return false; // Intersection lies outside segment
+	  	return test_spheres(); // Intersection lies outside segment
 	  }
 	  if (md + t * nd < 0) { // Intersection outside cylinder on ’p’ side
 	    if (nd <= 0) {
-	    	return false; // Segment pointing away from endcap
+	    	return test_spheres(); // Segment pointing away from endcap
 	    }
 	    t = -md / nd;
 	    // Keep intersection if Dot(S(t) - p, S(t) - p) <= r∧2
 	    if (k + 2 * t * (mn + t * nn) > 0) {
-	    	return false;
+	    	return test_spheres();
 	    }
 	  }
 	  else if (md + t * nd > dd) { // Intersection outside cylinder on ’q’ side
 	    if (nd >= 0) {
-	    	return false; // Segment pointing away from endcap
+	    	return test_spheres(); // Segment pointing away from endcap
 	    }
 	    t = (dd - md) / nd;
 	    // Keep intersection if Dot(S(t) - q, S(t) - q) <= r∧2
 	    if (k + dd - 2 * md + t * (2 * (mn - nd) + t * nn) > 0) {
-	    	return false;
+	    	return test_spheres();
 	    }
 	  }
 	}
