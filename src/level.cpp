@@ -336,7 +336,23 @@ entity_collision_component deep_copy_collision_component(entity_collision_compon
 		collision_component.triangles = triangles;
 	}
 	return collision_component;
-};
+}
+
+void level_time_step_physics_components(level *level, double time) {
+	float timef = (float)time;
+	uint32 physics_component_index = 0;
+	for (uint32 i = 0; i < level->entity_count; i += 1) {
+		if (level->entity_flags[i] & entity_component_flag_physics) {
+			entity_physics_component *component = &level->physics_components[physics_component_index++];
+			transform *transform = &level->entity_transforms[i];
+
+			transform->translate.x += component->velocity.x * timef;
+			transform->translate.z += component->velocity.z * timef;
+			transform->translate.y += component->velocity.y * timef - 0.5f * component->gravity * timef * timef;
+			component->velocity.y -= component->gravity * timef;
+		}
+	}
+}
 
 void level_process_entity_modifications_additions(level *level) {
 	uint32 new_entity_count = level->entity_count;

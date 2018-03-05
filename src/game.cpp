@@ -3,8 +3,6 @@
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"
-#include "math.cpp"
-#include "vulkan.cpp"
 
 #define RAPIDJSON_SSE2
 #define RAPIDJSON_ASSERT(x) m_assert(x)
@@ -12,6 +10,11 @@
 #include "../vendor/include/rapidjson/prettywriter.h"
 #include "../vendor/include/rapidjson/error/en.h"
 
+#include "../vendor/include/bullet3/btBulletCollisionCommon.h"
+#include "../vendor/include/bullet3/btBulletDynamicsCommon.h"
+
+#include "math.cpp"
+#include "vulkan.cpp"
 #include "assets.cpp"
 #include "level.cpp"
 
@@ -156,17 +159,17 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				transform *transform = &level->entity_transforms[level->player_entity_index];
 				transform->rotate = quat_from_between(vec3{0, 0, 1}, move_vec);
 				transform->translate += move_vec * (float)last_frame_time_sec * move_speed;
+				// entity_physics_component *component = entity_get_physics_component(level, level->player_entity_index);
 			}
 		}
 		{
-			uint32 physics_component_index = 0;
-			for (uint32 i = 0; i < level->entity_count; i += 1) {
-				if (level->entity_flags[i] & entity_component_flag_physics) {
-					transform *transform = &level->entity_transforms[i];
-					entity_physics_component *component = &level->physics_components[physics_component_index++];
-					transform->translate += component->velocity * (float)last_frame_time_sec;
-				}
+			double step_time = 1.0 / 60.0;
+			double sim_time_remain = last_frame_time_sec;
+			while (sim_time_remain > step_time) {
+				level_time_step_physics_components(level, step_time);
+				sim_time_remain -= step_time;
 			}
+			level_time_step_physics_components(level, sim_time_remain);
 		}
 		{
 			float x_sensitivity = 0.005f;
