@@ -3,16 +3,17 @@
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"
-#include "math.cpp"
-#define ASSETS_IMPORT_STRUCT_ONLY
-#include "assets.cpp"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "../vendor/include/stb/stb_image.h"
 #define FBXSDK_SHARED
 #include "../vendor/include/fbx/fbxsdk.h"
 #define NVTT_SHARED 1
 #include "../vendor/include/nvtt/nvtt.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "../vendor/include/stb/stb_image.h"
+
+#include "math.cpp"
+#define ASSETS_IMPORT_STRUCT_ONLY
+#include "assets.cpp"
 
 typedef vec3 position;
 typedef vec2 uv;

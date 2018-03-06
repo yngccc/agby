@@ -30,7 +30,7 @@ rem codegen ..\src\common.cpp ..\src\math.cpp ..\src\vulkan.cpp ..\src\assets.cp
 start /b cl ..\src\editor.cpp %flags% /MD %dirs% %libs%
 start /b cl ..\src\game.cpp %flags% /MD %dirs% %libs% %bullet3_libs%
 start /b cl ..\src\import.cpp %flags% /MD %dirs% %libs% libfbxsdk.lib nvtt.lib
-start /b cl ..\src\lightmap.cpp %flags% /MT %dirs% %libs% uvatlas.lib directxmesh.lib
+start /b cl ..\src\lightmap.cpp %flags% /MD %dirs% %libs% UVAtlas.lib DirectXMesh.lib
 start /b cl ..\src\test.cpp %flags% /MD %dirs% %libs%
 
 rmdir /s /q shaders
