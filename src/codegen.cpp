@@ -52,7 +52,7 @@ enum token_type {
 };
 
 struct token {
-  token_type type;
+  token_type shape;
   char *text;
   uint32 text_len;
 };
@@ -61,7 +61,7 @@ token get_token(char **at) {
   skip_non_token(at);
 
   token token = {};
-  token.type = token_unknown;
+  token.shape = token_unknown;
   token.text = *at;
   token.text_len = 1;
 
@@ -69,34 +69,34 @@ token get_token(char **at) {
   (*at) += 1;
   switch (c) {
     case '(' : {
-      token.type = token_lparen;
+      token.shape = token_lparen;
     } break;
     case ')' : {
-      token.type = token_rparen;
+      token.shape = token_rparen;
     } break;
     case '{' : {
-      token.type = token_lbrace;
+      token.shape = token_lbrace;
     } break;
     case '}' : {
-      token.type = token_rbrace;
+      token.shape = token_rbrace;
     } break;
     case '[' : {
-      token.type = token_lbracket;
+      token.shape = token_lbracket;
     } break;
     case ']' : {
-      token.type = token_rbracket;
+      token.shape = token_rbracket;
     } break;
     case ':' : {
-      token.type = token_colon;
+      token.shape = token_colon;
     } break;
     case ';' : {
-      token.type = token_semicolon;
+      token.shape = token_semicolon;
     } break;
     case '*' : {
-      token.type = token_asterisk;
+      token.shape = token_asterisk;
     } break;
     case '"' : {
-      token.type = token_string;
+      token.shape = token_string;
       token.text = *at;
       while ((*at)[0] != '\0' && (*at)[0] != '"') {
         if ((*at)[0] == '\\' && (*at)[1] != '\0') {
@@ -110,19 +110,19 @@ token get_token(char **at) {
       }
     } break;
     case '\0' : {
-      token.type = token_eof;
+      token.shape = token_eof;
       (*at) -= 1;
     } break;
     default : {
       if (isalpha(c)) {
-        token.type = token_identifier;
+        token.shape = token_identifier;
         while (isalnum((*at)[0]) || (*at)[0] == '_') {
           (*at) += 1;
         }
         token.text_len = (uint32)((*at) - token.text);
       }
       else {
-        token.type = token_unknown;
+        token.shape = token_unknown;
       }
     }
   }
@@ -164,11 +164,11 @@ void parse_enum(char **code, char *enum_name, uint32 enum_name_len, parse_result
 
   for (;;) {
     token token = get_token(code);
-    m_assert(token.type != token_eof);
-    if (token.type == token_rbrace) {
+    m_assert(token.shape != token_eof);
+    if (token.shape == token_rbrace) {
       break;
     }
-    if (token.type == token_identifier) {
+    if (token.shape == token_identifier) {
       m_assert(enum_info->member_names_count < m_countof(enum_info->member_names));
       string *member_name = &enum_info->member_names[enum_info->member_names_count++];
       *member_name = {token.text, token.text_len, token.text_len};
@@ -183,11 +183,11 @@ void parse(char *code, parse_result *parse_result) {
   bool parsing = true;
   while (parsing) {
     token token = get_token(&code);
-    switch (token.type) {
+    switch (token.shape) {
       case token_identifier : {
         if (token_equal(token, "enum")) {
           token = get_token(&code);
-          if (token.type == token_identifier) {
+          if (token.shape == token_identifier) {
             char *enum_name = token.text;
             uint32 enum_name_len = token.text_len;
             token = get_token(&code);
@@ -198,7 +198,7 @@ void parse(char *code, parse_result *parse_result) {
         }
         else if (token_equal(token, "struct")) {
           token = get_token(&code);
-          if (token.type == token_identifier) {
+          if (token.shape == token_identifier) {
             char *struct_name = token.text;
             uint32 struct_name_len = token.text_len;
             token = get_token(&code);

@@ -73,6 +73,12 @@ struct point_light {
 	float attenuation;
 };
 
+enum collision_shape {
+	collision_shape_sphere,
+	collision_shape_capsule,
+	collision_shape_box
+};
+
 struct entity_info {
 	char name[32];
 };
@@ -91,14 +97,18 @@ struct entity_render_component {
 };
 
 struct entity_collision_component {
-	sphere *spheres;
-	capsule *capsules;
-	aa_bound *bounds;
-	triangle *triangles;
-	uint32 sphere_count;
-	uint32 capsule_count;
-	uint32 bound_count;
-	uint32 triangle_count;
+	collision_shape shape;
+	union {
+		struct {
+			float radius;
+		} sphere;
+		struct {
+			float height, radius;
+		} capsule;
+		struct {
+			vec3 size;
+		} box;
+	};
 };
 
 struct entity_light_component {
@@ -112,8 +122,8 @@ struct entity_light_component {
 
 struct entity_physics_component {
 	vec3 velocity;
+	float mass;
 	float max_speed;
-	float gravity;
 };
 
 struct entity_modification {
@@ -293,67 +303,6 @@ uint32 entity_component_get_entity_index(level *level, uint32 component_index, e
 	return UINT32_MAX;
 }
 
-entity_collision_component deep_copy_collision_component(entity_collision_component *cc, memory_arena *memory_arena,
-																												 sphere *new_spheres = nullptr, uint32 new_sphere_count = 0,
-																												 capsule *new_capsules = nullptr, uint32 new_capsule_count = 0,
-																												 aa_bound *new_bounds = nullptr, uint32 new_bound_count = 0,
-																												 triangle *new_triangles = nullptr, uint32 new_triangle_count = 0) {
-	entity_collision_component collision_component = *cc;
-	collision_component.sphere_count += new_sphere_count;
-	collision_component.capsule_count += new_capsule_count;
-	collision_component.bound_count += new_bound_count;
-	collision_component.triangle_count += new_triangle_count;
-	if (collision_component.sphere_count > 0) {
-		sphere *spheres = memory_arena_allocate<struct sphere>(memory_arena, collision_component.sphere_count);
-		memcpy(spheres, cc->spheres, cc->sphere_count * sizeof(struct sphere));
-		if (new_sphere_count > 0) {
-			memcpy(spheres + cc->sphere_count, new_spheres, new_sphere_count * sizeof(struct sphere));
-		}
-		collision_component.spheres = spheres;
-	}
-	if (collision_component.capsule_count > 0) {
-		capsule *capsules = memory_arena_allocate<struct capsule>(memory_arena, collision_component.capsule_count);
-		memcpy(capsules, cc->capsules, cc->capsule_count * sizeof(struct capsule));
-		if (new_capsule_count > 0) {
-			memcpy(capsules + cc->capsule_count, new_capsules, new_capsule_count * sizeof(struct capsule));
-		}
-		collision_component.capsules = capsules;
-	}
-	if (collision_component.bound_count > 0) {
-		aa_bound *bounds = memory_arena_allocate<struct aa_bound>(memory_arena, collision_component.bound_count);
-		memcpy(bounds, cc->bounds, cc->bound_count * sizeof(struct aa_bound));
-		if (new_bound_count > 0) {
-			memcpy(bounds + cc->bound_count, new_bounds, new_bound_count * sizeof(struct aa_bound));
-		}
-		collision_component.bounds = bounds;
-	}
-	if (collision_component.triangle_count > 0) {
-		triangle *triangles = memory_arena_allocate<struct triangle>(memory_arena, collision_component.triangle_count);
-		memcpy(triangles, cc->triangles, cc->triangle_count * sizeof(struct triangle));
-		if (new_triangle_count > 0) {
-			memcpy(triangles + cc->triangle_count, new_triangles, new_triangle_count * sizeof(struct triangle));
-		}
-		collision_component.triangles = triangles;
-	}
-	return collision_component;
-}
-
-void level_time_step_physics_components(level *level, double time) {
-	float timef = (float)time;
-	uint32 physics_component_index = 0;
-	for (uint32 i = 0; i < level->entity_count; i += 1) {
-		if (level->entity_flags[i] & entity_component_flag_physics) {
-			entity_physics_component *component = &level->physics_components[physics_component_index++];
-			transform *transform = &level->entity_transforms[i];
-
-			transform->translate.x += component->velocity.x * timef;
-			transform->translate.z += component->velocity.z * timef;
-			transform->translate.y += component->velocity.y * timef - 0.5f * component->gravity * timef * timef;
-			component->velocity.y -= component->gravity * timef;
-		}
-	}
-}
-
 void level_process_entity_modifications_additions(level *level) {
 	uint32 new_entity_count = level->entity_count;
 	uint32 new_render_component_count = level->render_component_count;
@@ -456,8 +405,7 @@ void level_process_entity_modifications_additions(level *level) {
 			}
 			if (!em->remove_collision_component) {
 				if (level->entity_flags[i] & entity_component_flag_collision || em->entity_collision_component) {
-					entity_collision_component *collision_component = em->entity_collision_component ? em->entity_collision_component : entity_get_collision_component(level, i);
-					new_collision_components[collision_component_index++] = deep_copy_collision_component(collision_component, entity_components_memory_arena);
+					new_collision_components[collision_component_index++] = em->entity_collision_component ? *em->entity_collision_component : *entity_get_collision_component(level, i);
 				}
 			}
 			if (!em->remove_light_component) {
@@ -482,7 +430,7 @@ void level_process_entity_modifications_additions(level *level) {
 			new_render_components[render_component_index++] = *ea->entity_render_component;
 		}
 		if (ea->entity_collision_component) {
-			new_collision_components[collision_component_index++] = deep_copy_collision_component(ea->entity_collision_component, entity_components_memory_arena);
+			new_collision_components[collision_component_index++] = *ea->entity_collision_component;
 		}
 		if (ea->entity_light_component) {
 			new_light_components[light_component_index++] = *ea->entity_light_component;
@@ -768,8 +716,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 
 	rapidjson::Document json_doc;
 	rapidjson::ParseResult json_parse_result = json_doc.Parse((const char *)level_json_file_mapping.ptr);
-	m_assert(json_parse_result);
-	m_assert(!json_doc.HasParseError());
+	if (!json_parse_result) {
+    fatal("JSON parse error: %s (%u)", rapidjson::GetParseError_En(json_parse_result.Code()), json_parse_result.Offset());		
+	}
 
 	auto read_json_transform_object = [](rapidjson::Value::Object json_transform, transform *transform) {
 		rapidjson::Value::Array json_transform_scaling = json_transform["scale"].GetArray();
@@ -808,71 +757,26 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	};
 	auto read_json_collision_component = [level](rapidjson::Value::Object collision_component_json, entity_collision_component *entity_collision_component) {
 		memory_arena *memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
-		auto spheres_member = collision_component_json.FindMember("spheres");
-		if (spheres_member != collision_component_json.MemberEnd()) {
-			rapidjson::Value::Array spheres = spheres_member->value.GetArray();
-			if (spheres.Size() > 0) {
-				entity_collision_component->spheres = memory_arena_allocate<struct sphere>(memory_arena, spheres.Size());
-				entity_collision_component->sphere_count = spheres.Size();
-				for (uint32 i = 0; i < spheres.Size(); i += 1) {
-					rapidjson::Value::Object sphere = spheres[i].GetObject();
-					rapidjson::Value::Array center = sphere["center"].GetArray();
-					entity_collision_component->spheres[i].center = {center[0].GetFloat(), center[1].GetFloat(), center[2].GetFloat()};
-					entity_collision_component->spheres[i].radius = sphere["radius"].GetFloat();
-				}
-			}
+		const char *shape = collision_component_json["type"].GetString();
+		if (!strcmp(shape, "sphere")) {
+			entity_collision_component->shape = collision_shape_sphere;
+			float radius = collision_component_json["radius"].GetFloat();
+			entity_collision_component->sphere = {radius};
 		}
-		auto capsules_member = collision_component_json.FindMember("capsules");
-		if (capsules_member != collision_component_json.MemberEnd()) {
-			rapidjson::Value::Array capsules = capsules_member->value.GetArray();
-			if (capsules.Size() > 0) {
-				entity_collision_component->capsules = memory_arena_allocate<struct capsule>(memory_arena, capsules.Size());
-				entity_collision_component->capsule_count = capsules.Size();
-				for (uint32 i = 0; i < capsules.Size(); i += 1) {
-					rapidjson::Value::Object capsule = capsules[i].GetObject();
-					rapidjson::Value::Array begin = capsule["begin"].GetArray();
-					rapidjson::Value::Array end = capsule["end"].GetArray();
-					entity_collision_component->capsules[i].begin = {begin[0].GetFloat(), begin[1].GetFloat(), begin[2].GetFloat()};
-					entity_collision_component->capsules[i].end = {end[0].GetFloat(), end[1].GetFloat(), end[2].GetFloat()};
-					entity_collision_component->capsules[i].radius = capsule["radius"].GetFloat();
-				}
-			}
+		else if (!strcmp(shape, "capsule")) {
+			entity_collision_component->shape = collision_shape_capsule;
+			float height = collision_component_json["height"].GetFloat();
+			float radius = collision_component_json["radius"].GetFloat();
+			entity_collision_component->capsule.height = height;
+			entity_collision_component->capsule.radius = radius;
 		}
-		auto bounds_member = collision_component_json.FindMember("bounds");
-		if (bounds_member != collision_component_json.MemberEnd()) {
-			rapidjson::Value::Array bounds = bounds_member->value.GetArray();
-			if (bounds.Size() > 0) {
-				entity_collision_component->bounds = memory_arena_allocate<struct aa_bound>(memory_arena, bounds.Size());
-				entity_collision_component->bound_count = bounds.Size();
-				for (uint32 i = 0; i < bounds.Size(); i += 1) {
-					rapidjson::Value::Object bound = bounds[i].GetObject();
-					rapidjson::Value::Array min = bound["min"].GetArray();
-					rapidjson::Value::Array max = bound["max"].GetArray();
-					entity_collision_component->bounds[i].min.x = min[0].GetFloat();
-					entity_collision_component->bounds[i].min.y = min[1].GetFloat();
-					entity_collision_component->bounds[i].min.z = min[2].GetFloat();
-					entity_collision_component->bounds[i].max.x = max[0].GetFloat();
-					entity_collision_component->bounds[i].max.y = max[1].GetFloat();
-					entity_collision_component->bounds[i].max.z = max[2].GetFloat();
-				}
-			}
+		else if (!strcmp(shape, "box")) {
+			entity_collision_component->shape = collision_shape_box;
+			rapidjson::Value::Array size = collision_component_json["size"].GetArray();
+			entity_collision_component->box.size = {size[0].GetFloat(), size[1].GetFloat(), size[2].GetFloat()};
 		}
-		auto triangles_member = collision_component_json.FindMember("triangles");
-		if (triangles_member != collision_component_json.MemberEnd()) {
-			rapidjson::Value::Array triangles = triangles_member->value.GetArray();
-			if (triangles.Size() > 0) {
-				entity_collision_component->triangles = memory_arena_allocate<struct triangle>(memory_arena, triangles.Size());
-				entity_collision_component->triangle_count = triangles.Size();
-				for (uint32 i = 0; i < triangles.Size(); i += 1) {
-					rapidjson::Value::Object triangle = triangles[i].GetObject();
-					rapidjson::Value::Array a = triangle["a"].GetArray();
-					rapidjson::Value::Array b = triangle["b"].GetArray();
-					rapidjson::Value::Array c = triangle["c"].GetArray();
-					entity_collision_component->triangles[i].a = {a[0].GetFloat(), a[1].GetFloat(), a[2].GetFloat()};
-					entity_collision_component->triangles[i].b = {b[0].GetFloat(), b[1].GetFloat(), b[2].GetFloat()};
-					entity_collision_component->triangles[i].c = {c[0].GetFloat(), c[1].GetFloat(), c[2].GetFloat()};
-				}
-			}
+		else {
+			m_assert(false);
 		}
 	};
 	auto read_json_light_component = [](rapidjson::Value::Object light_component_json, entity_light_component *entity_light_component) {
@@ -920,13 +824,13 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			entity_physics_component->velocity.y = velocity[1].GetFloat();
 			entity_physics_component->velocity.z = velocity[2].GetFloat();
 		}
+		auto mass_member = physics_component_json.FindMember("mass");
+		if (mass_member != physics_component_json.MemberEnd()) {
+			entity_physics_component->mass = mass_member->value.GetFloat();
+		}
 		auto max_speed_member = physics_component_json.FindMember("max_speed");
 		if (max_speed_member != physics_component_json.MemberEnd()) {
 			entity_physics_component->max_speed = max_speed_member->value.GetFloat();
-		}
-		auto gravity_member = physics_component_json.FindMember("gravity");
-		if (gravity_member != physics_component_json.MemberEnd()) {
-			entity_physics_component->gravity = gravity_member->value.GetFloat();
 		}
 	};
 
@@ -1070,97 +974,32 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 	auto write_json_collision_component = [&writer](entity_collision_component *component) {
 		writer.Key("collision_component");
 		writer.StartObject();
-		{
-			writer.Key("spheres");
-			writer.StartArray();
-			for (uint32 i = 0; i < component->sphere_count; i += 1) {
-				sphere *sphere = &component->spheres[i];
-				writer.StartObject();
-				writer.Key("center");
-				writer.StartArray();
-				writer.Double(sphere->center.x);
-				writer.Double(sphere->center.y);
-				writer.Double(sphere->center.z);
-				writer.EndArray();
-				writer.Key("radius");
-				writer.Double(sphere->radius);
-				writer.EndObject();
-			}
-			writer.EndArray();
+		if (component->shape == collision_shape_sphere) {
+			auto *sphere = &component->sphere;
+			writer.Key("type");
+			writer.String("sphere");
+			writer.Key("radius");
+			writer.Double(sphere->radius);
 		}
-		{
-			writer.Key("capsules");
-			writer.StartArray();
-			for (uint32 i = 0; i < component->capsule_count; i += 1) {
-				capsule *capsule = &component->capsules[i];
-				writer.StartObject();
-				writer.Key("begin");
-				writer.StartArray();
-				writer.Double(capsule->begin.x);
-				writer.Double(capsule->begin.y);
-				writer.Double(capsule->begin.z);
-				writer.EndArray();
-				writer.Key("end");
-				writer.StartArray();
-				writer.Double(capsule->end.x);
-				writer.Double(capsule->end.y);
-				writer.Double(capsule->end.z);
-				writer.EndArray();
-				writer.Key("radius");
-				writer.Double(capsule->radius);
-				writer.EndObject();
-			}
-			writer.EndArray();
+		else if (component->shape == collision_shape_capsule) {
+			auto *capsule = &component->capsule;
+			writer.Key("type");
+			writer.String("capsule");
+			writer.Key("height");
+			writer.Double(capsule->height);
+			writer.Key("radius");
+			writer.Double(capsule->radius);
 		}
-		{
-			writer.Key("bounds");
+		else if (component->shape == collision_shape_box) {
+			auto *box = &component->box;
+			writer.Key("type");
+			writer.String("box");
+			writer.Key("size");
 			writer.StartArray();
-			for (uint32 i = 0; i < component->bound_count; i += 1) {
-				aa_bound *bound = &component->bounds[i];
-				writer.StartObject();
-				writer.Key("min");
-				writer.StartArray();
-				writer.Double(bound->min.x);
-				writer.Double(bound->min.y);
-				writer.Double(bound->min.z);
-				writer.EndArray();
-				writer.Key("max");
-				writer.StartArray();
-				writer.Double(bound->max.x);
-				writer.Double(bound->max.y);
-				writer.Double(bound->max.z);
-				writer.EndArray();
-				writer.EndObject();
-			}
-			writer.EndArray();
-		}
-		{
-			writer.Key("triangles");
-			writer.StartArray();
-			for (uint32 i = 0; i < component->triangle_count; i += 1) {
-				triangle *triangle = &component->triangles[i];
-				writer.StartObject();
-				writer.Key("a");
-				writer.StartArray();
-				writer.Double(triangle->a.x);
-				writer.Double(triangle->a.y);
-				writer.Double(triangle->a.z);
-				writer.EndArray();
-				writer.Key("b");
-				writer.StartArray();
-				writer.Double(triangle->b.x);
-				writer.Double(triangle->b.y);
-				writer.Double(triangle->b.z);
-				writer.EndArray();
-				writer.Key("c");
-				writer.StartArray();
-				writer.Double(triangle->c.x);
-				writer.Double(triangle->c.y);
-				writer.Double(triangle->c.z);
-				writer.EndArray();
-				writer.EndObject();
-			}
-			writer.EndArray();
+			writer.Double(box->size.x);
+			writer.Double(box->size.y);
+			writer.Double(box->size.z);
+			writer.EndArray();			
 		}
 		writer.EndObject();
 	};
@@ -1220,6 +1059,10 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 		writer.Double(component->velocity.y);
 		writer.Double(component->velocity.z);
 		writer.EndArray();
+		writer.Key("mass");
+		writer.Double(component->mass);
+		writer.Key("max_speed");
+		writer.Double(component->max_speed);
 		writer.EndObject();
 	};
 

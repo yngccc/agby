@@ -10,8 +10,8 @@
 #include "../vendor/include/rapidjson/prettywriter.h"
 #include "../vendor/include/rapidjson/error/en.h"
 
-#include "../vendor/include/bullet3/btBulletCollisionCommon.h"
-#include "../vendor/include/bullet3/btBulletDynamicsCommon.h"
+#include "../vendor/include/bullet/btBulletCollisionCommon.h"
+#include "../vendor/include/bullet/btBulletDynamicsCommon.h"
 
 #include "math.cpp"
 #include "vulkan.cpp"
@@ -72,7 +72,64 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	auto extra_level_load = [](rapidjson::Document *json_doc) {};
 	level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", extra_level_load);
 	game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
-	
+
+	btDiscreteDynamicsWorld *bt_world = nullptr;
+	{
+		auto *bt_collision_config = new btDefaultCollisionConfiguration();
+		auto *bt_dispatcher = new btCollisionDispatcher(bt_collision_config);
+		auto *bt_overlapping_pair_cache = new btDbvtBroadphase();
+		auto *bt_solver = new btSequentialImpulseConstraintSolver();
+		bt_world = new btDiscreteDynamicsWorld(bt_dispatcher, bt_overlapping_pair_cache, bt_solver, bt_collision_config);
+		bt_world->setGravity({0, -9, 0});
+
+		uint32 collision_component_index = 0;
+		uint32 physics_component_index = 0;
+		for (uint32 i = 0; i < level->entity_count; i += 1) {
+			uint32 flags = level->entity_flags[i];
+			transform *transform = &level->entity_transforms[i];
+			if (flags & entity_component_flag_collision && flags & entity_component_flag_physics) {
+				entity_collision_component *collision_component = &level->collision_components[collision_component_index++];
+				entity_physics_component *physics_component = &level->physics_components[physics_component_index++];
+
+				btRigidBody *rigid_body = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(physics_component->mass, nullptr, nullptr));
+				if (collision_component->shape == collision_shape_sphere) {
+					rigid_body->setCollisionShape(new btSphereShape(collision_component->sphere.radius));
+				}
+				else if (collision_component->shape == collision_shape_sphere) {
+					rigid_body->setCollisionShape(new btCapsuleShape(collision_component->capsule.radius, collision_component->capsule.height));
+				}
+				else if (collision_component->shape == collision_shape_box) {
+					rigid_body->setCollisionShape(new btBoxShape(btVector3(collision_component->box.size.x, collision_component->box.size.y, collision_component->box.size.z)));
+				}
+				btQuaternion rotate(transform->rotate.x, transform->rotate.y, transform->rotate.z, transform->rotate.w);
+				btVector3 translate(transform->translate.x, transform->translate.y, transform->translate.z);
+				rigid_body->setWorldTransform(btTransform(rotate, translate));
+				rigid_body->setUserIndex(i);
+				bt_world->addRigidBody(rigid_body);
+			}
+			else if (flags & entity_component_flag_collision) {
+				entity_collision_component *collision_component = &level->collision_components[collision_component_index++];
+				btCollisionObject *collision_object = new btCollisionObject();
+				if (collision_component->shape == collision_shape_sphere) {
+					collision_object->setCollisionShape(new btSphereShape(collision_component->sphere.radius));
+				}
+				else if (collision_component->shape == collision_shape_sphere) {
+					collision_object->setCollisionShape(new btCapsuleShape(collision_component->capsule.radius, collision_component->capsule.height));
+				}
+				else if (collision_component->shape == collision_shape_box) {
+					collision_object->setCollisionShape(new btBoxShape(btVector3(collision_component->box.size.x, collision_component->box.size.y, collision_component->box.size.z)));
+				}
+				btQuaternion rotate(transform->rotate.x, transform->rotate.y, transform->rotate.z, transform->rotate.w);
+				btVector3 translate(transform->translate.x, transform->translate.y, transform->translate.z);
+				collision_object->setWorldTransform(btTransform(rotate, translate));
+				bt_world->addCollisionObject(collision_object);
+			}
+			else if (flags & entity_component_flag_physics) {
+				entity_physics_component *physics_component = &level->physics_components[physics_component_index++];
+			}
+		}
+	}
+
 	LARGE_INTEGER performance_frequency = {};
 	QueryPerformanceFrequency(&performance_frequency);
 	LARGE_INTEGER performance_counters[2] = {};
@@ -163,13 +220,17 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			}
 		}
 		{
-			double step_time = 1.0 / 60.0;
-			double sim_time_remain = last_frame_time_sec;
-			while (sim_time_remain > step_time) {
-				level_time_step_physics_components(level, step_time);
-				sim_time_remain -= step_time;
+			bt_world->stepSimulation((float)last_frame_time_sec);
+			btCollisionObjectArray &collision_objects = bt_world->getCollisionObjectArray();
+			for (int i = 0; i < bt_world->getNumCollisionObjects(); i += 1) {
+				btRigidBody *rigid_body = btRigidBody::upcast(collision_objects[i]);
+				if (rigid_body) {
+					btTransform &transform = rigid_body->getWorldTransform();
+					uint32 entity_index = rigid_body->getUserIndex();
+					btVector3 &pos = transform.getOrigin();
+					level->entity_transforms[entity_index].translate = {pos.x(), pos.y(), pos.z()};
+				}
 			}
-			level_time_step_physics_components(level, sim_time_remain);
 		}
 		{
 			float x_sensitivity = 0.005f;

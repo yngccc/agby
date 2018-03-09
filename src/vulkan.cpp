@@ -105,7 +105,7 @@
   m_x(PFN_vkUnmapMemory, vkUnmapMemory)                                 \
   m_x(PFN_vkFlushMappedMemoryRanges, vkFlushMappedMemoryRanges)
 
-#define m_x(type, name) type name = nullptr;
+#define m_x(shape, name) shape name = nullptr;
 m_vulkan_procs
 m_vulkan_instance_procs
 m_vulkan_device_procs
@@ -273,7 +273,7 @@ struct vulkan_pipelines {
 	vulkan_pipeline skybox_pipeline;
 	vulkan_pipeline imgui_pipeline;
 	vulkan_pipeline text_pipeline;
-	vulkan_pipeline collision_object_pipeline;
+	vulkan_pipeline collision_shape_pipeline;
 	vulkan_pipeline lines_pipeline;
 	vulkan_pipeline swap_chain_pipeline;
 };
@@ -438,7 +438,7 @@ void vulkan_device_initialize(vulkan_device *vulkan_device) {
 		if (!vulkan_1_dll) {
 			fatal("call to LoadLibrary(\"vulkan-1.dll\") failed");
 		}
-		#define m_x(type, name) name = (type)GetProcAddress(vulkan_1_dll, #name); if (!name) { fatal("GetProcAddress(vulkan-1.dll, \"name\") failed"); }
+		#define m_x(shape, name) name = (shape)GetProcAddress(vulkan_1_dll, #name); if (!name) { fatal("GetProcAddress(vulkan-1.dll, \"name\") failed"); }
 		m_vulkan_procs
 		#undef m_x      
 	}
@@ -493,7 +493,7 @@ void vulkan_device_initialize(vulkan_device *vulkan_device) {
 		instance_info.ppEnabledExtensionNames = enabled_extensions;
 		m_vk_assert(vkCreateInstance(&instance_info, nullptr, &vulkan_device->instance));
 
-		#define m_x(type, name) name = (type)vkGetInstanceProcAddr(vulkan_device->instance, #name); if (!name) { fatal("cannot get \"" #name "\" from vulkan-1.dll"); }
+		#define m_x(shape, name) name = (shape)vkGetInstanceProcAddr(vulkan_device->instance, #name); if (!name) { fatal("cannot get \"" #name "\" from vulkan-1.dll"); }
 		m_vulkan_instance_procs
 		#undef m_x
 
@@ -622,7 +622,7 @@ void vulkan_device_initialize(vulkan_device *vulkan_device) {
 		device_info.ppEnabledExtensionNames = device_extensions;
 		device_info.pEnabledFeatures = &device_features;
 		m_vk_assert(vkCreateDevice(vulkan_device->physical_device, &device_info, nullptr, &vulkan_device->device));
-		#define m_x(type, name) name = (type)vkGetDeviceProcAddr(vulkan_device->device, #name); if (!name) { fatal("cannot get \"" #name "\" from vulkan-1.dll"); }
+		#define m_x(shape, name) name = (shape)vkGetDeviceProcAddr(vulkan_device->device, #name); if (!name) { fatal("cannot get \"" #name "\" from vulkan-1.dll"); }
 		m_vulkan_device_procs
 		#undef m_x
 		vkGetDeviceQueue(vulkan_device->device, vulkan_device->queue_family_index, 0, &vulkan_device->queue);
@@ -2519,13 +2519,13 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
 		pipeline->layout = layout;
 	}
-	{ // collision object
+	{ // collision shape
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
 		shader_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		shader_stages[0].module = shader_module_from_file("shaders\\collision_object.vert.spv");
+		shader_stages[0].module = shader_module_from_file("shaders\\collision_shape.vert.spv");
 		shader_stages[0].pName = "main";
 		shader_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		shader_stages[1].module = shader_module_from_file("shaders\\collision_object.frag.spv");
+		shader_stages[1].module = shader_module_from_file("shaders\\collision_shape.frag.spv");
 		shader_stages[1].pName = "main";
 
 		VkVertexInputBindingDescription vertex_input_bindings[] = {0, 12, VK_VERTEX_INPUT_RATE_VERTEX};
@@ -2605,7 +2605,7 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 		create_info.renderPass = vulkan->render_passes.main_render_pass;
 		create_info.subpass = 0;
 		create_info.basePipelineHandle = VK_NULL_HANDLE;
-		vulkan_pipeline *pipeline = &vulkan->pipelines.collision_object_pipeline;
+		vulkan_pipeline *pipeline = &vulkan->pipelines.collision_shape_pipeline;
 		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
 		pipeline->layout = layout;
 	}
