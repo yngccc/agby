@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include "../vendor/include/bullet/btBulletCollisionCommon.h"
+#include "../vendor/include/bullet/btBulletDynamicsCommon.h"
+
 const uint32 level_max_entity_count = 1024;
 const uint32 level_max_directional_light_count = 1;
 const uint32 level_max_point_light_count = 4;
@@ -109,6 +112,7 @@ struct entity_collision_component {
 			vec3 size;
 		} box;
 	};
+	btCollisionObject *bt_collision_object;
 };
 
 struct entity_light_component {
@@ -124,6 +128,7 @@ struct entity_physics_component {
 	vec3 velocity;
 	float mass;
 	float max_speed;
+	btRigidBody *bt_rigid_body;
 };
 
 struct entity_modification {
@@ -910,6 +915,52 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			*entity_flag = *entity_flag | entity_component_flag_physics;
 			read_json_physics_component(physics_component_member->value.GetObject(), &level->physics_components[physics_component_index++]);
 		}
+
+		if (collision_component_member != entity_json.MemberEnd() && physics_component_member != entity_json.MemberEnd()) {
+			entity_collision_component *collision_component = &level->collision_components[collision_component_index - 1];
+			entity_physics_component *physics_component = &level->physics_components[physics_component_index - 1];
+			btRigidBody *rigid_body = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(physics_component->mass, nullptr, nullptr));
+			if (collision_component->shape == collision_shape_sphere) {
+				rigid_body->setCollisionShape(new btSphereShape(collision_component->sphere.radius));
+			}
+			else if (collision_component->shape == collision_shape_capsule) {
+				rigid_body->setCollisionShape(new btCapsuleShape(collision_component->capsule.radius, collision_component->capsule.height));
+			}
+			else if (collision_component->shape == collision_shape_box) {
+				rigid_body->setCollisionShape(new btBoxShape(btVector3(collision_component->box.size.x / 2, collision_component->box.size.y / 2, collision_component->box.size.z / 2)));
+			}
+			btQuaternion rotate(entity_transform->rotate.x, entity_transform->rotate.y, entity_transform->rotate.z, entity_transform->rotate.w);
+			btVector3 translate(entity_transform->translate.x, entity_transform->translate.y, entity_transform->translate.z);
+			rigid_body->setWorldTransform(btTransform(rotate, translate));
+			rigid_body->setLinearVelocity(btVector3(physics_component->velocity.x, physics_component->velocity.y, physics_component->velocity.z));
+			physics_component->bt_rigid_body = rigid_body;
+		}
+		else if (collision_component_member != entity_json.MemberEnd()) {
+			entity_collision_component *collision_component = &level->collision_components[collision_component_index - 1];
+			btCollisionObject *collision_object = new btCollisionObject();
+			if (collision_component->shape == collision_shape_sphere) {
+				collision_object->setCollisionShape(new btSphereShape(collision_component->sphere.radius));
+			}
+			else if (collision_component->shape == collision_shape_capsule) {
+				collision_object->setCollisionShape(new btCapsuleShape(collision_component->capsule.radius, collision_component->capsule.height));
+			}
+			else if (collision_component->shape == collision_shape_box) {
+				collision_object->setCollisionShape(new btBoxShape(btVector3(collision_component->box.size.x / 2, collision_component->box.size.y / 2, collision_component->box.size.z / 2)));
+			}
+			btQuaternion rotate(entity_transform->rotate.x, entity_transform->rotate.y, entity_transform->rotate.z, entity_transform->rotate.w);
+			btVector3 translate(entity_transform->translate.x, entity_transform->translate.y, entity_transform->translate.z);
+			collision_object->setWorldTransform(btTransform(rotate, translate));
+			collision_component->bt_collision_object = collision_object;
+		}
+		else if (physics_component_member != entity_json.MemberEnd()) {
+			entity_physics_component *physics_component = &level->physics_components[physics_component_index - 1];
+			btRigidBody *rigid_body = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(physics_component->mass, nullptr, new btEmptyShape()));
+			btQuaternion rotate(entity_transform->rotate.x, entity_transform->rotate.y, entity_transform->rotate.z, entity_transform->rotate.w);
+			btVector3 translate(entity_transform->translate.x, entity_transform->translate.y, entity_transform->translate.z);
+			rigid_body->setWorldTransform(btTransform(rotate, translate));
+			rigid_body->setLinearVelocity(btVector3(physics_component->velocity.x, physics_component->velocity.y, physics_component->velocity.z));
+			physics_component->bt_rigid_body = rigid_body;
+		}
 	}
 
 	level->player_entity_index = UINT32_MAX;
@@ -932,6 +983,7 @@ void level_write_json(level *level, const char *json_file_path, T extra_dump) {
 	rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(json_string);
 	writer.SetIndent('\t', 1);
 	writer.SetFormatOptions(rapidjson::kFormatSingleLineArray);
+	writer.SetMaxDecimalPlaces(4);
 
 	auto write_json_transform_object = [&writer](transform *transform) {
 		writer.Key("transform");
