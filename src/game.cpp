@@ -226,8 +226,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		if (ImGui::GetIO().KeyAlt && ImGui::IsKeyDown(keycode_f4)) {
 			program_running = false;
 		}
-		{
+		{ // player movement
 			entity_physics_component *physics_component = entity_get_physics_component(level, level->player_entity_index);
+			btVector3 linear_velocity = physics_component->bt_rigid_body->getLinearVelocity();
+			bool falling = fabsf(linear_velocity.y()) > 0.0001f;
+
 			vec3 camera_vec = vec3_normalize(vec3{game->player_camera.view.x, 0, game->player_camera.view.z});
 			vec3 move_vec = {0, 0, 0};
 			if (ImGui::IsKeyDown('W')) {
@@ -242,15 +245,21 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			if (ImGui::IsKeyDown('D')) {
 				move_vec -= vec3{camera_vec.z, 0, -camera_vec.x};
 			}
-			if (move_vec != vec3{0, 0, 0}) {
-				move_vec = vec3_normalize(move_vec) * 2;
+			if (vec3_len(move_vec) > 0.1f) {
 				quat rotate = quat_from_between(vec3{0, 0, 1}, vec3_normalize(move_vec));
 				btVector3 translate = physics_component->bt_rigid_body->getCenterOfMassTransform().getOrigin();
 				physics_component->bt_rigid_body->setCenterOfMassTransform(btTransform(btQuaternion(rotate.x, rotate.y, rotate.z, rotate.w), translate));
-				physics_component->bt_rigid_body->setLinearVelocity(btVector3(move_vec.x, move_vec.y, move_vec.z));
+				if (!falling) {
+					float move_speed = 3;
+					vec3 velocity = vec3_normalize(move_vec) * move_speed;
+					physics_component->bt_rigid_body->setLinearVelocity(btVector3(velocity.x, velocity.y, velocity.z));
+				}
+			}
+			if (!falling && ImGui::IsKeyPressed(' ')) {
+				physics_component->bt_rigid_body->setLinearVelocity(linear_velocity + btVector3(0, 10, 0));
 			}
 		}
-		{
+		{ // physics simulation
 			bt_world->stepSimulation((float)last_frame_time_sec);
 			uint32 physics_component_index = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
