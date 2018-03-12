@@ -140,20 +140,20 @@ struct entity_modification {
 	uint32 *flag;
 	entity_info *info;
 	transform *transform;
-	entity_render_component *entity_render_component;
-	entity_collision_component *entity_collision_component;
-	entity_light_component *entity_light_component;
-	entity_physics_component *entity_physics_component;
+	entity_render_component *render_component;
+	entity_collision_component *collision_component;
+	entity_light_component *light_component;
+	entity_physics_component *physics_component;
 };
 
 struct entity_addition {
 	uint32 flag;
 	entity_info info;
 	transform transform;
-	entity_render_component *entity_render_component;
-	entity_collision_component *entity_collision_component;
-	entity_light_component *entity_light_component;
-	entity_physics_component *entity_physics_component;
+	entity_render_component *render_component;
+	entity_collision_component *collision_component;
+	entity_light_component *light_component;
+	entity_physics_component *physics_component;
 	entity_addition *next;
 };
 
@@ -209,7 +209,8 @@ struct level {
 	level_render_data render_data;
 	bool show_frame_stats;
 
-	memory_arena frame_memory_arena;
+	memory_arena main_thread_frame_memory_arena;
+	memory_arena render_thread_frame_memory_arena;
 	memory_arena entity_components_memory_arenas[2];
 	uint32 entity_components_memory_arena_index;
 	memory_arena assets_memory_arena;
@@ -218,12 +219,15 @@ struct level {
 };
 
 void initialize_level(level *level, vulkan *vulkan) {
-	*level = {};
+	level->main_thread_frame_memory_arena.name = "main thread frame";
+	level->main_thread_frame_memory_arena.capacity = m_megabytes(4);
+	level->main_thread_frame_memory_arena.memory = allocate_virtual_memory(level->main_thread_frame_memory_arena.capacity);
+	m_assert(level->main_thread_frame_memory_arena.memory);
 
-	level->frame_memory_arena.name = "frame";
-	level->frame_memory_arena.capacity = m_megabytes(4);
-	level->frame_memory_arena.memory = allocate_virtual_memory(level->frame_memory_arena.capacity);
-	m_assert(level->frame_memory_arena.memory);
+	level->render_thread_frame_memory_arena.name = "render thread frame";
+	level->render_thread_frame_memory_arena.capacity = m_megabytes(4);
+	level->render_thread_frame_memory_arena.memory = allocate_virtual_memory(level->render_thread_frame_memory_arena.capacity);
+	m_assert(level->render_thread_frame_memory_arena.memory);
 
 	for (uint32 i = 0; i < m_countof(level->entity_components_memory_arenas); i += 1) {
 		level->entity_components_memory_arenas[i].name = "entity_components";
@@ -239,11 +243,11 @@ void initialize_level(level *level, vulkan *vulkan) {
 
 	level->model_capacity = 1024;
 	level->model_count = 0;
-	level->models = memory_arena_allocate<struct model>(&level->assets_memory_arena, level->model_capacity);
+	level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
 
 	level->skybox_capacity = 16;
 	level->skybox_count = 0;
-	level->skyboxes = memory_arena_allocate<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
+	level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
 }
 
 entity_render_component *entity_get_render_component(level *level, uint32 entity_index) {
@@ -337,25 +341,25 @@ void level_process_entity_modifications_additions(level *level) {
 				if (em->remove_render_component) {
 					new_render_component_count -= 1;
 				}
-				else if (em->entity_render_component && !(entity_flag & entity_component_flag_render)) {
+				else if (em->render_component && !(entity_flag & entity_component_flag_render)) {
 					new_render_component_count += 1;
 				}
 				if (em->remove_collision_component) {
 					new_collision_component_count -= 1;
 				}
-				else if (em->entity_collision_component && !(entity_flag & entity_component_flag_collision)) {
+				else if (em->collision_component && !(entity_flag & entity_component_flag_collision)) {
 					new_collision_component_count += 1;
 				}
 				if (em->remove_light_component) {
 					new_light_component_count -= 1;
 				}
-				else if (em->entity_light_component && !(entity_flag & entity_component_flag_light)) {
+				else if (em->light_component && !(entity_flag & entity_component_flag_light)) {
 					new_light_component_count += 1;
 				}
 				if (em->remove_physics_component) {
 					new_physics_component_count -= 1;
 				}
-				else if (em->entity_physics_component && !(entity_flag & entity_component_flag_physics)) {
+				else if (em->physics_component && !(entity_flag & entity_component_flag_physics)) {
 					new_physics_component_count += 1;
 				}
 			}
@@ -363,16 +367,16 @@ void level_process_entity_modifications_additions(level *level) {
 		entity_addition *ea = level->entity_addition;
 		while (ea) {
 			new_entity_count += 1;
-			if (ea->entity_render_component) {
+			if (ea->render_component) {
 				new_render_component_count += 1;
 			}
-			if (ea->entity_collision_component) {
+			if (ea->collision_component) {
 				new_collision_component_count += 1;
 			}
-			if (ea->entity_light_component) {
+			if (ea->light_component) {
 				new_light_component_count += 1;
 			}
-			if (ea->entity_physics_component) {
+			if (ea->physics_component) {
 				new_physics_component_count += 1;
 			}
 			ea = ea->next;
@@ -383,14 +387,14 @@ void level_process_entity_modifications_additions(level *level) {
 	memory_arena *entity_components_memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
 	entity_components_memory_arena->size = 0;
 
-	uint32 *new_entity_flags = memory_arena_allocate<uint32>(entity_components_memory_arena, new_entity_count);
-	entity_info *new_entity_infos = memory_arena_allocate<entity_info>(entity_components_memory_arena, new_entity_count);
-	transform *new_entity_transforms = memory_arena_allocate<transform>(entity_components_memory_arena, new_entity_count);
-	entity_modification *new_entity_modifications = memory_arena_allocate<entity_modification>(entity_components_memory_arena, new_entity_count);
-	entity_render_component *new_render_components = memory_arena_allocate<entity_render_component>(entity_components_memory_arena, new_render_component_count);
-	entity_collision_component *new_collision_components = memory_arena_allocate<entity_collision_component>(entity_components_memory_arena, new_collision_component_count);
-	entity_light_component *new_light_components = memory_arena_allocate<entity_light_component>(entity_components_memory_arena, new_light_component_count);
-	entity_physics_component *new_physics_components = memory_arena_allocate<entity_physics_component>(entity_components_memory_arena, new_physics_component_count);
+	uint32 *new_entity_flags = allocate_memory<uint32>(entity_components_memory_arena, new_entity_count);
+	entity_info *new_entity_infos = allocate_memory<entity_info>(entity_components_memory_arena, new_entity_count);
+	transform *new_entity_transforms = allocate_memory<transform>(entity_components_memory_arena, new_entity_count);
+	entity_modification *new_entity_modifications = allocate_memory<entity_modification>(entity_components_memory_arena, new_entity_count);
+	entity_render_component *new_render_components = allocate_memory<entity_render_component>(entity_components_memory_arena, new_render_component_count);
+	entity_collision_component *new_collision_components = allocate_memory<entity_collision_component>(entity_components_memory_arena, new_collision_component_count);
+	entity_light_component *new_light_components = allocate_memory<entity_light_component>(entity_components_memory_arena, new_light_component_count);
+	entity_physics_component *new_physics_components = allocate_memory<entity_physics_component>(entity_components_memory_arena, new_physics_component_count);
 
 	uint32 entity_index = 0;
 	uint32 render_component_index = 0;
@@ -404,23 +408,23 @@ void level_process_entity_modifications_additions(level *level) {
 			new_entity_infos[entity_index] = em->info ? *em->info : level->entity_infos[i];
 			new_entity_transforms[entity_index] = em->transform ? *em->transform : level->entity_transforms[i];
 			if (!em->remove_render_component) {
-				if (level->entity_flags[i] & entity_component_flag_render || em->entity_render_component) {
-					new_render_components[render_component_index++] = em->entity_render_component ? *em->entity_render_component : *entity_get_render_component(level, i);
+				if (level->entity_flags[i] & entity_component_flag_render || em->render_component) {
+					new_render_components[render_component_index++] = em->render_component ? *em->render_component : *entity_get_render_component(level, i);
 				}
 			}
 			if (!em->remove_collision_component) {
-				if (level->entity_flags[i] & entity_component_flag_collision || em->entity_collision_component) {
-					new_collision_components[collision_component_index++] = em->entity_collision_component ? *em->entity_collision_component : *entity_get_collision_component(level, i);
+				if (level->entity_flags[i] & entity_component_flag_collision || em->collision_component) {
+					new_collision_components[collision_component_index++] = em->collision_component ? *em->collision_component : *entity_get_collision_component(level, i);
 				}
 			}
 			if (!em->remove_light_component) {
-				if (level->entity_flags[i] & entity_component_flag_light || em->entity_light_component) {
-					new_light_components[light_component_index++] = em->entity_light_component ? *em->entity_light_component : *entity_get_light_component(level, i);
+				if (level->entity_flags[i] & entity_component_flag_light || em->light_component) {
+					new_light_components[light_component_index++] = em->light_component ? *em->light_component : *entity_get_light_component(level, i);
 				}
 			}
 			if (!em->remove_physics_component) {
-				if (level->entity_flags[i] & entity_component_flag_physics || em->entity_physics_component) {
-					new_physics_components[physics_component_index++] = em->entity_physics_component ? *em->entity_physics_component : *entity_get_physics_component(level, i);
+				if (level->entity_flags[i] & entity_component_flag_physics || em->physics_component) {
+					new_physics_components[physics_component_index++] = em->physics_component ? *em->physics_component : *entity_get_physics_component(level, i);
 				}
 			}
 			entity_index += 1;
@@ -431,14 +435,17 @@ void level_process_entity_modifications_additions(level *level) {
 		new_entity_flags[entity_index] = ea->flag;
 		new_entity_infos[entity_index] = ea->info;
 		new_entity_transforms[entity_index] = ea->transform;
-		if (ea->entity_render_component) {
-			new_render_components[render_component_index++] = *ea->entity_render_component;
+		if (ea->render_component) {
+			new_render_components[render_component_index++] = *ea->render_component;
 		}
-		if (ea->entity_collision_component) {
-			new_collision_components[collision_component_index++] = *ea->entity_collision_component;
+		if (ea->collision_component) {
+			new_collision_components[collision_component_index++] = *ea->collision_component;
 		}
-		if (ea->entity_light_component) {
-			new_light_components[light_component_index++] = *ea->entity_light_component;
+		if (ea->light_component) {
+			new_light_components[light_component_index++] = *ea->light_component;
+		}
+		if (ea->physics_component) {
+			new_physics_components[physics_component_index++] = *ea->physics_component;
 		}
 		entity_index += 1;
 		ea = ea->next;
@@ -490,7 +497,7 @@ uint32 level_add_model(level *level, vulkan *vulkan, const char *file_name, bool
 	snprintf(model->file_name, sizeof(model->file_name), "%s", file_name);
 	model->mesh_count = gpk_model_header->mesh_count;
 	if (model->mesh_count > 0) {
-		model->meshes = memory_arena_allocate<struct model_mesh>(&level->assets_memory_arena, model->mesh_count);
+		model->meshes = allocate_memory<struct model_mesh>(&level->assets_memory_arena, model->mesh_count);
 		for (uint32 i = 0; i < model->mesh_count; i += 1) {
 			gpk_model_mesh_header *gpk_model_mesh_header = (struct gpk_model_mesh_header *)((uint8 *)gpk_model_header + gpk_model_header->mesh_offsets[i]);
 			gpk_model_mesh_instance *gpk_model_mesh_instances = (struct gpk_model_mesh_instance *)((uint8 *)gpk_model_mesh_header + gpk_model_mesh_header->instances_offset);
@@ -501,7 +508,7 @@ uint32 level_add_model(level *level, vulkan *vulkan, const char *file_name, bool
 			array_copy(model_mesh->name, gpk_model_mesh_header->name);
 			model_mesh->material_index = gpk_model_mesh_header->material_index;
 			model_mesh->instance_count = gpk_model_mesh_header->instance_count;
-			model_mesh->instances = memory_arena_allocate<model_mesh_instance>(&level->assets_memory_arena, model_mesh->instance_count);
+			model_mesh->instances = allocate_memory<model_mesh_instance>(&level->assets_memory_arena, model_mesh->instance_count);
 			memcpy(model_mesh->instances, gpk_model_mesh_instances, sizeof(struct gpk_model_mesh_instance) * gpk_model_mesh_header->instance_count);
 			model_mesh->vertex_size = gpk_model_mesh_header->vertex_size;
 			model_mesh->vertex_count = gpk_model_mesh_header->vertex_count;
@@ -518,8 +525,8 @@ uint32 level_add_model(level *level, vulkan *vulkan, const char *file_name, bool
 			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->vertex_buffer_offset, gpk_model_mesh_vertices, vertices_data_size);
 			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->index_buffer_offset, gpk_model_mesh_indices, indices_data_size);
 			if (store_vertices) {
-				model_mesh->vertices_data = memory_arena_allocate<uint8>(&level->assets_memory_arena, vertices_data_size);
-				model_mesh->indices_data = memory_arena_allocate<uint8>(&level->assets_memory_arena, indices_data_size);
+				model_mesh->vertices_data = allocate_memory<uint8>(&level->assets_memory_arena, vertices_data_size);
+				model_mesh->indices_data = allocate_memory<uint8>(&level->assets_memory_arena, indices_data_size);
 				memcpy(model_mesh->vertices_data, gpk_model_mesh_vertices, vertices_data_size);
 				memcpy(model_mesh->indices_data, gpk_model_mesh_indices, indices_data_size);
 			}
@@ -527,7 +534,7 @@ uint32 level_add_model(level *level, vulkan *vulkan, const char *file_name, bool
 	}
 	model->material_count = gpk_model_header->material_count;
 	if (model->material_count > 0) {
-		model->materials = memory_arena_allocate<struct model_material>(&level->assets_memory_arena, model->material_count);
+		model->materials = allocate_memory<struct model_material>(&level->assets_memory_arena, model->material_count);
 		for (uint32 i = 0; i < model->material_count; i += 1) {
 			gpk_model_material_header *gpk_model_material_header = (struct gpk_model_material_header *)((uint8 *)gpk_model_header + gpk_model_header->material_offsets[i]);
 			model_material *model_material = &model->materials[i];
@@ -716,7 +723,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	file_mapping level_json_file_mapping = {};
 	m_assert(open_file_mapping(level_json_file, &level_json_file_mapping));
 	m_scope_exit(close_file_mapping(level_json_file_mapping));
-	level->json_file = memory_arena_allocate<char>(&level->assets_memory_arena, strlen(level_json_file) + 1);
+	level->json_file = allocate_memory<char>(&level->assets_memory_arena, strlen(level_json_file) + 1);
 	strcpy(level->json_file, level_json_file);
 
 	rapidjson::Document json_doc;
@@ -870,14 +877,14 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		}
 	}
 	memory_arena *entity_components_memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
-	level->entity_flags = memory_arena_allocate<uint32>(entity_components_memory_arena, level->entity_count);
-	level->entity_infos = memory_arena_allocate<entity_info>(entity_components_memory_arena, level->entity_count);
-	level->entity_transforms = memory_arena_allocate<transform>(entity_components_memory_arena, level->entity_count);
-	level->entity_modifications = memory_arena_allocate<entity_modification>(entity_components_memory_arena, level->entity_count);
-	level->render_components = memory_arena_allocate<entity_render_component>(entity_components_memory_arena, level->render_component_count);
-	level->collision_components = memory_arena_allocate<entity_collision_component>(entity_components_memory_arena, level->collision_component_count);
-	level->light_components = memory_arena_allocate<entity_light_component>(entity_components_memory_arena, level->light_component_count);
-	level->physics_components = memory_arena_allocate<entity_physics_component>(entity_components_memory_arena, level->physics_component_count);
+	level->entity_flags = allocate_memory<uint32>(entity_components_memory_arena, level->entity_count);
+	level->entity_infos = allocate_memory<entity_info>(entity_components_memory_arena, level->entity_count);
+	level->entity_transforms = allocate_memory<transform>(entity_components_memory_arena, level->entity_count);
+	level->entity_modifications = allocate_memory<entity_modification>(entity_components_memory_arena, level->entity_count);
+	level->render_components = allocate_memory<entity_render_component>(entity_components_memory_arena, level->render_component_count);
+	level->collision_components = allocate_memory<entity_collision_component>(entity_components_memory_arena, level->collision_component_count);
+	level->light_components = allocate_memory<entity_light_component>(entity_components_memory_arena, level->light_component_count);
+	level->physics_components = allocate_memory<entity_physics_component>(entity_components_memory_arena, level->physics_component_count);
 
 	uint32 render_component_index = 0;
 	uint32 collision_component_index = 0;
@@ -1238,7 +1245,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 			} break;
 		}
 	}
-	{// common uniform
+	{ // common uniform
 		struct common_uniform {
 			mat4 camera_view_proj_mat;
 			vec4 camera_position;
@@ -1285,14 +1292,14 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 	}
 	{ // models
 		round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
-		level->render_data.models = memory_arena_allocate<struct model_render_data>(&level->frame_memory_arena, level->render_component_count);
+		level->render_data.models = allocate_memory<struct model_render_data>(&level->render_thread_frame_memory_arena, level->render_component_count);
 		level->render_data.model_count = 0;
 		auto add_model_render_data = [level, vulkan, uniform_alignment](entity_render_component *entity_render_component, mat4 transform) {
 			model_render_data *model_render_data = &level->render_data.models[level->render_data.model_count++];
 			model_render_data->model_index = entity_render_component->model_index;
 			m_assert(entity_render_component->model_index < level->model_count);
 			model *model = &level->models[entity_render_component->model_index];
-			model_render_data->meshes_render_data = memory_arena_allocate<mesh_render_data>(&level->frame_memory_arena, model->mesh_count);
+			model_render_data->meshes_render_data = allocate_memory<mesh_render_data>(&level->render_thread_frame_memory_arena, model->mesh_count);
 			for (uint32 i = 0; i < model->mesh_count; i += 1) {
 				model_mesh *model_mesh = &model->meshes[i];
 				struct uniforms_t {
@@ -1321,7 +1328,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 			}
 		}
 	}
-	// {// texts
+	// { // texts
 		// struct vertex {
 		//   vec4 position_uv;
 		//   u8vec4 color;

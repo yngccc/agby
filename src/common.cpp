@@ -275,7 +275,7 @@ struct memory_arena {
 };
 
 template <typename T>
-T *memory_arena_allocate(memory_arena *memory_arena, uint64 num_t, uint64 alignment = alignof(T)) {
+T *allocate_memory(memory_arena *memory_arena, uint64 num_t, uint64 alignment = alignof(T)) {
 	m_debug_assert(num_t > 0 && is_pow_2(alignment));
 	uint8 *memory = (uint8 *)memory_arena->memory + memory_arena->size;
 	uint64 remainder = (uintptr_t)memory % alignment;
@@ -300,7 +300,7 @@ struct memory_pool {
 	const char *name;
 };
 
-bool memory_pool_initialize(memory_pool *pool, void *memory, uint64 memory_size, uint64 block_size, uint64 block_count, const char *name) {
+bool initialize_memory_pool(memory_pool *pool, void *memory, uint64 memory_size, uint64 block_size, uint64 block_count, const char *name) {
 	m_assert(memory && (uintptr_t)memory % 16 == 0);
 	m_assert(block_size >= sizeof(void*) && is_pow_2(block_size));
 	m_assert(block_count > 0);
@@ -321,7 +321,7 @@ bool memory_pool_initialize(memory_pool *pool, void *memory, uint64 memory_size,
 	return true;
 }
 
-void *memory_pool_allocate(memory_pool *memory_pool) {
+void *allocate_memory(memory_pool *memory_pool) {
 	m_assert(memory_pool->free_block && memory_pool->free_block_count > 0);
 	void *block = memory_pool->free_block;
 	memory_pool->free_block = *(void **)memory_pool->free_block;
@@ -329,7 +329,7 @@ void *memory_pool_allocate(memory_pool *memory_pool) {
 	return block;
 }
 
-void memory_pool_free(memory_pool *memory_pool, void *block) {
+void free_memory(memory_pool *memory_pool, void *block) {
 	*(void **)block = memory_pool->free_block;
 	memory_pool->free_block = block;
 	memory_pool->free_block_count += 1;

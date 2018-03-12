@@ -19,14 +19,29 @@
 #include "assets.cpp"
 #include "level.cpp"
 
+#include <atomic>
+
+struct render_thread_arg {
+	struct vulkan *vulkan;
+	struct level *level;
+	struct game *game;
+};
+
 struct game {
+	std::atomic<uint32> render_done_flag;
+	std::atomic<uint32> frame_done_flag;
+	
 	camera player_camera;
 	float player_camera_r;
 	float player_camera_theta;
 	float player_camera_phi;
 };
 
-bool initialize_game(game *game, vulkan *vulkan) {
+void initialize_game(game *game, vulkan *vulkan) {
+	{ // misc
+		game->render_done_flag = 0;
+		game->frame_done_flag = 0;
+	}
 	{ // imgui
 		ImGuiIO *imgui_io = &ImGui::GetIO();
 		imgui_io->KeyMap[ImGuiKey_Tab] = keycode_tab;
@@ -61,7 +76,6 @@ bool initialize_game(game *game, vulkan *vulkan) {
 		game->player_camera_theta = 0.5f;
 		game->player_camera_phi = 0;
 	}
-	return true;
 }
 
 int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd_line_str, int cmd_show) {
@@ -76,18 +90,15 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	
 	window window = {};
 	m_assert(initialize_window(&window));
-	set_window_fullscreen(&window, true);
+	// set_window_fullscreen(&window, true);
 
-	vulkan *vulkan = {};
-	vulkan = memory_arena_allocate<struct vulkan>(&general_memory_arena, 1);
+	vulkan *vulkan = allocate_memory<struct vulkan>(&general_memory_arena, 1);
 	initialize_vulkan(vulkan, window);
 
-	game *game = {};
-	game = memory_arena_allocate<struct game>(&general_memory_arena, 1);
+	game *game = allocate_memory<struct game>(&general_memory_arena, 1);
 	initialize_game(game, vulkan);
 
-	level *level = {};
-	level = memory_arena_allocate<struct level>(&general_memory_arena, 1);
+	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
 	auto extra_level_load = [](rapidjson::Document *json_doc) {};
 	level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", extra_level_load);
@@ -127,6 +138,31 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	pin_cursor(true);
 	show_cursor(false);
 
+	{ // rendering thread
+		render_thread_arg *render_thread_arg = allocate_memory<struct render_thread_arg>(&general_memory_arena, 1);
+		*render_thread_arg = {vulkan, level, game};
+		auto render_thread_func = [](void *arg) -> DWORD {
+			struct render_thread_arg *render_thread_arg = (struct render_thread_arg *)arg;
+			struct vulkan *vulkan = render_thread_arg->vulkan;
+			struct level *level = render_thread_arg->level;
+			struct game *game = render_thread_arg->game;
+			while (true) {
+				vulkan_begin_render(vulkan);
+				level_generate_render_data(level, vulkan, game->player_camera, []{});
+				level_generate_render_commands(level, vulkan, game->player_camera, []{}, []{});
+				vulkan_end_render(vulkan, false);
+
+				game->render_done_flag.store(1);
+				uint32 frame_done_flag = 1;
+				while (!game->frame_done_flag.compare_exchange_weak(frame_done_flag, 0)) {
+					frame_done_flag = 1;
+				}
+			}
+			return 0;
+		};
+		CreateThread(nullptr, 0, render_thread_func, render_thread_arg, 0, nullptr);
+	}
+	
 	while (program_running) {
 		QueryPerformanceCounter(&performance_counters[0]);
 
@@ -208,9 +244,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			}
 			if (move_vec != vec3{0, 0, 0}) {
 				move_vec = vec3_normalize(move_vec) * 2;
-				btVector3 translate = physics_component->bt_rigid_body->getCenterOfMassTransform().getOrigin();
 				quat rotate = quat_from_between(vec3{0, 0, 1}, vec3_normalize(move_vec));
-				physics_component->velocity = move_vec;
+				btVector3 translate = physics_component->bt_rigid_body->getCenterOfMassTransform().getOrigin();
 				physics_component->bt_rigid_body->setCenterOfMassTransform(btTransform(btQuaternion(rotate.x, rotate.y, rotate.z, rotate.w), translate));
 				physics_component->bt_rigid_body->setLinearVelocity(btVector3(move_vec.x, move_vec.y, move_vec.z));
 			}
@@ -220,61 +255,48 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			uint32 physics_component_index = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
 				if (level->entity_flags[i] & entity_component_flag_physics) {
-					transform *entity_transform = &level->entity_transforms[i];
+					transform *transform = &level->entity_transforms[i];
 					entity_physics_component *physics_component = &level->physics_components[physics_component_index++];
-					const btTransform &transform = physics_component->bt_rigid_body->getCenterOfMassTransform();
-					const btVector3 &velocity = physics_component->bt_rigid_body->getLinearVelocity();
-					btQuaternion rotate = transform.getRotation();
-					btVector3 translate = transform.getOrigin();
-					entity_transform->rotate = {rotate.x(), rotate.y(), rotate.z(), rotate.w()};
-					entity_transform->translate = {translate.x(), translate.y(), translate.z()};
-					physics_component->velocity = {velocity.x(), velocity.y(), velocity.z()};
+
+					const btTransform &rigid_body_transform = physics_component->bt_rigid_body->getCenterOfMassTransform();
+					const btVector3 &rigid_body_velocity = physics_component->bt_rigid_body->getLinearVelocity();
+					btQuaternion rigid_body_rotate = rigid_body_transform.getRotation();
+					btVector3 rigid_body_translate = rigid_body_transform.getOrigin();
+
+					struct transform *new_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
+					struct entity_physics_component *new_physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
+
+					*new_transform = *transform;
+					*new_physics_component = *physics_component;
+					new_transform->rotate = {rigid_body_rotate.x(), rigid_body_rotate.y(), rigid_body_rotate.z(), rigid_body_rotate.w()};
+					new_transform->translate = {rigid_body_translate.x(), rigid_body_translate.y(), rigid_body_translate.z()};
+					new_physics_component->velocity = {rigid_body_velocity.x(), rigid_body_velocity.y(), rigid_body_velocity.z()};
+					level->entity_modifications[i].transform = new_transform;
+					level->entity_modifications[i].physics_component = new_physics_component;
 				}
 			}
 		}
-		{
-			float x_sensitivity = 0.005f;
-			float y_sensitivity = 0.005f;
-			game->player_camera_theta = clamp(game->player_camera_theta + window.raw_mouse_dy * y_sensitivity, -(float)M_PI / 3, (float)M_PI / 3);
-			game->player_camera_phi = wrap_angle(game->player_camera_phi - window.raw_mouse_dx * x_sensitivity);
-			game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
-		}
 		ImGui::EndFrame();
+
+		uint32 render_done_flag = 1;
+		while (!game->render_done_flag.compare_exchange_weak(render_done_flag, 0)) {
+			render_done_flag = 1;
+		}
 		
-		vulkan_begin_render(vulkan);
-		level_generate_render_data(level, vulkan, game->player_camera, []{});
-		level_generate_render_commands(level, vulkan, game->player_camera, []{}, []{});
-		vulkan_end_render(vulkan);
-
 		level_process_entity_modifications_additions(level);
-		level->frame_memory_arena.size = 0;
+		level->main_thread_frame_memory_arena.size = 0;
+		level->render_thread_frame_memory_arena.size = 0;
 
+		float x_sensitivity = 0.005f;
+		float y_sensitivity = 0.005f;
+		game->player_camera_theta = clamp(game->player_camera_theta + window.raw_mouse_dy * y_sensitivity, -(float)M_PI / 3, (float)M_PI / 3);
+		game->player_camera_phi = wrap_angle(game->player_camera_phi - window.raw_mouse_dx * x_sensitivity);
+		game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
+		
+		game->frame_done_flag.store(1);
+		
 		QueryPerformanceCounter(&performance_counters[1]);
 		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;
 		last_frame_time_sec = (double)last_frame_time_microsec / 1000000;
 	}
 }
-
-// { // start rendering thread
-// 	struct render_thread_data {
-// 		struct vulkan *vulkan;
-// 		struct level *level;
-// 		struct game *game;
-// 	};
-// 	render_thread_data *render_thread_data = memory_arena_allocate<struct render_thread_data>(&game->general_memory_arena, 1);
-// 	*render_thread_data = {&vulkan, &level, &game};
-// 	auto render_thread_func = [](void *data) -> DWORD {
-// 		auto *render_thread_data = (struct render_thread_data *)data;
-// 		struct vulkan *vulkan = render_thread_data->vulkan;
-// 		struct level *level = render_thread_data->level;
-// 		struct game *game = render_thread_data->game;
-// 		while (true) {
-// 			vulkan_begin_render(vulkan);
-// 			level_generate_render_data(level, vulkan, game->camera, []{});
-// 			level_generate_render_commands(level, vulkan, game->camera, []{}, []{});
-// 			vulkan_end_render(vulkan, game->screen_shot);
-// 		}
-// 		return 0;
-// 	};
-// 	CreateThread(nullptr, 0, render_thread_func, render_thread_data, 0, nullptr);
-// }

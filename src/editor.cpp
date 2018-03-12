@@ -98,7 +98,7 @@ struct editor {
 	char save_level_file[128];
 };
 
-bool initialize_editor(editor *editor, vulkan *vulkan) {
+void initialize_editor(editor *editor, vulkan *vulkan) {
 	{ // imgui
 		ImGui::StyleColorsDark();
 		ImGuiIO *imgui_io = &ImGui::GetIO();
@@ -253,7 +253,6 @@ bool initialize_editor(editor *editor, vulkan *vulkan) {
 		array_copy(editor->load_level_file, load_level_file);
 		array_copy(editor->save_level_file, save_level_file);
 	}
-	return true;
 }
 
 void editor_select_new_entity(editor* editor, uint32 entity_index) {
@@ -309,18 +308,15 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 	
 	window window = {};
 	m_assert(initialize_window(&window));
-	set_window_fullscreen(&window, true);
+	// set_window_fullscreen(&window, true);
 
-	vulkan *vulkan = {};
-	vulkan = memory_arena_allocate<struct vulkan>(&general_memory_arena, 1);
+	vulkan *vulkan = allocate_memory<struct vulkan>(&general_memory_arena, 1);
 	initialize_vulkan(vulkan, window);
 
-	editor *editor = {};
-	editor = memory_arena_allocate<struct editor>(&general_memory_arena, 1);
+	editor *editor = allocate_memory<struct editor>(&general_memory_arena, 1);
 	initialize_editor(editor, vulkan);
 
-	level *level = {};
-	level = memory_arena_allocate<struct level>(&general_memory_arena, 1);
+	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
 	auto editor_load_level_setting = [&editor](rapidjson::Document *json_doc) {
 		if (json_doc->HasMember("editor_settings")) {
@@ -749,7 +745,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 								}
 							}
 							if (!show_duplicate_name_error) {
-								entity_addition *entity_addition = memory_arena_allocate<struct entity_addition>(&level->frame_memory_arena, 1);
+								entity_addition *entity_addition = allocate_memory<struct entity_addition>(&level->main_thread_frame_memory_arena, 1);
 								array_copy(entity_addition->info.name, entity_name_buf);
 								entity_addition->transform = transform_identity();
 								list_prepend(&level->entity_addition, entity_addition);
@@ -944,24 +940,24 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 						else {
 							show_duplicate_component_error = false;
 							if (component_type_index == 0) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_render;
-								entity_render_component *entity_render_component = memory_arena_allocate<struct entity_render_component>(&level->frame_memory_arena, 1);
+								entity_render_component *entity_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
 								entity_render_component->uv_scale = {1, 1};
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].entity_render_component = entity_render_component;
+								level->entity_modifications[editor->entity_index].render_component = entity_render_component;
 							}
 							else if (component_type_index == 1) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_collision;
-								entity_collision_component *entity_collision_component = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
+								entity_collision_component *entity_collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].entity_collision_component = entity_collision_component;
+								level->entity_modifications[editor->entity_index].collision_component = entity_collision_component;
 							}
 							else if (component_type_index == 2) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_light;
-								entity_light_component *entity_light_component = memory_arena_allocate<struct entity_light_component>(&level->frame_memory_arena, 1);
+								entity_light_component *entity_light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
 								if (light_type_index == 0) {
 									entity_light_component->light_type = {light_type_ambient};
 									entity_light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
@@ -975,14 +971,14 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 									entity_light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
 								}
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].entity_light_component = entity_light_component;
+								level->entity_modifications[editor->entity_index].light_component = entity_light_component;
 							}
 							else if (component_type_index == 3) {
-								uint32 *entity_flag = memory_arena_allocate<uint32>(&level->frame_memory_arena, 1);
+								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_physics;
-								entity_physics_component *entity_physics_component = memory_arena_allocate<struct entity_physics_component>(&level->frame_memory_arena, 1);
+								entity_physics_component *entity_physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].entity_physics_component = entity_physics_component;
+								level->entity_modifications[editor->entity_index].physics_component = entity_physics_component;
 							}
 							ImGui::CloseCurrentPopup();
 						}
@@ -1240,7 +1236,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (entity_collision_component->shape == collision_shape_sphere) {
 						editor->render_data.collision_sphere_count = 1;
-						editor->render_data.collision_spheres = memory_arena_allocate<collision_shape_render_data>(&level->frame_memory_arena, editor->render_data.collision_sphere_count);
+						editor->render_data.collision_spheres = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_sphere_count);
 
 						auto sphere = entity_collision_component->sphere;
 						transform transform = level->entity_transforms[editor->entity_index];
@@ -1249,7 +1245,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					if (entity_collision_component->shape == collision_shape_capsule) {
 						editor->render_data.collision_capsule_count = 1;
-						editor->render_data.collision_capsules = memory_arena_allocate<collision_shape_render_data>(&level->frame_memory_arena, editor->render_data.collision_capsule_count);
+						editor->render_data.collision_capsules = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_capsule_count);
 
 						transform transform = level->entity_transforms[editor->entity_index];
 						capsule capsule = {};
@@ -1270,7 +1266,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 					if (entity_collision_component->shape == collision_shape_box) {
 						editor->render_data.collision_bound_count = 1;
-						editor->render_data.collision_bounds = memory_arena_allocate<collision_shape_render_data>(&level->frame_memory_arena, editor->render_data.collision_bound_count);
+						editor->render_data.collision_bounds = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_bound_count);
 
 						transform transform = level->entity_transforms[editor->entity_index];
 						auto box = entity_collision_component->box;
@@ -1379,7 +1375,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		vulkan_end_render(vulkan, screen_shot);
 
 		level_process_entity_modifications_additions(level);
-		level->frame_memory_arena.size = 0;
+		level->main_thread_frame_memory_arena.size = 0;
+		level->render_thread_frame_memory_arena.size = 0;
 	
 		QueryPerformanceCounter(&performance_counters[1]);
 		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;

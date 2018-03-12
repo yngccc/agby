@@ -6,7 +6,7 @@ call "C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\VC\\Aux
 where /q ctags
 if ERRORLEVEL 0 (
 pushd "%~dp0\src"
-	start /b ctags -f .tags ^
+	start /b ctags -e ^
 	assets.cpp codegen.cpp common.cpp editor.cpp game.cpp import.cpp level.cpp lightmap.cpp math.cpp platform_windows.cpp test.cpp vulkan.cpp ^
 	../vendor/include/imgui/imgui.h %VULKAN_SDK%/include/vulkan/vulkan.h
 popd	
