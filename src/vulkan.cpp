@@ -188,9 +188,9 @@ struct vulkan_memory {
 struct vulkan_memories {
 	vulkan_memory common_images_memory;
 	vulkan_memory level_images_memory;
-	vulkan_memory level_vertices_memory;
-	vulkan_memory frame_vertices_memories[vulkan_buffering_count];
-	vulkan_memory frame_uniforms_memories[vulkan_buffering_count];
+	vulkan_memory level_vertex_buffer_memory;
+	vulkan_memory frame_vertex_buffer_memories[vulkan_buffering_count];
+	vulkan_memory frame_uniform_buffer_memories[vulkan_buffering_count];
 };
 
 struct vulkan_buffer {
@@ -1252,7 +1252,7 @@ void vulkan_memories_initialize(vulkan *vulkan) {
 		vkDestroyBuffer(vulkan->device.device, vulkan_buffer, nullptr);
 		uint32 memory_type_index = 0;
 		m_assert(find_memory_type_index(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memory_type_index));
-		m_assert(allocate_memory_type(memory_type_index, requirements.size, &vulkan->memories.level_vertices_memory));
+		m_assert(allocate_memory_type(memory_type_index, requirements.size, &vulkan->memories.level_vertex_buffer_memory));
 	}
 	{ // frame vertices
 		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -1266,7 +1266,7 @@ void vulkan_memories_initialize(vulkan *vulkan) {
 		uint32 memory_type_index = 0;
 		m_assert(find_memory_type_index(requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &memory_type_index));
 		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-			m_assert(allocate_memory_type(memory_type_index, requirements.size, &vulkan->memories.frame_vertices_memories[i]));
+			m_assert(allocate_memory_type(memory_type_index, requirements.size, &vulkan->memories.frame_vertex_buffer_memories[i]));
 		}
 	}
 	{ // frame uniforms
@@ -1281,7 +1281,7 @@ void vulkan_memories_initialize(vulkan *vulkan) {
 		uint32 memory_type_index = 0;
 		m_assert(find_memory_type_index(requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &memory_type_index));
 		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-			m_assert(allocate_memory_type(memory_type_index, requirements.size, &vulkan->memories.frame_uniforms_memories[i]));
+			m_assert(allocate_memory_type(memory_type_index, requirements.size, &vulkan->memories.frame_uniform_buffer_memories[i]));
 		}
 	}
 }
@@ -1329,22 +1329,22 @@ void vulkan_buffer_transfer(vulkan *vulkan, vulkan_buffer *vulkan_buffer, uint64
 
 void vulkan_buffers_initialize(vulkan *vulkan) {
 	VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-	buffer_create_info.size = vulkan->memories.level_vertices_memory.capacity;
+	buffer_create_info.size = vulkan->memories.level_vertex_buffer_memory.capacity;
 	buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	vulkan_buffer_create(&vulkan->device, &vulkan->memories.level_vertices_memory, buffer_create_info, &vulkan->buffers.level_vertex_buffer);
+	vulkan_buffer_create(&vulkan->device, &vulkan->memories.level_vertex_buffer_memory, buffer_create_info, &vulkan->buffers.level_vertex_buffer);
 	vulkan->buffers.level_vertex_buffer_offset = 0;
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-		buffer_create_info.size = vulkan->memories.frame_vertices_memories[i].capacity;
+		buffer_create_info.size = vulkan->memories.frame_vertex_buffer_memories[i].capacity;
 		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-		vulkan_buffer_create(&vulkan->device, &vulkan->memories.frame_vertices_memories[i], buffer_create_info, &vulkan->buffers.frame_vertex_buffers[i]);
-		vkMapMemory(vulkan->device.device, vulkan->memories.frame_vertices_memories[i].memory, 0, VK_WHOLE_SIZE, 0, (void **)&vulkan->buffers.frame_vertex_buffer_ptrs[i]);
+		vulkan_buffer_create(&vulkan->device, &vulkan->memories.frame_vertex_buffer_memories[i], buffer_create_info, &vulkan->buffers.frame_vertex_buffers[i]);
+		vkMapMemory(vulkan->device.device, vulkan->memories.frame_vertex_buffer_memories[i].memory, 0, VK_WHOLE_SIZE, 0, (void **)&vulkan->buffers.frame_vertex_buffer_ptrs[i]);
 		vulkan->buffers.frame_vertex_buffer_offsets[i] = 0;
 	}
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-		buffer_create_info.size = vulkan->memories.frame_uniforms_memories[i].capacity;
+		buffer_create_info.size = vulkan->memories.frame_uniform_buffer_memories[i].capacity;
 		buffer_create_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		vulkan_buffer_create(&vulkan->device, &vulkan->memories.frame_uniforms_memories[i], buffer_create_info, &vulkan->buffers.frame_uniform_buffers[i]);
-		vkMapMemory(vulkan->device.device, vulkan->memories.frame_uniforms_memories[i].memory, 0, VK_WHOLE_SIZE, 0, (void **)&vulkan->buffers.frame_uniform_buffer_ptrs[i]);
+		vulkan_buffer_create(&vulkan->device, &vulkan->memories.frame_uniform_buffer_memories[i], buffer_create_info, &vulkan->buffers.frame_uniform_buffers[i]);
+		vkMapMemory(vulkan->device.device, vulkan->memories.frame_uniform_buffer_memories[i].memory, 0, VK_WHOLE_SIZE, 0, (void **)&vulkan->buffers.frame_uniform_buffer_ptrs[i]);
 		vulkan->buffers.frame_uniform_buffer_offsets[i] = 0;
 	}
 }

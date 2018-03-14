@@ -43,7 +43,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(SolutionDir)..\..\vendor\include;$(VULKAN_SDK)\include;$(SolutionDir)..\..\vendor\include\fbx;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)..\..\vendor\include;$(VULKAN_SDK)\include;$(IncludePath)</IncludePath>
     <LibraryPath>$(SolutionDir)..\..\vendor\lib\windows;$(VULKAN_SDK)\Lib;$(LibraryPath)</LibraryPath>
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
   </PropertyGroup>
@@ -61,7 +61,7 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>Shcore.lib;Wtsapi32.lib;Mswsock.lib;Ws2_32.lib;libfbxsdk.lib;nvtt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Shcore.lib;Wtsapi32.lib;Mswsock.lib;Ws2_32.lib;nvtt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

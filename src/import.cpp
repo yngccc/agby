@@ -4,17 +4,404 @@
 
 #include "platform_windows.cpp"
 
-#define FBXSDK_SHARED
-#include "../vendor/include/fbx/fbxsdk.h"
 #define NVTT_SHARED 1
 #include "../vendor/include/nvtt/nvtt.h"
+
 #define STB_IMAGE_IMPLEMENTATION
-#include "../vendor/include/stb/stb_image.h"
+#define TINYGLTF_IMPLEMENTATION
+#define TINYGLTF_NOEXCEPTION
+#include "../vendor/include/tinygltf/tiny_gltf.h"
+
+#define RAPIDJSON_SSE2
+#define RAPIDJSON_ASSERT(x) m_assert(x)
+#include "../vendor/include/rapidjson/document.h"
+#include "../vendor/include/rapidjson/prettywriter.h"
+#include "../vendor/include/rapidjson/error/en.h"
 
 #include "math.cpp"
-#define ASSETS_IMPORT_STRUCT_ONLY
-#include "assets.cpp"
+#include "gpk.cpp"
 
+void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
+	printf("begin importing skybox: \"%s\"\n", skybox_dir.c_str());
+
+	const char *cubemap_files[6] = {"left.png", "right.png", "up.png", "down.png", "front.png", "back.png"};
+	uint8 *cubemap_data[6] = {};
+	int32 cubemap_sizes[12] = {};
+	for (uint32 i = 0; i < m_countof(cubemap_files); i += 1) {
+		std::string png_file = skybox_dir + "\\" + cubemap_files[i];
+		int32 channel = 0;
+    cubemap_data[i] = stbi_load(png_file.c_str(), &cubemap_sizes[i * 2], &cubemap_sizes[i * 2 + 1], &channel, 4);
+    if (!cubemap_data[i]) {
+    	fatal("error: failed to load png image \"%s\"\n", png_file.c_str());
+    }
+	}
+	for (uint32 i = 0; i < m_countof(cubemap_sizes); i += 1) {
+		if (cubemap_sizes[i] != cubemap_sizes[0]) {
+			fatal("error: skybox invalid cubemap image size");
+		}
+	}
+	uint32 cubemap_image_size = cubemap_sizes[0] * cubemap_sizes[1] * 4;
+	uint32 cubemap_offset = round_up((uint32)sizeof(struct gpk_skybox), 16u);
+	uint32 file_size = cubemap_offset + cubemap_image_size * 6;
+	file_mapping import_file_mapping;
+	if (!create_file_mapping(gpk_file.c_str(), file_size, &import_file_mapping)) {
+		fatal("error: cannot create file mapping for \"%s\"\n", gpk_file.c_str());
+	}
+	gpk_skybox *header = (gpk_skybox *)import_file_mapping.ptr;
+	*header = {"GPK_SKYBOX_FORMAT"};
+	header->cubemap_offset = cubemap_offset;
+	header->cubemap_width = cubemap_sizes[0];
+	header->cubemap_height = cubemap_sizes[1];
+	for (uint32 i = 0; i < 6; i += 1) {
+		uint8 *dst = import_file_mapping.ptr + cubemap_offset + i * cubemap_image_size;
+		memcpy(dst, cubemap_data[i], cubemap_image_size);
+	}
+	flush_file_mapping(import_file_mapping);
+	close_file_mapping(import_file_mapping);
+
+	printf("done importing skybox: \"%s\"\n", gpk_file.c_str());
+}
+
+void glb_to_gpk(std::string glb_file, std::string gpk_file) {
+	printf("begin importing glb: \"%s\" \n", glb_file.c_str());
+
+	tinygltf::Model glb_model;
+	{
+		tinygltf::TinyGLTF glb_loader;
+		std::string glb_loader_err;
+		bool glb_loader_ret = glb_loader.LoadBinaryFromFile(&glb_model, &glb_loader_err, glb_file);
+		if (!glb_loader_err.empty()) {
+			printf("tinygltf err: %s\n", glb_loader_err.c_str());
+		}
+		if (!glb_loader_ret) {
+			fatal("Failed to parse glTF\n");
+		}
+	}
+	gpk_model gpk_model = {"GPK_MODEL_FORMAT"};
+	std::vector<gpk_model_scene> gpk_model_scenes;
+	{
+		gpk_model.scene_offset = round_up((uint32)sizeof(gpk_model), 16u);
+		gpk_model.scene_count = (uint32)glb_model.scenes.size();
+		m_assert(gpk_model.scene_count > 0);
+		gpk_model_scenes.resize(gpk_model.scene_count);
+		for (uint32 i = 0; i < gpk_model.scene_count; i += 1) {
+			auto &src = glb_model.scenes[i];
+			auto &dst = gpk_model_scenes[i];
+			m_assert(src.name.length() < sizeof(dst.name));
+			strcpy(dst.name, src.name.c_str());
+			dst.node_index_count = (uint32)src.nodes.size();
+			m_assert(dst.node_index_count <= m_countof(dst.node_indices));
+			for (uint32 i = 0; i < dst.node_index_count; i += 1) {
+				dst.node_indices[i] = (uint32)src.nodes[i];
+			}
+		}
+	}
+	std::vector<gpk_model_node> gpk_model_nodes;
+	{
+		gpk_model.node_offset = gpk_model.scene_offset + gpk_model.scene_count * sizeof(struct gpk_model_scene);
+		round_up(&gpk_model.node_offset, 16u);
+		gpk_model.node_count = (uint32)glb_model.nodes.size();
+		m_assert(gpk_model.node_count > 0);
+		gpk_model_nodes.resize(gpk_model.node_count);
+		for (uint32 i = 0; i < gpk_model.node_count; i += 1) {
+			auto &src = glb_model.nodes[i];
+			auto &dst = gpk_model_nodes[i];
+			dst.mesh_index = src.mesh >= 0 ? src.mesh : UINT32_MAX;
+			dst.child_count = (uint32)src.children.size();
+			if (dst.child_count > m_countof(dst.children)) {
+				fatal("import.exe error: gltf node has too many (%u)children", dst.child_count);
+			}
+			for (uint32 i = 0; i < dst.child_count; i += 1) {
+				m_assert(src.children[i] >= 0);
+				dst.children[i] = src.children[i];
+			}
+			if (src.matrix.size() != 0) {
+				for (uint32 i = 0; i < 16; i += 1) {
+					dst.local_transform_mat[i / 4][i % 4] = (float)src.matrix[i];
+				}
+			}
+			else {
+				transform transform = transform_identity();
+				if (src.rotation.size() != 0) {
+					transform.rotate = {(float)src.rotation[0], (float)src.rotation[1], (float)src.rotation[2], (float)src.rotation[3]};
+				}
+				if (src.scale.size() != 0) {
+					transform.scale =  {(float)src.scale[0], (float)src.scale[1], (float)src.scale[2]};
+				}
+				if (src.translation.size() != 0) {
+					transform.translate = {(float)src.translation[0], (float)src.translation[1], (float)src.translation[2]};
+				}
+				dst.local_transform_mat = transform_to_mat4(transform);
+			}
+		}
+	}
+	std::vector<gpk_model_mesh> gpk_model_meshes;
+	{
+		gpk_model.mesh_offset = gpk_model.node_offset + gpk_model.node_count * sizeof(struct gpk_model_node);
+		round_up(&gpk_model.mesh_offset, 16u);
+		gpk_model.mesh_count = (uint32)glb_model.meshes.size();
+		m_assert(gpk_model.mesh_count > 0);
+		gpk_model_meshes.resize(gpk_model.mesh_count);
+		for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
+			auto &src = glb_model.meshes[i];
+			auto &dst = gpk_model_meshes[i];
+			m_assert(src.name.length() < sizeof(dst.name));
+			strcpy(dst.name, src.name.c_str());
+			m_assert(src.primitives.size() == 1);
+			auto &primitive = src.primitives[0];
+			m_assert(primitive.mode == TINYGLTF_MODE_TRIANGLES);
+			m_assert(primitive.indices >= 0);
+			m_assert(primitive.attributes.find("POSITION") != primitive.attributes.end());
+			m_assert(primitive.attributes.find("NORMAL") != primitive.attributes.end());
+			m_assert(primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end());
+			dst.material_index = primitive.material >= 0 ? primitive.material : UINT32_MAX;
+		}
+	}
+	std::vector<gpk_model_material> gpk_model_materials;
+	{
+		gpk_model.material_offset = gpk_model.mesh_offset + gpk_model.mesh_count * sizeof(struct gpk_model_mesh);
+		round_up(&gpk_model.material_offset, 16u);
+		gpk_model.material_count = (uint32)glb_model.materials.size();
+		gpk_model_materials.resize(gpk_model.material_count);
+		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
+			auto &src = glb_model.materials[i];
+			auto &dst = gpk_model_materials[i];
+			m_assert(src.name.length() < sizeof(dst.name));
+			strcpy(dst.name, src.name.c_str());
+		}
+	}
+	uint32 current_offset = gpk_model.material_offset + gpk_model.material_count * sizeof(gpk_model_material);
+	round_up(&current_offset, 16u);
+	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
+		auto &src = glb_model.meshes[i];
+		auto &dst = gpk_model_meshes[i];
+		auto &primitive = src.primitives[0];
+
+		auto &index_accessor = glb_model.accessors[primitive.indices];
+		m_assert(index_accessor.count > 0);
+		m_assert(index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT || index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE);
+		m_assert(index_accessor.type == TINYGLTF_TYPE_SCALAR);
+		
+		auto &position_accessor = glb_model.accessors[primitive.attributes["POSITION"]];
+		m_assert(position_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+		m_assert(position_accessor.type == TINYGLTF_TYPE_VEC3);
+
+		auto &uv_accessor = glb_model.accessors[primitive.attributes["TEXCOORD_0"]];
+		m_assert(uv_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+		m_assert(uv_accessor.type == TINYGLTF_TYPE_VEC2);
+		m_assert(uv_accessor.count == position_accessor.count);
+
+		auto &normal_accessor = glb_model.accessors[primitive.attributes["NORMAL"]];
+		m_assert(normal_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+		m_assert(normal_accessor.type == TINYGLTF_TYPE_VEC3);
+		m_assert(normal_accessor.count == position_accessor.count);
+
+		if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
+			auto &tangent_accessor = glb_model.accessors[primitive.attributes["TANGENT"]];
+			m_assert(tangent_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+			m_assert(tangent_accessor.type == TINYGLTF_TYPE_VEC4);
+			m_assert(tangent_accessor.count == position_accessor.count);
+		}
+
+		dst.indices_offset = current_offset;
+		dst.index_count = (uint32)index_accessor.count;
+		current_offset += dst.index_count * sizeof(uint16);
+		round_up(&current_offset, 16u);
+		dst.vertices_offset = current_offset;
+		dst.vertex_size = gpk_model_vertex_position_size + gpk_model_vertex_uv_size + gpk_model_vertex_normal_size + gpk_model_vertex_tangent_size;
+		dst.vertex_count = (uint32)position_accessor.count;
+		current_offset += dst.vertex_size * dst.vertex_count;
+		round_up(&current_offset, 16u);
+	}
+
+	file_mapping gpk_file_mapping = {};
+	if (!create_file_mapping(gpk_file.c_str(), current_offset, &gpk_file_mapping)) {
+		fatal("cannot create file mapping %s\n", gpk_file.c_str());
+	}
+	*(struct gpk_model *)gpk_file_mapping.ptr = gpk_model;
+	memcpy(gpk_file_mapping.ptr + gpk_model.scene_offset, &gpk_model_scenes[0], gpk_model_scenes.size() * sizeof(struct gpk_model_scene));
+	memcpy(gpk_file_mapping.ptr + gpk_model.node_offset, &gpk_model_nodes[0], gpk_model_nodes.size() * sizeof(struct gpk_model_node));
+	memcpy(gpk_file_mapping.ptr + gpk_model.mesh_offset, &gpk_model_meshes[0], gpk_model_meshes.size() * sizeof(struct gpk_model_mesh));
+	memcpy(gpk_file_mapping.ptr + gpk_model.material_offset, &gpk_model_materials[0], gpk_model_materials.size() * sizeof(struct gpk_model_material));
+	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
+		auto &primitive = glb_model.meshes[i].primitives[0];
+		auto &mesh = gpk_model_meshes[i];
+
+		auto &index_accessor = glb_model.accessors[primitive.indices];
+		auto &index_buffer_view = glb_model.bufferViews[index_accessor.bufferView];
+		auto &index_buffer = glb_model.buffers[index_buffer_view.buffer];
+		unsigned char *index_data = &index_buffer.data[index_buffer_view.byteOffset + index_accessor.byteOffset];
+		m_assert(index_buffer_view.byteStride == 0);
+		if (index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+			memcpy(gpk_file_mapping.ptr + mesh.indices_offset, index_data, mesh.index_count * sizeof(uint16));
+		}
+		if (index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+			for (uint32 i = 0; i < mesh.index_count; i += 1) {
+				((uint16 *)(gpk_file_mapping.ptr + mesh.indices_offset))[i] = index_data[i];
+			}
+		}
+		
+		auto &position_accessor = glb_model.accessors[primitive.attributes["POSITION"]];
+		auto &position_buffer_view = glb_model.bufferViews[position_accessor.bufferView];
+		auto &position_buffer = glb_model.buffers[position_buffer_view.buffer];
+		uint32 position_stride = position_buffer_view.byteStride == 0 ? 12 : (uint32)position_buffer_view.byteStride;
+		unsigned char *position_data = &position_buffer.data[position_buffer_view.byteOffset + position_accessor.byteOffset];
+		
+		auto &uv_accessor = glb_model.accessors[primitive.attributes["TEXCOORD_0"]];
+		auto &uv_buffer_view = glb_model.bufferViews[uv_accessor.bufferView];
+		auto &uv_buffer = glb_model.buffers[uv_buffer_view.buffer];
+		uint32 uv_stride = uv_buffer_view.byteStride == 0 ? 8 : (uint32)uv_buffer_view.byteStride;
+		unsigned char *uv_data = &uv_buffer.data[uv_buffer_view.byteOffset + uv_accessor.byteOffset];
+
+		auto &normal_accessor = glb_model.accessors[primitive.attributes["NORMAL"]];
+		auto &normal_buffer_view = glb_model.bufferViews[normal_accessor.bufferView];
+		auto &normal_buffer = glb_model.buffers[normal_buffer_view.buffer];
+		uint32 normal_stride = normal_buffer_view.byteStride == 0 ? 12 : (uint32) normal_buffer_view.byteStride;
+		unsigned char *normal_data = &normal_buffer.data[normal_buffer_view.byteOffset + normal_accessor.byteOffset];
+
+		unsigned char *tangent_data = nullptr;
+		uint32 tangent_stride = 0;
+		if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
+			auto &tangent_accessor = glb_model.accessors[primitive.attributes["TANGENT"]];
+			auto &tangent_buffer_view = glb_model.bufferViews[tangent_accessor.bufferView];
+			auto &tangent_buffer = glb_model.buffers[tangent_buffer_view.buffer];
+			tangent_stride = tangent_buffer_view.byteStride == 0 ? 16 : (uint32) tangent_buffer_view.byteStride;
+			tangent_data = &tangent_buffer.data[tangent_buffer_view.byteOffset + tangent_accessor.byteOffset];
+		}
+		
+		for (uint32 i = 0; i < mesh.vertex_count; i += 1) {
+			vec3 position = *(vec3 *)(position_data + position_stride * i);
+			vec2 uv = *(vec2 *)(uv_data + uv_stride * i);
+			vec3 normal = *(vec3 *)(normal_data + normal_stride * i);
+			i16vec3 compressed_normal = {(int16)round(normal[0] * 32767.0f), (int16)round(normal[1] * 32767.0f), (int16)round(normal[2] * 32767.0f)};
+			vec3 tangent = vec3_normalize(vec3_cross(normal, vec3{0, 1, 0}));
+			if (tangent_data) {
+				tangent = *(vec3 *)(tangent_data + tangent_stride * i);
+			}
+			i16vec3 compressed_tangent = {(int16)round(tangent[0] * 32767.0f), (int16)round(tangent[1] * 32767.0f), (int16)round(tangent[2] * 32767.0f)};
+			m_assert(mesh.vertex_size == sizeof(position) + sizeof(uv) + sizeof(compressed_normal) + sizeof(compressed_tangent));
+			uint8 *vertex_ptr = gpk_file_mapping.ptr + mesh.vertices_offset + mesh.vertex_size * i;
+			*(vec3 *)(vertex_ptr + 0) = position;
+			*(vec2 *)(vertex_ptr + sizeof(position))= uv;
+			*(i16vec3 *)(vertex_ptr + sizeof(position) + sizeof(uv)) = compressed_normal;
+			*(i16vec3 *)(vertex_ptr + sizeof(position) + sizeof(uv) + sizeof(compressed_normal)) = compressed_tangent;
+		}
+	}
+	flush_file_mapping(gpk_file_mapping);
+	close_file_mapping(gpk_file_mapping);
+	
+	printf("done importing glb: \"%s\" %d\n", glb_file.c_str(), current_offset);
+}
+
+void import_json(std::string json_file) {
+	printf("begin importing json file: \"%s\" \n", json_file.c_str());
+
+	HANDLE job_object = CreateJobObject(nullptr, nullptr);
+	HANDLE io_port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1);
+	m_assert(job_object);
+	m_assert(io_port);
+	m_scope_exit(
+		CloseHandle(job_object);
+	  CloseHandle(io_port);
+	);
+	JOBOBJECT_ASSOCIATE_COMPLETION_PORT job_port;
+	job_port.CompletionKey = job_object;
+	job_port.CompletionPort = io_port;
+	m_assert(SetInformationJobObject(job_object, JobObjectAssociateCompletionPortInformation, &job_port, sizeof(job_port)));
+	uint32 job_count = 0;
+
+	auto create_import_process = [job_object](std::string cmdl_str) {
+		STARTUPINFOA startup_info = {sizeof(startup_info)};
+		startup_info.dwFlags = STARTF_USESHOWWINDOW;
+		startup_info.wShowWindow = SW_HIDE;
+		PROCESS_INFORMATION process_info;
+		m_assert(CreateProcessA("import.exe", (LPSTR)cmdl_str.c_str(), nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr, nullptr, &startup_info, &process_info));
+		m_assert(AssignProcessToJobObject(job_object, process_info.hProcess));
+		ResumeThread(process_info.hThread);
+		CloseHandle(process_info.hThread);
+		CloseHandle(process_info.hProcess);
+	};
+	
+	file_mapping json_file_mapping = {};
+	m_assert(open_file_mapping(json_file.c_str(), &json_file_mapping));
+	m_scope_exit(close_file_mapping(json_file_mapping));
+	rapidjson::Document json;
+	rapidjson::ParseResult json_parse_result = json.Parse((const char *)json_file_mapping.ptr);
+	if (!json_parse_result) {
+		fatal("error: json parse failed:\nFile: %s\nOffset:: %u\nError: %s", json_file.c_str(), (uint32)json_parse_result.Offset(), rapidjson::GetParseError_En(json_parse_result.Code()));
+	}
+
+	bool force_import_all = json["force_import_all"].GetBool();
+	bool force_import_models = json["force_import_models"].GetBool();
+	bool force_import_skyboxes = json["force_import_skyboxes"].GetBool();
+
+	rapidjson::Value::Array models = json["models"].GetArray();
+	for (uint32 i = 0; i < models.Size(); i += 1) {
+		rapidjson::Value::Object model = models[i].GetObject();
+		if (model["import"].GetBool() || force_import_all || force_import_models) {
+			const char *glb_file = model["glb_file"].GetString();
+			const char *gpk_file = model["gpk_file"].GetString();
+			std::string cmdl_str = std::string("import.exe -glb-to-gpk ") + glb_file + " " + gpk_file;
+			create_import_process(cmdl_str);
+			job_count += 1;
+		}
+	}
+
+	rapidjson::Value::Array skyboxes = json["skyboxes"].GetArray();
+	for (uint32 i = 0; i < skyboxes.Size(); i += 1) {
+		rapidjson::Value::Object skybox = skyboxes[i].GetObject();
+		if (skybox["import"].GetBool() || force_import_all || force_import_skyboxes) {
+			const char *dir = skybox["dir"].GetString();
+			const char *gpk_file = skybox["gpk_file"].GetString();
+			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + dir + " " + gpk_file;
+			create_import_process(cmdl_str);
+			job_count += 1;
+		}
+	}
+
+	if (job_count > 0) {
+		DWORD completion_code;
+		ULONG_PTR completion_key;
+		LPOVERLAPPED overlappped;
+		while (GetQueuedCompletionStatus(io_port, &completion_code, &completion_key, &overlappped, INFINITE)) {
+			if ((HANDLE)completion_key == job_object && completion_code == JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO) {
+				break;
+			}
+		}
+	}
+	printf("done importing json file: \"%s\" \n", json_file.c_str());
+}
+
+int main(int argc, char **argv) {
+	set_exe_dir_as_current();
+	if (argc < 2) {
+		fatal("error: missing first argument");
+	}
+	const char *mode_str = argv[1];
+	if (!strcmp(mode_str, "-glb-to-gpk")) {
+		if (argc != 4) {
+			fatal("error: expect -glb-to-gpk glb_file gpk_file");
+		}
+		glb_to_gpk(argv[2], argv[3]);
+	}
+	else if (!strcmp(mode_str, "-skybox-to-gpk")) {
+		if (argc != 4) {
+			fatal("error: expect -skybox-to-gpk skybox_dir gpk_file");
+		}
+		skybox_to_gpk(argv[2], argv[3]);
+	}
+	else if (!strcmp(mode_str, "-import-json")) {
+		if (argc != 3) {
+			fatal("error: expect -import-json json_file");
+		}
+		import_json(argv[2]);
+	}
+	else {
+		fatal("import.exe error: unknown first argument");
+	}
+}
+
+#if 0
 typedef vec3 position;
 typedef vec2 uv;
 typedef i16vec3 normal;
@@ -191,23 +578,6 @@ aa_bound compute_mesh_bound(FbxMesh *fbx_mesh, mat4 transform) {
 		max_control_point.z = max(max_control_point.z, control_point.z);
 	}
 	return aa_bound{min_control_point, max_control_point};
-}
-
-aa_bound compute_meshes_bound(mesh *meshes, uint32 mesh_count) {
-	aa_bound bound = {};
-	for (uint32 i = 0; i < mesh_count; i += 1) {
-		struct mesh *mesh = &meshes[i];
-		for (uint32 i = 0; i < mesh->instance_count; i += 1) {
-			aa_bound *b = &mesh->instances[i].bound;
-			bound.min.x = min(bound.min.x, b->min.x);
-			bound.min.y = min(bound.min.y, b->min.y);
-			bound.min.z = min(bound.min.z, b->min.z);
-			bound.max.x = max(bound.max.x, b->max.x);
-			bound.max.y = max(bound.max.y, b->max.y);
-			bound.max.z = max(bound.max.z, b->max.z);
-		}
-	}
-	return bound;
 }
 
 void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
@@ -396,8 +766,7 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 		bool mesh_instance = false;
 		for (uint32 i = 0; i < mesh_count; i += 1) {
 			if (meshes[i].fbx_mesh == fbx_mesh) {
-				meshes[i].instances[meshes[i].instance_count].transform = fbx_mat4_to_mat4(&fbx_node->EvaluateGlobalTransform());
-				meshes[i].instances[meshes[i].instance_count].bound = compute_mesh_bound(meshes[i].fbx_mesh, meshes[i].instances[meshes[i].instance_count].transform);
+				meshes[i].instances[meshes[i].instance_count].transform_mat = fbx_mat4_to_mat4(&fbx_node->EvaluateGlobalTransform());
 				meshes[i].instance_count += 1;
 				mesh_instance = true;
 				break;
@@ -414,10 +783,10 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 				fatal("non-triangle(%d vertices) mesh polygon found", fbx_mesh->GetPolygonSize(i));
 			}
 		}
-		if (!fbx_mesh->GenerateNormals(true, true)) {
+		if (!fbx_mesh->GenerateNormals(false, true)) {
 			fatal("generate normals failed\n");
 		}
-		if (!fbx_mesh->GenerateTangentsDataForAllUVSets(true)) {
+		if (!fbx_mesh->GenerateTangentsDataForAllUVSets(false)) {
 			fatal("generate tangents failed\n");
 		}
 		struct mesh *mesh = &meshes[mesh_count++];
@@ -426,8 +795,7 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 			fatal("mesh name \"%s\" is too long", fbx_node->GetName());
 		}
 		strcpy(mesh->name, fbx_node->GetName());
-		mesh->instances[0].transform = fbx_mat4_to_mat4(&fbx_node->EvaluateGlobalTransform());
-		mesh->instances[0].bound = compute_mesh_bound(mesh->fbx_mesh, mesh->instances[0].transform);
+		mesh->instances[0].transform_mat = fbx_mat4_to_mat4(&fbx_node->EvaluateGlobalTransform());
 		mesh->instance_count = 1;
 		uint32 polygon_vertex_count = fbx_mesh->GetPolygonCount() * 3;
 		mesh->vertices = (struct vertex *)calloc(polygon_vertex_count, sizeof(struct vertex));
@@ -527,7 +895,6 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 		}
 	}
 	gpk_model_header model_header = {};
-	model_header.bound = compute_meshes_bound(meshes, mesh_count);
 	gpk_model_mesh_header *mesh_headers = (struct gpk_model_mesh_header *)calloc(gpk_model_max_mesh_count, sizeof(struct gpk_model_mesh_header));
 	gpk_model_material_header *material_headers = (struct gpk_model_material_header *)calloc(gpk_model_max_material_count, sizeof(struct gpk_model_material_header));
 	uint32 model_total_size = 0;
@@ -675,392 +1042,332 @@ void fbx_mesh_to_text(const char *fbx_file) {
 	fclose(output_file);
 	printf("\ndone!");
 }
+#endif
 
-void skybox_to_gpk(gpk_import_cmd_line cmdl) {
-	console("Importing skybox \"%s\" to \"%s\"\n", cmdl.asset_file, cmdl.import_file);
-	const char *cubemap_files[6] = {"left.png", "right.png", "up.png", "down.png", "front.png", "back.png"};
-	uint8 *cubemap_data[6] = {};
-	int32 cubemap_sizes[12] = {};
-	for (uint32 i = 0; i < m_countof(cubemap_files); i += 1) {
-		char asset_file[512];
-		snprintf(asset_file, sizeof(asset_file), "%s\\%s", cmdl.asset_file, cubemap_files[i]);
-		int32 channel;
-    cubemap_data[i] = stbi_load(asset_file, &cubemap_sizes[i * 2], &cubemap_sizes[i * 2 + 1], &channel, 4);
-    if (!cubemap_data[i]) {
-    	fatal("import skybox failed to load cubemap image \"%s\"", cubemap_files[i]);
+#if 0
+FbxNode **fbx_nodes = nullptr;
+gpk_model_node *gpk_model_nodes = nullptr;
+uint32 gpk_model_nodes_count = fbx_scene->GetNodeCount();
+{
+  fbx_nodes = m_calloc(gpk_model_nodes_count, FbxNode *);
+  gpk_model_nodes = m_calloc(gpk_model_nodes_count, struct gpk_model_node);
+  for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
+    fbx_nodes[i] = fbx_scene->GetNode(i);
+  }
+  for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
+    FbxNode *fbx_node = fbx_nodes[i];
+    struct gpk_model_node gpk_model_node = {};
+    gpk_model_node.parent = -1;
+    gpk_model_node.local_transform = fbx_mat4_to_mat4(&(fbx_node->EvaluateLocalTransform()));
+    FbxNode *parent = fbx_node->GetParent();
+    for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
+      if (fbx_nodes[i] == parent) {
+        gpk_model_node.parent = i;
+        break;
+      }
     }
-	}
-	for (uint32 i = 0; i < m_countof(cubemap_sizes); i += 1) {
-		if (cubemap_sizes[i] != cubemap_sizes[0]) {
-			fatal("import skybox invalid cubemap image size");
-		}
-	}
-	uint32 cubemap_image_size = cubemap_sizes[0] * cubemap_sizes[1] * 4;
-	uint32 cubemap_offset = round_up((uint32)sizeof(struct gpk_skybox_header), 16u);
-	uint32 file_size = cubemap_offset + cubemap_image_size * 6;
-	file_mapping import_file_mapping;
-	if (!create_file_mapping(cmdl.import_file, file_size, &import_file_mapping)) {
-		fatal("cannot create file mapping %s\n", cmdl.import_file);
-	}
-	gpk_skybox_header *header = (gpk_skybox_header *)import_file_mapping.ptr;
-	header->cubemap_offset = cubemap_offset;
-	header->cubemap_width = cubemap_sizes[0];
-	header->cubemap_height = cubemap_sizes[1];
-	for (uint32 i = 0; i < 6; i += 1) {
-		uint8 *dst = import_file_mapping.ptr + cubemap_offset + i * cubemap_image_size;
-		memcpy(dst, cubemap_data[i], cubemap_image_size);
-	}
-	flush_file_mapping(import_file_mapping);
-	close_file_mapping(import_file_mapping);
+    gpk_model_nodes[i] = gpk_model_node;
+  }
 }
-
-int main(int argc, char **argv) {
-	set_exe_dir_as_current();
-	if (argc == 4) {
-		gpk_import_cmd_line cmdl = {};
-		cmdl.import_type = (gpk_import_type)atoi(argv[1]);
-		snprintf(cmdl.asset_file, sizeof(cmdl.asset_file), "%s", argv[2]);
-		snprintf(cmdl.import_file, sizeof(cmdl.import_file), "%s", argv[3]);
-		if (cmdl.import_type == gpk_import_type_fbx_model) {
-			fbx_model_to_gpk(cmdl);
-		}
-		else if (cmdl.import_type == gpk_import_type_skybox) {
-			skybox_to_gpk(cmdl);
-		}
-	}
-	else if (argc == 3) {
-		if (!strcmp(argv[1], "-manual_0")) {
-			fbx_mesh_to_text(argv[2]);
-		}
-	}
-	else {
-		fatal("import.exe: invalid command line arguments");
-	}
+gpk_model_animation_header *gpk_model_animation_headers = nullptr;
+gpk_model_animation_frame ***gpk_model_animation_frames = nullptr;
+uint32 gpk_model_animation_count = fbx_scene->GetSrcObjectCount<FbxAnimStack>();
+{
+  gpk_model_animation_headers = m_calloc(gpk_model_animation_count, struct gpk_model_animation_header);
+  gpk_model_animation_frames = m_calloc(gpk_model_animation_count, struct gpk_model_animation_frame **);
+  uint32 frames_count = 24;
+  for (uint32 i = 0; i < gpk_model_animation_count; i += 1) {
+    FbxAnimStack *fbx_anim_stack = fbx_scene->GetSrcObject<FbxAnimStack>(i);
+    FbxTimeSpan fbx_anim_time_span = fbx_anim_stack->GetLocalTimeSpan();
+    fbx_scene->SetCurrentAnimationStack(fbx_anim_stack);
+    FbxAnimEvaluator *fbx_anim_evaluator = fbx_scene->GetAnimationEvaluator();
+    double animation_duration = fbx_anim_time_span.GetDuration().GetSecondDouble();
+    double animation_frame_time = animation_duration / (frames_count - 1);
+    snprintf(gpk_model_animation_headers[i].name, sizeof(gpk_model_animation_headers[i].name), "%s", fbx_anim_stack->GetName());
+    gpk_model_animation_headers[i].duration = animation_duration;
+    gpk_model_animation_headers[i].frames_offset = (uint32)round_to_multi(sizeof(struct gpk_model_animation_header), 16);
+    gpk_model_animation_headers[i].frame_count = frames_count;
+    gpk_model_animation_headers[i].total_size = gpk_model_animation_headers[i].frames_offset + gpk_model_nodes_count * frames_count * sizeof(struct gpk_model_animation_frame);
+    gpk_model_animation_frame **gpk_model_animation_frames_1 = m_calloc(gpk_model_nodes_count, struct gpk_model_animation_frame *);
+    gpk_model_animation_frames[i] = gpk_model_animation_frames_1;
+    for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
+      gpk_model_animation_frame *gpk_model_animation_frames_2 = m_calloc(frames_count, struct gpk_model_animation_frame);
+      gpk_model_animation_frames_1[i] = gpk_model_animation_frames_2;
+      FbxNode *fbx_node = fbx_nodes[i];
+      double animation_current_time = 0;
+      for (uint32 i = 0; i < frames_count; i += 1) {
+        FbxTime fbx_time = {};
+        fbx_time.SetSecondDouble(animation_current_time);
+        FbxVector4 scaling = fbx_anim_evaluator->GetNodeLocalScaling(fbx_node, fbx_time);
+        FbxVector4 rotation = fbx_anim_evaluator->GetNodeLocalRotation(fbx_node, fbx_time);
+        FbxVector4 translation = fbx_anim_evaluator->GetNodeLocalTranslation(fbx_node, fbx_time);
+        gpk_model_animation_frames_2[i].scaling = {{(float)scaling.mData[0], (float)scaling.mData[1], (float)scaling.mData[2]}};
+        gpk_model_animation_frames_2[i].rotation = quat_from_euler_angles(degree_to_radian((float)rotation.mData[0]), degree_to_radian((float)rotation.mData[1]), degree_to_radian((float)rotation.mData[2]));
+        gpk_model_animation_frames_2[i].translation = {{(float)translation.mData[0], (float)translation.mData[1], (float)translation.mData[2]}};
+        gpk_model_animation_frames_2[i].time = animation_current_time;
+        animation_current_time += animation_frame_time;
+      }
+    }        
+  }      
 }
-
-// FbxNode **fbx_nodes = nullptr;
-// gpk_model_node *gpk_model_nodes = nullptr;
-// uint32 gpk_model_nodes_count = fbx_scene->GetNodeCount();
-// {
-//   fbx_nodes = m_calloc(gpk_model_nodes_count, FbxNode *);
-//   gpk_model_nodes = m_calloc(gpk_model_nodes_count, struct gpk_model_node);
-//   for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
-//     fbx_nodes[i] = fbx_scene->GetNode(i);
-//   }
-//   for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
-//     FbxNode *fbx_node = fbx_nodes[i];
-//     struct gpk_model_node gpk_model_node = {};
-//     gpk_model_node.parent = -1;
-//     gpk_model_node.local_transform = fbx_mat4_to_mat4(&(fbx_node->EvaluateLocalTransform()));
-//     FbxNode *parent = fbx_node->GetParent();
-//     for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
-//       if (fbx_nodes[i] == parent) {
-//         gpk_model_node.parent = i;
-//         break;
-//       }
-//     }
-//     gpk_model_nodes[i] = gpk_model_node;
-//   }
-// }
-// gpk_model_animation_header *gpk_model_animation_headers = nullptr;
-// gpk_model_animation_frame ***gpk_model_animation_frames = nullptr;
-// uint32 gpk_model_animation_count = fbx_scene->GetSrcObjectCount<FbxAnimStack>();
-// {
-//   gpk_model_animation_headers = m_calloc(gpk_model_animation_count, struct gpk_model_animation_header);
-//   gpk_model_animation_frames = m_calloc(gpk_model_animation_count, struct gpk_model_animation_frame **);
-//   uint32 frames_count = 24;
-//   for (uint32 i = 0; i < gpk_model_animation_count; i += 1) {
-//     FbxAnimStack *fbx_anim_stack = fbx_scene->GetSrcObject<FbxAnimStack>(i);
-//     FbxTimeSpan fbx_anim_time_span = fbx_anim_stack->GetLocalTimeSpan();
-//     fbx_scene->SetCurrentAnimationStack(fbx_anim_stack);
-//     FbxAnimEvaluator *fbx_anim_evaluator = fbx_scene->GetAnimationEvaluator();
-//     double animation_duration = fbx_anim_time_span.GetDuration().GetSecondDouble();
-//     double animation_frame_time = animation_duration / (frames_count - 1);
-//     snprintf(gpk_model_animation_headers[i].name, sizeof(gpk_model_animation_headers[i].name), "%s", fbx_anim_stack->GetName());
-//     gpk_model_animation_headers[i].duration = animation_duration;
-//     gpk_model_animation_headers[i].frames_offset = (uint32)round_to_multi(sizeof(struct gpk_model_animation_header), 16);
-//     gpk_model_animation_headers[i].frame_count = frames_count;
-//     gpk_model_animation_headers[i].total_size = gpk_model_animation_headers[i].frames_offset + gpk_model_nodes_count * frames_count * sizeof(struct gpk_model_animation_frame);
-//     gpk_model_animation_frame **gpk_model_animation_frames_1 = m_calloc(gpk_model_nodes_count, struct gpk_model_animation_frame *);
-//     gpk_model_animation_frames[i] = gpk_model_animation_frames_1;
-//     for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
-//       gpk_model_animation_frame *gpk_model_animation_frames_2 = m_calloc(frames_count, struct gpk_model_animation_frame);
-//       gpk_model_animation_frames_1[i] = gpk_model_animation_frames_2;
-//       FbxNode *fbx_node = fbx_nodes[i];
-//       double animation_current_time = 0;
-//       for (uint32 i = 0; i < frames_count; i += 1) {
-//         FbxTime fbx_time = {};
-//         fbx_time.SetSecondDouble(animation_current_time);
-//         FbxVector4 scaling = fbx_anim_evaluator->GetNodeLocalScaling(fbx_node, fbx_time);
-//         FbxVector4 rotation = fbx_anim_evaluator->GetNodeLocalRotation(fbx_node, fbx_time);
-//         FbxVector4 translation = fbx_anim_evaluator->GetNodeLocalTranslation(fbx_node, fbx_time);
-//         gpk_model_animation_frames_2[i].scaling = {{(float)scaling.mData[0], (float)scaling.mData[1], (float)scaling.mData[2]}};
-//         gpk_model_animation_frames_2[i].rotation = quat_from_euler_angles(degree_to_radian((float)rotation.mData[0]), degree_to_radian((float)rotation.mData[1]), degree_to_radian((float)rotation.mData[2]));
-//         gpk_model_animation_frames_2[i].translation = {{(float)translation.mData[0], (float)translation.mData[1], (float)translation.mData[2]}};
-//         gpk_model_animation_frames_2[i].time = animation_current_time;
-//         animation_current_time += animation_frame_time;
-//       }
-//     }        
-//   }      
-// }
-// gpk_image *gpk_model_images = m_calloc(fbx_scene->GetSrcObjectCount<FbxFileTexture>(), struct gpk_image);
-// uint32 gpk_model_images_count = 0;
-// gpk_model_mesh *gpk_model_meshes = m_calloc(gpk_model_nodes_count, struct gpk_model_mesh);
-// uint32 gpk_model_meshes_count = 0;
-// for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
-//   FbxNode *fbx_mesh_node = fbx_nodes[i];
-//   FbxMesh *fbx_mesh = fbx_mesh_node->GetMesh();
-//   if (!fbx_mesh) {
-//     continue;
-//   }
-//   bool mesh_previously_encountered = false;
-//   for (uint32 i = 0; i < gpk_model_meshes_count; i += 1) {
-//     if (gpk_model_meshes[i].fbx_mesh == fbx_mesh) {
-//       if (gpk_model_meshes[i].header.instance_count > 1) {
-//         m_error("multiple mesh instances found, not yet supported");
-//       }
-//       gpk_model_meshes[i].instances[gpk_model_meshes[i].header.instance_count++] = gpk_model_mesh_instance{fbx_mat4_to_mat4(&fbx_mesh_node->EvaluateGlobalTransform())};
-//       mesh_previously_encountered = true;
-//       break;
-//     }
-//   }
-//   if (mesh_previously_encountered) {
-//     m_error("multiple fbx mesh instances found, this is not yet supported");
-//   }
-//   struct gpk_model_mesh *new_mesh = &gpk_model_meshes[gpk_model_meshes_count++];
-//   {
-//     new_mesh->fbx_mesh = fbx_mesh;
-//     new_mesh->header.instances_offset = (uint32)round_to_multi(sizeof(struct gpk_model_mesh_header), 16);
-//     new_mesh->header.instance_count = 1;
-//     new_mesh->header.vertex_size = 12 /*position*/ + 4 /*uv*/ + 4 /*normal*/;
-//     new_mesh->instances = m_calloc(1, gpk_model_mesh_instance);
-//     new_mesh->instances[0] = gpk_model_mesh_instance{fbx_mat4_to_mat4(&fbx_mesh_node->EvaluateGlobalTransform())};
-//   }
-//   {
-//     if (fbx_mesh_node->GetMaterialCount() <= 0) {
-//       m_error("fbx mesh has no material");
-//     }
-//     new_mesh->header.materials_offset = (uint32)round_to_multi(new_mesh->header.instances_offset + new_mesh->header.instance_count * sizeof(struct gpk_model_mesh_instance), 16);
-//     new_mesh->header.material_count = fbx_mesh_node->GetMaterialCount();
-//     new_mesh->materials = m_calloc(new_mesh->header.material_count, gpk_model_mesh_material);
-//     for (uint32 i = 0; i < new_mesh->header.material_count; i += 1) {
-//       FbxSurfaceMaterial *fbx_surface_material = fbx_mesh_node->GetMaterial(i);
-//       gpk_model_mesh_material *material = &new_mesh->materials[i];
-//       m_assert(strlen(fbx_surface_material->GetName()) < sizeof(material->name));
-//       strcpy(material->name, fbx_surface_material->GetName());
-//       FbxProperty fbx_diffuse_property = fbx_surface_material->FindProperty(FbxSurfaceMaterial::sDiffuse);
-//       if (!fbx_diffuse_property.IsValid()) {
-//         m_error("fbx mesh surface material diffuse property not valid");
-//       }
-//       FbxFileTexture* fbx_diffuse_file_texture = fbx_diffuse_property.GetSrcObject<FbxFileTexture>(0);
-//       if (fbx_diffuse_file_texture) {
-//         material->diffuse_map_image_index = find_or_add_fbx_file_image(gpk_model_images, &gpk_model_images_count, fbx_diffuse_file_texture, gpk_image_format_b8g8r8a8_srgb);
-//         material->diffuse_map_image_scales = vec2{(float)fbx_diffuse_file_texture->GetScaleU(), (float)fbx_diffuse_file_texture->GetScaleV()};
-//       }
-//       else {
-//         m_error("fbx mesh surface diffuse material has no file texture");
-//       }
-//       FbxProperty fbx_normal_map_property = fbx_surface_material->FindProperty(FbxSurfaceMaterial::sNormalMap);
-//       if (!fbx_normal_map_property.IsValid()) {
-//         m_error("fbx mesh surface material normal map property not valid");
-//       }
-//       FbxFileTexture* fbx_normal_map_file_texture = fbx_normal_map_property.GetSrcObject<FbxFileTexture>(0);
-//       if (fbx_normal_map_file_texture) {
-//         material->normal_map_image_index = find_or_add_fbx_file_image(gpk_model_images, &gpk_model_images_count, fbx_normal_map_file_texture, gpk_image_format_b8g8r8a8, true);
-//         material->normal_map_image_scales = vec2{(float)fbx_normal_map_file_texture->GetScaleU(), (float)fbx_normal_map_file_texture->GetScaleV()};
-//       }
-//       else {
-//         material->normal_map_image_index = -1;
-//       }
-//     }
-//   }
-//   fbx_mesh->GenerateNormals();
-//   FbxSkin *fbx_skin = (FbxSkin*)fbx_mesh->GetDeformer(0, FbxDeformer::EDeformerType::eSkin);
-//   joint_weights *fbx_control_point_joint_weights = nullptr;
-//   {
-//     if (fbx_skin && fbx_skin->GetClusterCount() > 128) {
-//       m_error("mesh with more than 128(%d) joints detected", fbx_skin->GetClusterCount());
-//     }
-//     new_mesh->header.joints_offset = (uint32)round_to_multi(new_mesh->header.materials_offset + new_mesh->header.material_count * sizeof(struct gpk_model_mesh_material), 16);
-//     if (fbx_skin) {
-//       new_mesh->header.joint_count = fbx_skin->GetClusterCount();
-//       new_mesh->header.vertex_size += 12;
-//       new_mesh->joints = m_calloc(new_mesh->header.joint_count, struct gpk_model_mesh_joint);
-//       fbx_control_point_joint_weights = m_calloc(fbx_mesh->GetControlPointsCount(), struct joint_weights);
-//       for (int i = 0; i < fbx_skin->GetClusterCount(); i += 1) {
-//         uint8 joint_index = i;
-//         FbxCluster *fbx_cluster = fbx_skin->GetCluster(i);
-//         FbxNode *fbx_cluster_node = fbx_cluster->GetLink();
-//         uint32 fbx_cluster_node_index = -1;
-//         for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
-//           if (fbx_nodes[i] == fbx_cluster_node) {
-//             fbx_cluster_node_index = i;
-//             break;
-//           }
-//         }
-//         m_assert(fbx_cluster_node_index != -1);
-//         FbxAMatrix geometry_mat = FbxAMatrix(fbx_cluster_node->GetGeometricTranslation(FbxNode::eSourcePivot), fbx_mesh_node->GetGeometricRotation(FbxNode::eSourcePivot), fbx_cluster_node->GetGeometricScaling(FbxNode::eSourcePivot));
-//         FbxAMatrix transform_mat;
-//         FbxAMatrix transform_link_mat;
-//         fbx_cluster->GetTransformMatrix(transform_mat);
-//         fbx_cluster->GetTransformLinkMatrix(transform_link_mat);
-//         FbxAMatrix global_inv_bind_pose_mat = transform_link_mat.Inverse() * transform_mat * geometry_mat;
-//         new_mesh->joints[i] = gpk_model_mesh_joint{fbx_cluster_node_index, fbx_mat4_to_mat4(&global_inv_bind_pose_mat)};
-//         int *control_point_indices = fbx_cluster->GetControlPointIndices();
-//         double *control_point_weights = fbx_cluster->GetControlPointWeights();
-//         int control_points_count = fbx_cluster->GetControlPointIndicesCount();
-//         for (int i = 0; i < control_points_count; i += 1) {
-//           int index = control_point_indices[i];
-//           float weight = (float)control_point_weights[i];
-//           if (weight == 0.0f) {
-//             m_error("control point joint has 0 weight");
-//           }
-//           joint_weights *joint_weights = &fbx_control_point_joint_weights[index];
-//           bool found = false;
-//           for (uint32 i = 0; i < 4; i += 1) {
-//             if (joint_weights->weights[i] == 0.0f) {
-//               joint_weights->weights[i] = weight;
-//               joint_weights->joint_indices[i] = joint_index;
-//               found = true;
-//               break;
-//             }
-//           }
-//           if (!found) {
-//             m_error("control point with too many joint weights(> 4)");
-//           }
-//         }
-//       }    
-//     }
-//     else {
-//       if (gpk_model_animation_count != 0) {
-//         gpk_model_animation_count = 0;
-//       }
-//     }
-//   }
-//   uint32 polygons_count = fbx_mesh->GetPolygonCount();
-//   {
-//     for (uint32 i = 0; i < polygons_count; i += 1) {
-//       if (fbx_mesh->GetPolygonSize(i) != 3) {
-//         m_error("fbx model polygon count %d is not a triangle(%d vertices)", i, fbx_mesh->GetPolygonSize(i));
-//       }
-//     }
-//     new_mesh->header.vertices_offset = (uint32)round_to_multi(new_mesh->header.joints_offset + new_mesh->header.joint_count * sizeof(struct gpk_model_mesh_joint), 16);
-//     new_mesh->header.vertex_count = polygons_count * 3;
-//     new_mesh->header.total_size = new_mesh->header.vertices_offset + new_mesh->header.vertex_count * new_mesh->header.vertex_size;
-//     new_mesh->vertices_positions = m_calloc(polygons_count * 3, union vec3);
-//     new_mesh->vertices_uvs = m_calloc(polygons_count * 3, uv);
-//     new_mesh->vertices_normals = m_calloc(polygons_count * 3, uint32);
-//     new_mesh->vertices_joint_weights = fbx_skin ? m_calloc(polygons_count * 3, struct joint_weights) : nullptr;
-//   }
-//   FbxVector4 *fbx_control_points = fbx_mesh->GetControlPoints();
-//   int *polygon_control_point_indices = {};
-//   FbxArray<FbxVector2> polygon_uvs = {};
-//   FbxArray<FbxVector4> polygon_normals = {};
-//   polygon_control_point_indices = fbx_mesh->GetPolygonVertices();
-//   fbx_mesh->GetPolygonVertexNormals(polygon_normals);
-//   fbx_mesh->GetPolygonVertexUVs("map1", polygon_uvs);
-//   for (uint32 i = 0; i < polygons_count * 3; i += 1) {
-//     FbxVector4 control_point = fbx_control_points[polygon_control_point_indices[i]];
-//     FbxVector2 uv = polygon_uvs[i];
-//     FbxVector4 normal = polygon_normals[i];
-//     new_mesh->vertices_positions[i] = vec3{{(float)control_point.mData[0], (float)control_point.mData[1], (float)control_point.mData[2]}};
-//     new_mesh->vertices_uvs[i] = {float_to_half((float)uv.mData[0]), float_to_half(1.0f - (float)uv.mData[1])};
-//     new_mesh->vertices_normals[i] = pack_snorm_3x10_1x2((float)normal.mData[0], (float)normal.mData[1], (float)normal.mData[2], 0.0f);
-//     if (fbx_skin) {
-//       joint_weights *joint_weights_src = &fbx_control_point_joint_weights[polygon_control_point_indices[i]];
-//       joint_weights *joint_weights_dst = &new_mesh->vertices_joint_weights[i];
-//       *joint_weights_dst = *joint_weights_src;
-//       for (uint32 i = 0; i < 4; i += 1) {
-//         joint_weights_dst->half_float_weights[i] = float_to_half(joint_weights_dst->weights[i]);
-//       }
-//     }
-//   }
-// }
-// for (uint32 i = 0; i < gpk_model_meshes_count; i += 1) {
-//   if (gpk_model_meshes[i].header.vertex_size != gpk_model_meshes[0].header.vertex_size) {
-//     m_error("model mesh has different vertex size");
-//   }
-// }
-// struct gpk_model_header gpk_model_header = {};
-// {
-//   gpk_model_header.nodes_offset = (uint32)round_to_multi(sizeof(struct gpk_model_header), 16);
-//   gpk_model_header.node_count = gpk_model_nodes_count;
-//   uint32 offset = (uint32)round_to_multi(gpk_model_header.nodes_offset + gpk_model_header.node_count * sizeof(struct gpk_model_node), 16);
-//   gpk_model_header.animation_count = gpk_model_animation_count;
-//   m_assert(gpk_model_header.animation_count < m_countof(gpk_model_header.animation_offsets));
-//   for (uint32 i = 0; i < gpk_model_animation_count; i += 1) {
-//     gpk_model_header.animation_offsets[i] = offset;
-//     offset = round_to_multi(offset + gpk_model_animation_headers[i].total_size, 16);
-//   }
-//   gpk_model_header.image_count = gpk_model_images_count;
-//   m_assert(gpk_model_header.image_count < m_countof(gpk_model_header.image_offsets));
-//   for (uint32 i = 0; i < gpk_model_images_count; i += 1) {
-//     gpk_model_header.image_offsets[i] = offset;
-//     offset = round_to_multi(offset + gpk_model_images[i].header.total_size, 16);
-//   }
-//   gpk_model_header.mesh_count = gpk_model_meshes_count;
-//   m_assert(gpk_model_header.mesh_count < m_countof(gpk_model_header.mesh_offsets));
-//   for (uint32 i = 0; i < gpk_model_meshes_count; i += 1) {
-//     gpk_model_header.mesh_offsets[i] = offset;
-//     offset = round_to_multi(offset + gpk_model_meshes[i].header.total_size, 16);
-//   }
-//   gpk_model_header.total_size = offset;
-// }
-// {
-//   file_mapping import_file_mapping = {};
-//   create_file_mapping(cmdl.import_file_name, gpk_model_header.total_size, &import_file_mapping);
-//   *(struct gpk_model_header *)import_file_mapping.ptr = gpk_model_header;
-//   memcpy(import_file_mapping.ptr + gpk_model_header.nodes_offset, gpk_model_nodes, gpk_model_header.node_count * sizeof(struct gpk_model_node));
-//   for (uint32 i = 0; i < gpk_model_header.animation_count; i += 1) {
-//     uint8 *animation_ptr = import_file_mapping.ptr + gpk_model_header.animation_offsets[i];
-//     *(struct gpk_model_animation_header *)animation_ptr = gpk_model_animation_headers[i];
-//     animation_ptr += gpk_model_animation_headers[i].frames_offset;
-//     uint32 frames_count = gpk_model_animation_headers[i].frame_count;
-//     gpk_model_animation_frame **frames = gpk_model_animation_frames[i];
-//     for (uint32 i = 0; i < gpk_model_header.node_count; i += 1) {
-//       memcpy(animation_ptr, frames[i], frames_count * sizeof(struct gpk_model_animation_frame));
-//       animation_ptr += frames_count * sizeof(struct gpk_model_animation_frame);
-//     }
-//   }
-//   for (uint32 i = 0; i < gpk_model_header.image_count; i += 1) {
-//     uint8 *image_ptr = import_file_mapping.ptr + gpk_model_header.image_offsets[i];
-//     *(struct gpk_image_header *)image_ptr = gpk_model_images[i].header;
-//     memcpy(image_ptr + gpk_model_images[i].header.image_offset, gpk_model_images[i].image_data, gpk_model_images[i].header.image_size);
-//   }
-//   for (uint32 i = 0; i < gpk_model_header.mesh_count; i += 1) {
-//     struct gpk_model_mesh *mesh = &gpk_model_meshes[i];
-//     uint8 *mesh_ptr = import_file_mapping.ptr + gpk_model_header.mesh_offsets[i];
-//     *(struct gpk_model_mesh_header *)mesh_ptr = mesh->header;
-//     gpk_model_mesh_instance *instances = (gpk_model_mesh_instance *)(mesh_ptr + mesh->header.instances_offset);
-//     for (uint32 i = 0; i < mesh->header.instance_count; i += 1) {
-//       instances[i] = mesh->instances[i];
-//     }
-//     gpk_model_mesh_material *materials = (gpk_model_mesh_material *)(mesh_ptr + mesh->header.materials_offset);
-//     for (uint32 i = 0; i < mesh->header.material_count; i += 1) {
-//       materials[i] = mesh->materials[i];
-//     }
-//     gpk_model_mesh_joint *joints = (gpk_model_mesh_joint *)(mesh_ptr + mesh->header.joints_offset);
-//     for (uint32 i = 0; i < mesh->header.joint_count; i += 1) {
-//       joints[i] = mesh->joints[i];
-//     }
-//     uint8 *vertices = mesh_ptr + mesh->header.vertices_offset;
-//     for (uint32 i = 0; i < mesh->header.vertex_count; i += 1) {
-//       *(vec3 *)vertices = mesh->vertices_positions[i];
-//       vertices += 12;
-//       ((uint16 *)vertices)[0] = mesh->vertices_uvs[i].u;
-//       ((uint16 *)vertices)[1] = mesh->vertices_uvs[i].v;
-//       vertices += 4;
-//       *(uint32 *)vertices = mesh->vertices_normals[i];
-//       vertices += 4;
-//       if (mesh->vertices_joint_weights) {
-//         memcpy(vertices, mesh->vertices_joint_weights[i].joint_indices, 4);
-//         vertices += 4;
-//         memcpy(vertices, mesh->vertices_joint_weights[i].half_float_weights, 8);
-//         vertices += 8;
-//       }
-//     }
-//   }
-//   close_file_mapping(import_file_mapping);
-//   m_done("import model \"%s\" succeeded", cmdl.import_file_name);
-// }
-
+gpk_image *gpk_model_images = m_calloc(fbx_scene->GetSrcObjectCount<FbxFileTexture>(), struct gpk_image);
+uint32 gpk_model_images_count = 0;
+gpk_model_mesh *gpk_model_meshes = m_calloc(gpk_model_nodes_count, struct gpk_model_mesh);
+uint32 gpk_model_meshes_count = 0;
+for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
+  FbxNode *fbx_mesh_node = fbx_nodes[i];
+  FbxMesh *fbx_mesh = fbx_mesh_node->GetMesh();
+  if (!fbx_mesh) {
+    continue;
+  }
+  bool mesh_previously_encountered = false;
+  for (uint32 i = 0; i < gpk_model_meshes_count; i += 1) {
+    if (gpk_model_meshes[i].fbx_mesh == fbx_mesh) {
+      if (gpk_model_meshes[i].header.instance_count > 1) {
+        m_error("multiple mesh instances found, not yet supported");
+      }
+      gpk_model_meshes[i].instances[gpk_model_meshes[i].header.instance_count++] = gpk_model_mesh_instance{fbx_mat4_to_mat4(&fbx_mesh_node->EvaluateGlobalTransform())};
+      mesh_previously_encountered = true;
+      break;
+    }
+  }
+  if (mesh_previously_encountered) {
+    m_error("multiple fbx mesh instances found, this is not yet supported");
+  }
+  struct gpk_model_mesh *new_mesh = &gpk_model_meshes[gpk_model_meshes_count++];
+  {
+    new_mesh->fbx_mesh = fbx_mesh;
+    new_mesh->header.instances_offset = (uint32)round_to_multi(sizeof(struct gpk_model_mesh_header), 16);
+    new_mesh->header.instance_count = 1;
+    new_mesh->header.vertex_size = 12 /*position*/ + 4 /*uv*/ + 4 /*normal*/;
+    new_mesh->instances = m_calloc(1, gpk_model_mesh_instance);
+    new_mesh->instances[0] = gpk_model_mesh_instance{fbx_mat4_to_mat4(&fbx_mesh_node->EvaluateGlobalTransform())};
+  }
+  {
+    if (fbx_mesh_node->GetMaterialCount() <= 0) {
+      m_error("fbx mesh has no material");
+    }
+    new_mesh->header.materials_offset = (uint32)round_to_multi(new_mesh->header.instances_offset + new_mesh->header.instance_count * sizeof(struct gpk_model_mesh_instance), 16);
+    new_mesh->header.material_count = fbx_mesh_node->GetMaterialCount();
+    new_mesh->materials = m_calloc(new_mesh->header.material_count, gpk_model_mesh_material);
+    for (uint32 i = 0; i < new_mesh->header.material_count; i += 1) {
+      FbxSurfaceMaterial *fbx_surface_material = fbx_mesh_node->GetMaterial(i);
+      gpk_model_mesh_material *material = &new_mesh->materials[i];
+      m_assert(strlen(fbx_surface_material->GetName()) < sizeof(material->name));
+      strcpy(material->name, fbx_surface_material->GetName());
+      FbxProperty fbx_diffuse_property = fbx_surface_material->FindProperty(FbxSurfaceMaterial::sDiffuse);
+      if (!fbx_diffuse_property.IsValid()) {
+        m_error("fbx mesh surface material diffuse property not valid");
+      }
+      FbxFileTexture* fbx_diffuse_file_texture = fbx_diffuse_property.GetSrcObject<FbxFileTexture>(0);
+      if (fbx_diffuse_file_texture) {
+        material->diffuse_map_image_index = find_or_add_fbx_file_image(gpk_model_images, &gpk_model_images_count, fbx_diffuse_file_texture, gpk_image_format_b8g8r8a8_srgb);
+        material->diffuse_map_image_scales = vec2{(float)fbx_diffuse_file_texture->GetScaleU(), (float)fbx_diffuse_file_texture->GetScaleV()};
+      }
+      else {
+        m_error("fbx mesh surface diffuse material has no file texture");
+      }
+      FbxProperty fbx_normal_map_property = fbx_surface_material->FindProperty(FbxSurfaceMaterial::sNormalMap);
+      if (!fbx_normal_map_property.IsValid()) {
+        m_error("fbx mesh surface material normal map property not valid");
+      }
+      FbxFileTexture* fbx_normal_map_file_texture = fbx_normal_map_property.GetSrcObject<FbxFileTexture>(0);
+      if (fbx_normal_map_file_texture) {
+        material->normal_map_image_index = find_or_add_fbx_file_image(gpk_model_images, &gpk_model_images_count, fbx_normal_map_file_texture, gpk_image_format_b8g8r8a8, true);
+        material->normal_map_image_scales = vec2{(float)fbx_normal_map_file_texture->GetScaleU(), (float)fbx_normal_map_file_texture->GetScaleV()};
+      }
+      else {
+        material->normal_map_image_index = -1;
+      }
+    }
+  }
+  fbx_mesh->GenerateNormals();
+  FbxSkin *fbx_skin = (FbxSkin*)fbx_mesh->GetDeformer(0, FbxDeformer::EDeformerType::eSkin);
+  joint_weights *fbx_control_point_joint_weights = nullptr;
+  {
+    if (fbx_skin && fbx_skin->GetClusterCount() > 128) {
+      m_error("mesh with more than 128(%d) joints detected", fbx_skin->GetClusterCount());
+    }
+    new_mesh->header.joints_offset = (uint32)round_to_multi(new_mesh->header.materials_offset + new_mesh->header.material_count * sizeof(struct gpk_model_mesh_material), 16);
+    if (fbx_skin) {
+      new_mesh->header.joint_count = fbx_skin->GetClusterCount();
+      new_mesh->header.vertex_size += 12;
+      new_mesh->joints = m_calloc(new_mesh->header.joint_count, struct gpk_model_mesh_joint);
+      fbx_control_point_joint_weights = m_calloc(fbx_mesh->GetControlPointsCount(), struct joint_weights);
+      for (int i = 0; i < fbx_skin->GetClusterCount(); i += 1) {
+        uint8 joint_index = i;
+        FbxCluster *fbx_cluster = fbx_skin->GetCluster(i);
+        FbxNode *fbx_cluster_node = fbx_cluster->GetLink();
+        uint32 fbx_cluster_node_index = -1;
+        for (uint32 i = 0; i < gpk_model_nodes_count; i += 1) {
+          if (fbx_nodes[i] == fbx_cluster_node) {
+            fbx_cluster_node_index = i;
+            break;
+          }
+        }
+        m_assert(fbx_cluster_node_index != -1);
+        FbxAMatrix geometry_mat = FbxAMatrix(fbx_cluster_node->GetGeometricTranslation(FbxNode::eSourcePivot), fbx_mesh_node->GetGeometricRotation(FbxNode::eSourcePivot), fbx_cluster_node->GetGeometricScaling(FbxNode::eSourcePivot));
+        FbxAMatrix transform_mat;
+        FbxAMatrix transform_link_mat;
+        fbx_cluster->GetTransformMatrix(transform_mat);
+        fbx_cluster->GetTransformLinkMatrix(transform_link_mat);
+        FbxAMatrix global_inv_bind_pose_mat = transform_link_mat.Inverse() * transform_mat * geometry_mat;
+        new_mesh->joints[i] = gpk_model_mesh_joint{fbx_cluster_node_index, fbx_mat4_to_mat4(&global_inv_bind_pose_mat)};
+        int *control_point_indices = fbx_cluster->GetControlPointIndices();
+        double *control_point_weights = fbx_cluster->GetControlPointWeights();
+        int control_points_count = fbx_cluster->GetControlPointIndicesCount();
+        for (int i = 0; i < control_points_count; i += 1) {
+          int index = control_point_indices[i];
+          float weight = (float)control_point_weights[i];
+          if (weight == 0.0f) {
+            m_error("control point joint has 0 weight");
+          }
+          joint_weights *joint_weights = &fbx_control_point_joint_weights[index];
+          bool found = false;
+          for (uint32 i = 0; i < 4; i += 1) {
+            if (joint_weights->weights[i] == 0.0f) {
+              joint_weights->weights[i] = weight;
+              joint_weights->joint_indices[i] = joint_index;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            m_error("control point with too many joint weights(> 4)");
+          }
+        }
+      }    
+    }
+    else {
+      if (gpk_model_animation_count != 0) {
+        gpk_model_animation_count = 0;
+      }
+    }
+  }
+  uint32 polygons_count = fbx_mesh->GetPolygonCount();
+  {
+    for (uint32 i = 0; i < polygons_count; i += 1) {
+      if (fbx_mesh->GetPolygonSize(i) != 3) {
+        m_error("fbx model polygon count %d is not a triangle(%d vertices)", i, fbx_mesh->GetPolygonSize(i));
+      }
+    }
+    new_mesh->header.vertices_offset = (uint32)round_to_multi(new_mesh->header.joints_offset + new_mesh->header.joint_count * sizeof(struct gpk_model_mesh_joint), 16);
+    new_mesh->header.vertex_count = polygons_count * 3;
+    new_mesh->header.total_size = new_mesh->header.vertices_offset + new_mesh->header.vertex_count * new_mesh->header.vertex_size;
+    new_mesh->vertices_positions = m_calloc(polygons_count * 3, union vec3);
+    new_mesh->vertices_uvs = m_calloc(polygons_count * 3, uv);
+    new_mesh->vertices_normals = m_calloc(polygons_count * 3, uint32);
+    new_mesh->vertices_joint_weights = fbx_skin ? m_calloc(polygons_count * 3, struct joint_weights) : nullptr;
+  }
+  FbxVector4 *fbx_control_points = fbx_mesh->GetControlPoints();
+  int *polygon_control_point_indices = {};
+  FbxArray<FbxVector2> polygon_uvs = {};
+  FbxArray<FbxVector4> polygon_normals = {};
+  polygon_control_point_indices = fbx_mesh->GetPolygonVertices();
+  fbx_mesh->GetPolygonVertexNormals(polygon_normals);
+  fbx_mesh->GetPolygonVertexUVs("map1", polygon_uvs);
+  for (uint32 i = 0; i < polygons_count * 3; i += 1) {
+    FbxVector4 control_point = fbx_control_points[polygon_control_point_indices[i]];
+    FbxVector2 uv = polygon_uvs[i];
+    FbxVector4 normal = polygon_normals[i];
+    new_mesh->vertices_positions[i] = vec3{{(float)control_point.mData[0], (float)control_point.mData[1], (float)control_point.mData[2]}};
+    new_mesh->vertices_uvs[i] = {float_to_half((float)uv.mData[0]), float_to_half(1.0f - (float)uv.mData[1])};
+    new_mesh->vertices_normals[i] = pack_snorm_3x10_1x2((float)normal.mData[0], (float)normal.mData[1], (float)normal.mData[2], 0.0f);
+    if (fbx_skin) {
+      joint_weights *joint_weights_src = &fbx_control_point_joint_weights[polygon_control_point_indices[i]];
+      joint_weights *joint_weights_dst = &new_mesh->vertices_joint_weights[i];
+      *joint_weights_dst = *joint_weights_src;
+      for (uint32 i = 0; i < 4; i += 1) {
+        joint_weights_dst->half_float_weights[i] = float_to_half(joint_weights_dst->weights[i]);
+      }
+    }
+  }
+}
+for (uint32 i = 0; i < gpk_model_meshes_count; i += 1) {
+  if (gpk_model_meshes[i].header.vertex_size != gpk_model_meshes[0].header.vertex_size) {
+    m_error("model mesh has different vertex size");
+  }
+}
+struct gpk_model_header gpk_model_header = {};
+{
+  gpk_model_header.nodes_offset = (uint32)round_to_multi(sizeof(struct gpk_model_header), 16);
+  gpk_model_header.node_count = gpk_model_nodes_count;
+  uint32 offset = (uint32)round_to_multi(gpk_model_header.nodes_offset + gpk_model_header.node_count * sizeof(struct gpk_model_node), 16);
+  gpk_model_header.animation_count = gpk_model_animation_count;
+  m_assert(gpk_model_header.animation_count < m_countof(gpk_model_header.animation_offsets));
+  for (uint32 i = 0; i < gpk_model_animation_count; i += 1) {
+    gpk_model_header.animation_offsets[i] = offset;
+    offset = round_to_multi(offset + gpk_model_animation_headers[i].total_size, 16);
+  }
+  gpk_model_header.image_count = gpk_model_images_count;
+  m_assert(gpk_model_header.image_count < m_countof(gpk_model_header.image_offsets));
+  for (uint32 i = 0; i < gpk_model_images_count; i += 1) {
+    gpk_model_header.image_offsets[i] = offset;
+    offset = round_to_multi(offset + gpk_model_images[i].header.total_size, 16);
+  }
+  gpk_model_header.mesh_count = gpk_model_meshes_count;
+  m_assert(gpk_model_header.mesh_count < m_countof(gpk_model_header.mesh_offsets));
+  for (uint32 i = 0; i < gpk_model_meshes_count; i += 1) {
+    gpk_model_header.mesh_offsets[i] = offset;
+    offset = round_to_multi(offset + gpk_model_meshes[i].header.total_size, 16);
+  }
+  gpk_model_header.total_size = offset;
+}
+{
+  file_mapping import_file_mapping = {};
+  create_file_mapping(cmdl.import_file_name, gpk_model_header.total_size, &import_file_mapping);
+  *(struct gpk_model_header *)import_file_mapping.ptr = gpk_model_header;
+  memcpy(import_file_mapping.ptr + gpk_model_header.nodes_offset, gpk_model_nodes, gpk_model_header.node_count * sizeof(struct gpk_model_node));
+  for (uint32 i = 0; i < gpk_model_header.animation_count; i += 1) {
+    uint8 *animation_ptr = import_file_mapping.ptr + gpk_model_header.animation_offsets[i];
+    *(struct gpk_model_animation_header *)animation_ptr = gpk_model_animation_headers[i];
+    animation_ptr += gpk_model_animation_headers[i].frames_offset;
+    uint32 frames_count = gpk_model_animation_headers[i].frame_count;
+    gpk_model_animation_frame **frames = gpk_model_animation_frames[i];
+    for (uint32 i = 0; i < gpk_model_header.node_count; i += 1) {
+      memcpy(animation_ptr, frames[i], frames_count * sizeof(struct gpk_model_animation_frame));
+      animation_ptr += frames_count * sizeof(struct gpk_model_animation_frame);
+    }
+  }
+  for (uint32 i = 0; i < gpk_model_header.image_count; i += 1) {
+    uint8 *image_ptr = import_file_mapping.ptr + gpk_model_header.image_offsets[i];
+    *(struct gpk_image_header *)image_ptr = gpk_model_images[i].header;
+    memcpy(image_ptr + gpk_model_images[i].header.image_offset, gpk_model_images[i].image_data, gpk_model_images[i].header.image_size);
+  }
+  for (uint32 i = 0; i < gpk_model_header.mesh_count; i += 1) {
+    struct gpk_model_mesh *mesh = &gpk_model_meshes[i];
+    uint8 *mesh_ptr = import_file_mapping.ptr + gpk_model_header.mesh_offsets[i];
+    *(struct gpk_model_mesh_header *)mesh_ptr = mesh->header;
+    gpk_model_mesh_instance *instances = (gpk_model_mesh_instance *)(mesh_ptr + mesh->header.instances_offset);
+    for (uint32 i = 0; i < mesh->header.instance_count; i += 1) {
+      instances[i] = mesh->instances[i];
+    }
+    gpk_model_mesh_material *materials = (gpk_model_mesh_material *)(mesh_ptr + mesh->header.materials_offset);
+    for (uint32 i = 0; i < mesh->header.material_count; i += 1) {
+      materials[i] = mesh->materials[i];
+    }
+    gpk_model_mesh_joint *joints = (gpk_model_mesh_joint *)(mesh_ptr + mesh->header.joints_offset);
+    for (uint32 i = 0; i < mesh->header.joint_count; i += 1) {
+      joints[i] = mesh->joints[i];
+    }
+    uint8 *vertices = mesh_ptr + mesh->header.vertices_offset;
+    for (uint32 i = 0; i < mesh->header.vertex_count; i += 1) {
+      *(vec3 *)vertices = mesh->vertices_positions[i];
+      vertices += 12;
+      ((uint16 *)vertices)[0] = mesh->vertices_uvs[i].u;
+      ((uint16 *)vertices)[1] = mesh->vertices_uvs[i].v;
+      vertices += 4;
+      *(uint32 *)vertices = mesh->vertices_normals[i];
+      vertices += 4;
+      if (mesh->vertices_joint_weights) {
+        memcpy(vertices, mesh->vertices_joint_weights[i].joint_indices, 4);
+        vertices += 4;
+        memcpy(vertices, mesh->vertices_joint_weights[i].half_float_weights, 8);
+        vertices += 8;
+      }
+    }
+  }
+  close_file_mapping(import_file_mapping);
+  m_done("import model \"%s\" succeeded", cmdl.import_file_name);
+}
+#endif

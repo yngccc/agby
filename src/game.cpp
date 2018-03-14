@@ -4,19 +4,13 @@
 
 #include "platform_windows.cpp"
 
-#define RAPIDJSON_SSE2
-#define RAPIDJSON_ASSERT(x) m_assert(x)
-#include "../vendor/include/rapidjson/document.h"
-#include "../vendor/include/rapidjson/prettywriter.h"
-#include "../vendor/include/rapidjson/error/en.h"
-
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "../vendor/include/imgui/imgui_draw.cpp"
 #include "../vendor/include/imgui/imgui.cpp"
 
 #include "math.cpp"
 #include "vulkan.cpp"
-#include "assets.cpp"
+#include "gpk.cpp"
 #include "level.cpp"
 
 #include <atomic>
@@ -125,6 +119,8 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				console("damping %f\n", level->physics_components[i].bt_rigid_body->getLinearDamping());
 			}
 		}
+
+		entity_get_physics_component(level, level->player_entity_index)->bt_rigid_body->setActivationState(DISABLE_DEACTIVATION);
 	}
 
 	LARGE_INTEGER performance_frequency = {};

@@ -9,28 +9,27 @@
 #include "../vendor/include/uvatlas/uvatlas.h"
 #include "../vendor/include/directxmesh/directxmesh.h"
 
-#define ASSETS_IMPORT_STRUCT_ONLY
-#include "assets.cpp"
 #include "vulkan.cpp"
+#include "gpk.cpp"
 
 int main(int argc, char **argv) {
+	set_exe_dir_as_current();
 	if (argc != 2) {
 		fatal("incorrect command line arguments");
 	}
-	set_exe_dir_as_current();
-	char *model_gpk_file = argv[1];
-	file_mapping model_gpk_file_mapping = {};
-	if (!open_file_mapping(model_gpk_file, &model_gpk_file_mapping)) {
-		fatal("cannot open file %s", model_gpk_file);
+	char *gpk_file = argv[1];
+	file_mapping gpk_file_mapping = {};
+	if (!open_file_mapping(gpk_file, &gpk_file_mapping)) {
+		fatal("cannot open file %s", gpk_file);
 	}
-	m_scope_exit(close_file_mapping(model_gpk_file_mapping));
-	gpk_model_header *gpk_model_header = (struct gpk_model_header *)model_gpk_file_mapping.ptr;
+	m_scope_exit(close_file_mapping(gpk_file_mapping));
+	gpk_model *gpk_model = (struct gpk_model *)gpk_file_mapping.ptr;
 	uint32 total_vertex_count = 0;
 	uint32 total_index_count = 0;
-	for (uint32 i = 0; i < gpk_model_header->mesh_count; i += 1) {
-		gpk_model_mesh_header *gpk_model_mesh_header = (struct gpk_model_mesh_header *)((uint8 *)gpk_model_header + gpk_model_header->mesh_offsets[i]);
-		total_vertex_count += gpk_model_mesh_header->vertex_count;
-		total_index_count += gpk_model_mesh_header->index_count;
+	for (uint32 i = 0; i < gpk_model->mesh_count; i += 1) {
+		gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
+		total_vertex_count += gpk_model_mesh->vertex_count;
+		total_index_count += gpk_model_mesh->index_count;
 	}
 	m_assert(total_index_count % 3 == 0);
 	DirectX::XMFLOAT3 *positions = (DirectX::XMFLOAT3 *)calloc(total_vertex_count, sizeof(DirectX::XMFLOAT3));
@@ -38,22 +37,20 @@ int main(int argc, char **argv) {
 	uint32 *adjaceny_indices = (uint32 *)calloc(total_index_count, sizeof(uint32));
 	uint32 accumulate_position_index = 0;
 	uint32 accumulate_index_index = 0;
-	for (uint32 i = 0; i < gpk_model_header->mesh_count; i += 1) {
-		gpk_model_mesh_header *gpk_model_mesh_header = (struct gpk_model_mesh_header *)((uint8 *)gpk_model_header + gpk_model_header->mesh_offsets[i]);
-		mat4 instance_transform = ((gpk_model_mesh_instance *)((uint8 *)gpk_model_mesh_header + gpk_model_mesh_header->instances_offset))->transform;
-		uint8 *gpk_vertices = (uint8 *)gpk_model_mesh_header + gpk_model_mesh_header->vertices_offset;
-		uint8 *gpk_indices = (uint8 *)gpk_model_mesh_header + gpk_model_mesh_header->indices_offset;
-		for (uint32 i = 0; i < gpk_model_mesh_header->vertex_count; i += 1) {
-			vec3 vertex = *(vec3 *)(gpk_vertices + gpk_model_mesh_header->vertex_size * i);
-			vertex = instance_transform * vertex;
-			positions[accumulate_position_index + i] = {vertex.x, vertex.y, vertex.z};
-		}
-		for (uint32 i = 0; i < gpk_model_mesh_header->index_count; i += 1) {
-			uint16 index = *(uint16 *)(gpk_indices + gpk_model_mesh_header->index_size * i);
+	for (uint32 i = 0; i < gpk_model->mesh_count; i += 1) {
+		gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
+		uint8 *gpk_indices = gpk_file_mapping.ptr + gpk_model_mesh->indices_offset;
+		uint8 *gpk_vertices = gpk_file_mapping.ptr + gpk_model_mesh->vertices_offset;
+		for (uint32 i = 0; i < gpk_model_mesh->index_count; i += 1) {
+			uint16 index = *(uint16 *)(gpk_indices + sizeof(uint16) * i);
 			indices[accumulate_index_index + i] = accumulate_position_index + index;
 		}
-		accumulate_position_index += gpk_model_mesh_header->vertex_count;
-		accumulate_index_index += gpk_model_mesh_header->index_count;
+		for (uint32 i = 0; i < gpk_model_mesh->vertex_count; i += 1) {
+			vec3 vertex = *(vec3 *)(gpk_vertices + gpk_model_mesh->vertex_size * i);
+			positions[accumulate_position_index + i] = {vertex.x, vertex.y, vertex.z};
+		}
+		accumulate_index_index += gpk_model_mesh->index_count;
+		accumulate_position_index += gpk_model_mesh->vertex_count;
 	}
 	HRESULT generate_adjacency_result = GenerateAdjacencyAndPointReps(indices, total_index_count / 3, positions, total_vertex_count, 0, nullptr, adjaceny_indices);
 	m_assert(generate_adjacency_result == S_OK);

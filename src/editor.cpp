@@ -5,7 +5,7 @@
 #include "platform_windows.cpp"
 #include "math.cpp"
 #include "vulkan.cpp"
-#include "assets.cpp"
+#include "gpk.cpp"
 #include "level.cpp"
 #include "geometry.cpp"
 
@@ -262,43 +262,43 @@ void editor_select_new_entity(editor* editor, uint32 entity_index) {
 }
 
 bool ray_intersect_model(ray ray, model *model, mat4 model_transform, uint32 *mesh_index, float *distance) {
-	float min_distance = ray.len;
-	uint32 min_mesh_index = UINT32_MAX;
-	for (uint32 i = 0; i < model->mesh_count; i += 1) {
-		model_mesh *mesh = &model->meshes[i];
-		uint32 current_mesh_index = i;
-		for (uint32 i = 0; i < mesh->instance_count; i += 1) {
-			model_mesh_instance *instance = &mesh->instances[i];
-			mat4 transform = model_transform * instance->transform;
-			for (uint32 i = 0; i < mesh->index_count / 3; i += 1) {
-				vec3 a = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 0]);
-				vec3 b = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 1]);
-				vec3 c = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 2]);
-				a = transform * a;
-				b = transform * b;
-				c = transform * c;
-				float d = 0;
-				if (ray_intersect_triangle(ray, a, b, c, &d) && d < min_distance) {
-					min_distance = d;
-					min_mesh_index = current_mesh_index;
-				}
-			}
-		}
-	}
-	if (min_mesh_index != UINT32_MAX) {
-		*mesh_index = min_mesh_index;
-		*distance = min_distance;
-		return true;
-	}
-	else {
-		return false;
-	}
+	// float min_distance = ray.len;
+	// uint32 min_mesh_index = UINT32_MAX;
+	// for (uint32 i = 0; i < model->mesh_count; i += 1) {
+	// 	model_mesh *mesh = &model->meshes[i];
+	// 	uint32 current_mesh_index = i;
+	// 	for (uint32 i = 0; i < mesh->instance_count; i += 1) {
+	// 		model_mesh_instance *instance = &mesh->instances[i];
+	// 		mat4 transform = model_transform * instance->transform_mat;
+	// 		for (uint32 i = 0; i < mesh->index_count / 3; i += 1) {
+	// 			vec3 a = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 0]);
+	// 			vec3 b = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 1]);
+	// 			vec3 c = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 2]);
+	// 			a = transform * a;
+	// 			b = transform * b;
+	// 			c = transform * c;
+	// 			float d = 0;
+	// 			if (ray_intersect_triangle(ray, a, b, c, &d) && d < min_distance) {
+	// 				min_distance = d;
+	// 				min_mesh_index = current_mesh_index;
+	// 			}
+	// 		}
+	// 	}
+	// }
+	// if (min_mesh_index != UINT32_MAX) {
+	// 	*mesh_index = min_mesh_index;
+	// 	*distance = min_distance;
+	// 	return true;
+	// }
+	// else {
+	// 	return false;
+	// }
+	return false;
 }
 
 int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd_line_str, int cmd_show) {
 	set_exe_dir_as_current();
 	show_command_prompt();
-	assets_import_issue_jobs();
 
 	memory_arena general_memory_arena = {};
 	general_memory_arena.name = "general";
@@ -781,19 +781,19 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				if (*entity_flag & entity_component_flag_render) {
 					ImGui::PushID("render_component");
 					if (ImGui::CollapsingHeader("Render Component##collapsing_header")) {
-						entity_render_component *entity_render_component = entity_get_render_component(level, editor->entity_index);
-						const char *model_combo_name = (entity_render_component->model_index < level->model_count) ? level->models[entity_render_component->model_index].file_name : nullptr;
-						if (ImGui::BeginCombo("models##models_combo", model_combo_name)) {
+						entity_render_component *render_component = entity_get_render_component(level, editor->entity_index);
+						const char *model_file_combo_name = (render_component->model_index < level->model_count) ? level->models[render_component->model_index].gpk_file : nullptr;
+						if (ImGui::BeginCombo("models##models_combo", model_file_combo_name)) {
 							for (uint32 i = 0; i < level->model_count; i += 1) {
-								if (ImGui::Selectable(level->models[i].file_name, entity_render_component->model_index == i)) {
-									entity_render_component->model_index = i;
+								if (ImGui::Selectable(level->models[i].gpk_file, render_component->model_index == i)) {
+									render_component->model_index = i;
 									editor->entity_mesh_index = UINT32_MAX;
 								}
 							}
 							ImGui::EndCombo();
 						}
-						if (entity_render_component->model_index < level->model_count) {
-							model *model = &level->models[entity_render_component->model_index];
+						if (render_component->model_index < level->model_count) {
+							model *model = &level->models[render_component->model_index];
 							const char *mesh_combo_name = (editor->entity_mesh_index < model->mesh_count) ? model->meshes[editor->entity_mesh_index].name : nullptr;
 							if (ImGui::BeginCombo("meshes##model_meshes_combo", mesh_combo_name)) {
 								if (ImGui::Selectable("", editor->entity_mesh_index >= model->mesh_count)) {
@@ -806,11 +806,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 								}
 								ImGui::EndCombo();
 							}
-						}
-						if (entity_render_component->model_index < level->model_count) {
-							ImGui::SliderFloat("uv scale u##material_uv_scale_u", &entity_render_component->uv_scale[0], 1.0f, 10.0f);
-							ImGui::SliderFloat("uv scale v##material_uv_scale_v", &entity_render_component->uv_scale[1], 1.0f, 10.0f);
-							ImGui::SliderFloat("height map scale##material_height_map_scale", &entity_render_component->height_map_scale, 0.0f, 0.2f);
 						}
 					}
 					ImGui::PopID();
@@ -942,43 +937,44 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							if (component_type_index == 0) {
 								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_render;
-								entity_render_component *entity_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
-								entity_render_component->uv_scale = {1, 1};
+								entity_render_component *render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
+								render_component->model_index = UINT32_MAX;
+								render_component->model_adjustment_transform = transform_identity();
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].render_component = entity_render_component;
+								level->entity_modifications[editor->entity_index].render_component = render_component;
 							}
 							else if (component_type_index == 1) {
 								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_collision;
-								entity_collision_component *entity_collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].collision_component = entity_collision_component;
+								level->entity_modifications[editor->entity_index].collision_component = collision_component;
 							}
 							else if (component_type_index == 2) {
 								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_light;
-								entity_light_component *entity_light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
 								if (light_type_index == 0) {
-									entity_light_component->light_type = {light_type_ambient};
-									entity_light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
+									light_component->light_type = {light_type_ambient};
+									light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
 								}
 								else if (light_type_index == 1) {
-									entity_light_component->light_type = {light_type_directional};
-									entity_light_component->directional_light = directional_light{{0.1f, 0.1f, 0.1f}, {0, -1, 0}};
+									light_component->light_type = {light_type_directional};
+									light_component->directional_light = directional_light{{0.1f, 0.1f, 0.1f}, {0, -1, 0}};
 								}
 								else if (light_type_index == 2) {
-									entity_light_component->light_type = {light_type_point};
-									entity_light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
+									light_component->light_type = {light_type_point};
+									light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
 								}
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].light_component = entity_light_component;
+								level->entity_modifications[editor->entity_index].light_component = light_component;
 							}
 							else if (component_type_index == 3) {
 								uint32 *entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
 								*entity_flag = level->entity_flags[editor->entity_index] | entity_component_flag_physics;
-								entity_physics_component *entity_physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_physics_component *physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
 								level->entity_modifications[editor->entity_index].flag = entity_flag;
-								level->entity_modifications[editor->entity_index].physics_component = entity_physics_component;
+								level->entity_modifications[editor->entity_index].physics_component = physics_component;
 							}
 							ImGui::CloseCurrentPopup();
 						}
@@ -1281,7 +1277,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					if (entity_render_component->model_index < level->model_count && editor->entity_mesh_index < level->models[entity_render_component->model_index].mesh_count) {
 						for (uint32 i = 0; i < level->render_data.model_count; i += 1) {
 							if (level->render_data.models[i].model_index == entity_render_component->model_index) {
-								level->render_data.models[i].meshes_render_data[editor->entity_mesh_index].render_vertices_outline = true;
+								level->render_data.models[i].meshes[editor->entity_mesh_index].render_vertices_outline = true;
 							}
 						}														
 					}
