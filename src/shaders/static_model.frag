@@ -34,12 +34,11 @@ layout(set = 0, binding = 1) uniform mesh_uniform {
   float height_map_scale;
 };
 
-layout(set = 1, binding = 0) uniform sampler2D diffuse_map;
-layout(set = 1, binding = 1) uniform sampler2D normal_map;
-layout(set = 1, binding = 2) uniform sampler2D metallic_map;
-layout(set = 1, binding = 3) uniform sampler2D roughness_map;
-layout(set = 1, binding = 4) uniform sampler2D ao_map;
-layout(set = 1, binding = 5) uniform sampler2D height_map;
+layout(set = 1, binding = 0) uniform sampler2D albedo_map;
+layout(set = 1, binding = 1) uniform sampler2D metallic_map;
+layout(set = 1, binding = 2) uniform sampler2D roughness_map;
+layout(set = 1, binding = 3) uniform sampler2D normal_map;
+layout(set = 1, binding = 4) uniform sampler2D height_map;
 
 layout(set = 2, binding = 0) uniform sampler2D shadow_map;
 
@@ -121,7 +120,7 @@ void main() {
   vec2 normal_xy = texture(normal_map, uv).xy * 2 - 1;
   float normal_z = sqrt(1 - normal_xy.x * normal_xy.x - normal_xy.y * normal_xy.y);
   vec3 normal = vec3(normal_xy, normal_z);
-  vec3 albedo = texture(diffuse_map, uv).rgb;
+  vec3 albedo = texture(albedo_map, uv).rgb;
   float metallic = texture(metallic_map, uv).r;
   float roughness = texture(roughness_map, uv).r;
 

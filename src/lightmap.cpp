@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
 	m_assert(uv_atlas_create_result == S_OK);
 
 	vulkan_device vulkan_device = {};
-	vulkan_device_initialize(&vulkan_device);
+	initialize_vulkan_device(&vulkan_device);
 	VkRenderPass vulkan_render_pass = {};
 	VkImage vulkan_framebuffer_attachment_image = {};
 	VkImageView vulkan_framebuffer_attachment_image_view = {};

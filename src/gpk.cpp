@@ -24,6 +24,8 @@ struct gpk_model {
 	uint32 mesh_count;
 	uint32 material_offset;
 	uint32 material_count;
+	uint32 image_offset;
+	uint32 image_count;
 };
 
 struct gpk_model_scene {
@@ -49,58 +51,36 @@ struct gpk_model_mesh {
 	uint32 vertex_count;
 };
 
-enum gpk_texture_format {
-	gpk_texture_format_b8r8g8,
-	gpk_texture_format_b8r8g8_srgb,
-	gpk_texture_format_b8r8g8a8,
-	gpk_texture_format_b8r8g8a8_srgb,
-	gpk_texture_format_bc1,
-	gpk_texture_format_bc1_srgb,
-	gpk_texture_format_bc5
-};
-
-struct gpk_texture {
-	uint32 texture_offset;
-	uint32 texture_size;
-	gpk_texture_format texture_format;
-	uint32 texture_pixel_size;
-	uint32 texture_width;
-	uint32 texture_height;
-	uint32 texture_mipmap_count;
-};
-
 struct gpk_model_material {
-	char name[64];
-	uint32 albedo_map_offset;
-	uint32 albedo_map_width;
-	uint32 albedo_map_height;
-	uint32 albedo_map_mipmap_count;
-	uint32 albedo_map_size;
-	uint32 normal_map_offset;
-	uint32 normal_map_width;
-	uint32 normal_map_height;
-	uint32 normal_map_mipmap_count;
-	uint32 normal_map_size;
-	uint32 metallic_map_offset;
-	uint32 metallic_map_width;
-	uint32 metallic_map_height;
-	uint32 metallic_map_mipmap_count;
-	uint32 metallic_map_size;
-	uint32 roughness_map_offset;
-	uint32 roughness_map_width;
-	uint32 roughness_map_height;
-	uint32 roughness_map_mipmap_count;
-	uint32 roughness_map_size;
-	uint32 ao_map_offset;
-	uint32 ao_map_width;
-	uint32 ao_map_height;
-	uint32 ao_map_mipmap_count;
-	uint32 ao_map_size;
-	uint32 height_map_offset;
-	uint32 height_map_width;
-	uint32 height_map_height;
-	uint32 height_map_mipmap_count;
-	uint32 height_map_size;
+ 	char name[64];
+
+	uint32 albedo_image_index;
+	uint32 albedo_image_wrap_s;
+	uint32 albedo_image_wrap_t;
+	vec4 albedo_factor;
+
+	uint32 metallic_image_index;
+	uint32 roughness_image_index;
+	uint32 metallic_roughness_image_wrap_s;
+	uint32 metallic_roughness_image_wrap_t;
+	float metallic_factor;
+	float roughness_factor;
+
+	uint32 normal_image_index;
+	uint32 normal_image_wrap_s;
+	uint32 normal_image_wrap_t;
+};
+
+struct gpk_model_image {
+	uint32 width;
+	uint32 height;
+	uint32 mipmap_count;
+	uint32 layer_count;
+	uint32 size;
+	uint32 format;
+	uint32 format_block_dimension;
+	uint32 format_block_size;
+  uint32 data_offset;
 };
 
 struct gpk_skybox {
@@ -111,6 +91,7 @@ struct gpk_skybox {
 };
 
 struct gpk_terrain {
+	char format_str[32];
 	uint32 diffuse_map_offset;
 	vec2 diffuse_map_scales;
 	uint32 vertices_offset;

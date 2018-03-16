@@ -216,17 +216,18 @@ struct vulkan_image {
 	VkImageView view;
 	uint32 width;
 	uint32 height;
-	VkFormat pixel_format;
 	uint32 mipmap_count;
 	uint32 layer_count;
+	VkFormat format;
+	uint32 format_block_dimension;
+	uint32 format_block_size;
 };
 
 struct vulkan_images {
 	vulkan_image default_albedo_map_image;
-	vulkan_image default_normal_map_image;
 	vulkan_image default_metallic_map_image;
 	vulkan_image default_roughness_map_image;
-	vulkan_image default_ao_map_image;
+	vulkan_image default_normal_map_image;
 	vulkan_image default_height_map_image;
 	vulkan_image imgui_font_atlas_image;
 	vulkan_image font_atlas_image;
@@ -411,7 +412,7 @@ bool vulkan_allocate_image(vulkan_device *vulkan_device, VkImageCreateInfo image
 	return true;
 }
 
-void vulkan_device_initialize(vulkan_device *vulkan_device) {
+void initialize_vulkan_device(vulkan_device *vulkan_device) {
 	bool enable_validation_layer = true;
 	bool enable_renderdoc_layer = true;
 	bool enable_nsight_layer = false;
@@ -623,7 +624,7 @@ void vulkan_device_initialize(vulkan_device *vulkan_device) {
 	}
 }
 
-void vulkan_swap_chain_initialize(window window, bool vsync_on, vulkan *vulkan) {
+void initialize_vulkan_swap_chain(window window, bool vsync_on, vulkan *vulkan) {
 	struct memory_arena memory_arena = {};
 	string info_str = {};
 	memory_arena.capacity = m_megabytes(1);
@@ -802,7 +803,7 @@ void vulkan_swap_chain_resize_images(vulkan *vulkan, uint32 new_width, uint32 ne
 	// }
 }
 
-void vulkan_render_passes_initialize(VkSampleCountFlagBits sample_count, vulkan *vulkan) {
+void initialize_vulkan_render_passes(VkSampleCountFlagBits sample_count, vulkan *vulkan) {
 	{ // shadow map render passes
 		{
 			VkAttachmentDescription attachments[2] = {};
@@ -975,7 +976,7 @@ void vulkan_render_passes_initialize(VkSampleCountFlagBits sample_count, vulkan 
 	}
 }
 
-void vulkan_framebuffers_initialize(VkSampleCountFlagBits sample_count, vulkan *vulkan) {
+void initialize_vulkan_framebuffers(VkSampleCountFlagBits sample_count, vulkan *vulkan) {
 	{ // shadow map framebuffers
 		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {auto *framebuffer = &vulkan->framebuffers.shadow_map_framebuffers[i];
 			uint32 shadow_map_size = 2048;
@@ -1149,7 +1150,7 @@ void vulkan_framebuffers_initialize(VkSampleCountFlagBits sample_count, vulkan *
 	}
 }
 
-void vulkan_cmd_buffers_initialize(vulkan *vulkan) {
+void initialize_vulkan_cmd_buffers(vulkan *vulkan) {
 	VkCommandPoolCreateInfo cmd_pool_info = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
 	cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	cmd_pool_info.queueFamilyIndex = vulkan->device.queue_family_index;
@@ -1164,7 +1165,7 @@ void vulkan_cmd_buffers_initialize(vulkan *vulkan) {
 	m_vk_assert(vkAllocateCommandBuffers(vulkan->device.device, &cmd_buffer_info, &vulkan->cmd_buffers.transfer_cmd_buffer));
 }
 
-void vulkan_syncs_initialize(vulkan *vulkan) {
+void initialize_vulkan_syncs(vulkan *vulkan) {
 	VkSemaphoreCreateInfo semaphore_create_info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
 		m_vk_assert(vkCreateSemaphore(vulkan->device.device, &semaphore_create_info, nullptr, &vulkan->syncs.swap_chain_image_acquire_semaphores[i]));
@@ -1175,7 +1176,7 @@ void vulkan_syncs_initialize(vulkan *vulkan) {
 	}
 }
 
-void vulkan_memories_initialize(vulkan *vulkan) {
+void initialize_vulkan_memories(vulkan *vulkan) {
 	auto find_memory_type_index = [vulkan](VkMemoryRequirements requirements, VkMemoryPropertyFlags flags, uint32 *memory_type_index) -> bool {
 		VkPhysicalDeviceMemoryProperties *properties = &vulkan->device.physical_device_memory_properties;
 		for (uint32 i = 0; i < properties->memoryTypeCount; i += 1) {
@@ -1327,7 +1328,7 @@ void vulkan_buffer_transfer(vulkan *vulkan, vulkan_buffer *vulkan_buffer, uint64
 	vkFreeMemory(vulkan->device.device, staging_memory, nullptr);
 }
 
-void vulkan_buffers_initialize(vulkan *vulkan) {
+void initialize_vulkan_buffers(vulkan *vulkan) {
 	VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 	buffer_create_info.size = vulkan->memories.level_vertex_buffer_memory.capacity;
 	buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
@@ -1349,49 +1350,52 @@ void vulkan_buffers_initialize(vulkan *vulkan) {
 	}
 }
 
-void vulkan_image_create(vulkan *vulkan, vulkan_memory *vulkan_memory, VkImageCreateInfo image_create_info, VkImageViewCreateInfo image_view_create_info, vulkan_image *vulkan_image) {
-	m_vk_assert(vkCreateImage(vulkan->device.device, &image_create_info, nullptr, &vulkan_image->image));
-	VkMemoryRequirements image_memory_requirements = {};
-	vkGetImageMemoryRequirements(vulkan->device.device, vulkan_image->image, &image_memory_requirements);
-	uint64 memory_offset = round_up(vulkan_memory->size, image_memory_requirements.alignment);
-	vulkan_memory->size = memory_offset + image_memory_requirements.size;
+vulkan_image allocate_vulkan_image(vulkan_device *vulkan_device, vulkan_memory *vulkan_memory,
+																	 VkImageCreateInfo image_create_info, VkImageViewCreateInfo image_view_create_info,
+																	 uint32 format_block_dimension, uint32 format_block_size) {
+	vulkan_image vulkan_image = {};
+	m_vk_assert(vkCreateImage(vulkan_device->device, &image_create_info, nullptr, &vulkan_image.image));
+
+	VkMemoryRequirements memory_requirements = {};
+	vkGetImageMemoryRequirements(vulkan_device->device, vulkan_image.image, &memory_requirements);
+	uint64 memory_offset = round_up(vulkan_memory->size, memory_requirements.alignment);
+	vulkan_memory->size = memory_offset + memory_requirements.size;
 	m_assert(vulkan_memory->size <= vulkan_memory->capacity);
-	m_vk_assert(vkBindImageMemory(vulkan->device.device, vulkan_image->image, vulkan_memory->memory, memory_offset));
+	m_assert(memory_requirements.memoryTypeBits & (1 << vulkan_memory->memory_type_index));
+	m_vk_assert(vkBindImageMemory(vulkan_device->device, vulkan_image.image, vulkan_memory->memory, memory_offset));
 
-	image_view_create_info.image = vulkan_image->image;
-	m_vk_assert(vkCreateImageView(vulkan->device.device, &image_view_create_info, nullptr, &vulkan_image->view));
+	image_view_create_info.image = vulkan_image.image;
+	m_vk_assert(vkCreateImageView(vulkan_device->device, &image_view_create_info, nullptr, &vulkan_image.view));
 
-	vulkan_image->width = image_create_info.extent.width;
-	vulkan_image->height = image_create_info.extent.height;
-	vulkan_image->pixel_format = image_create_info.format;
-	vulkan_image->mipmap_count = image_create_info.mipLevels;
-	vulkan_image->layer_count = image_create_info.arrayLayers;
+	vulkan_image.width = image_create_info.extent.width;
+	vulkan_image.height = image_create_info.extent.height;
+	vulkan_image.mipmap_count = image_create_info.mipLevels;
+	vulkan_image.layer_count = image_create_info.arrayLayers;
+	vulkan_image.format = image_create_info.format;
+	vulkan_image.format_block_dimension = format_block_dimension;
+	vulkan_image.format_block_size = format_block_size;
+	return vulkan_image;
 }
 
-void vulkan_image_destroy(vulkan_device *vulkan_device, vulkan_image *vulkan_image) {
-	vkDestroyImageView(vulkan_device->device, vulkan_image->view, nullptr);
-	vkDestroyImage(vulkan_device->device, vulkan_image->image, nullptr);
-}
-
-void vulkan_image_transfer(vulkan *vulkan, vulkan_image *vulkan_image, uint8 *image_data, uint64 image_data_size, uint32 pixel_bit_size, uint32 pixel_block_size) {
+void vulkan_image_transfer(vulkan_device *vulkan_device, vulkan_cmd_buffers *vulkan_cmd_buffers, vulkan_image *vulkan_image, uint8 *image_data, uint64 image_data_size) {
 	VkDeviceMemory staging_memory = {};
 	VkBuffer staging_buffer = {};
 	uint8 *staging_buffer_ptr = nullptr;
 	VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 	buffer_create_info.size = image_data_size;
 	buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	m_assert(vulkan_allocate_buffer(&vulkan->device, buffer_create_info, &staging_memory, &staging_buffer));
+	m_assert(vulkan_allocate_buffer(vulkan_device, buffer_create_info, &staging_memory, &staging_buffer));
 	m_scope_exit(
-		vkDestroyBuffer(vulkan->device.device, staging_buffer, nullptr);
-		vkFreeMemory(vulkan->device.device, staging_memory, nullptr);
+		vkDestroyBuffer(vulkan_device->device, staging_buffer, nullptr);
+		vkFreeMemory(vulkan_device->device, staging_memory, nullptr);
 	);
-	vkMapMemory(vulkan->device.device, staging_memory, 0, VK_WHOLE_SIZE, 0, (void **)&staging_buffer_ptr);
+	vkMapMemory(vulkan_device->device, staging_memory, 0, VK_WHOLE_SIZE, 0, (void **)&staging_buffer_ptr);
 	memcpy(staging_buffer_ptr, image_data, image_data_size);
-	vkUnmapMemory(vulkan->device.device, staging_memory);
+	vkUnmapMemory(vulkan_device->device, staging_memory);
 
 	VkCommandBufferBeginInfo cmd_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 	cmd_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.transfer_cmd_buffer;
+	VkCommandBuffer cmd_buffer = vulkan_cmd_buffers->transfer_cmd_buffer;
 	vkBeginCommandBuffer(cmd_buffer, &cmd_buffer_begin_info);
 	{
 		VkImageMemoryBarrier image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
@@ -1418,9 +1422,10 @@ void vulkan_image_transfer(vulkan *vulkan, vulkan_image *vulkan_image, uint8 *im
 				buffer_image_copy.imageSubresource.layerCount = 1;
 				buffer_image_copy.imageExtent = {mipmap_width, mipmap_height, 1};
 				vkCmdCopyBufferToImage(cmd_buffer, staging_buffer, vulkan_image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
-				buffer_offset = buffer_offset + (mipmap_width * mipmap_height * pixel_bit_size) / 8;
-				mipmap_width = max(mipmap_width / 2, pixel_block_size);
-				mipmap_height = max(mipmap_height / 2, pixel_block_size);
+				uint32 block_count = (mipmap_width * mipmap_height) / (vulkan_image->format_block_dimension * vulkan_image->format_block_dimension);
+				buffer_offset = buffer_offset + block_count * vulkan_image->format_block_size;
+				mipmap_width = max(mipmap_width / 2, vulkan_image->format_block_dimension);
+				mipmap_height = max(mipmap_height / 2, vulkan_image->format_block_dimension);
 			}
 		}
 	}
@@ -1440,18 +1445,17 @@ void vulkan_image_transfer(vulkan *vulkan, vulkan_image *vulkan_image, uint8 *im
 	VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &cmd_buffer;
-	vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(vulkan->device.queue);
+	vkQueueSubmit(vulkan_device->queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(vulkan_device->queue);
 }
 
-void vulkan_images_initialize(vulkan *vulkan) {
+void initialize_vulkan_images(vulkan *vulkan) {
 	{
-		uint8 default_albedo_map_data[] = {200, 200, 200, 255, 200, 200, 200, 255, 200, 200, 200, 255, 200, 200, 200, 255};
+		uint8 default_albedo_map_data[] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+		uint8 default_metallic_map_data[] = {255, 255, 255, 255};
+		uint8 default_roughness_map_data[] = {255, 255, 255, 255};
 		uint8 default_normal_map_data[] = {128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0};
-		uint8 default_metallic_map_data[] = {0, 0, 0, 0};
-		uint8 default_roughness_map_data[] = {128, 128, 128, 128};
-		uint8 default_ao_map_data[] = {255, 255, 255, 255};
-		uint8 default_height_map_data[] = {0, 0, 0, 0};
+		uint8 default_height_map_data[] = {255, 255, 255, 255};
 
 		VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_create_info.imageType = VK_IMAGE_TYPE_2D;
@@ -1468,37 +1472,32 @@ void vulkan_images_initialize(vulkan *vulkan) {
 		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_view_create_info.subresourceRange.levelCount = 1;
 		image_view_create_info.subresourceRange.layerCount = 1;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.default_albedo_map_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.default_albedo_map_image, default_albedo_map_data, sizeof(default_albedo_map_data), 32, 1);
+		vulkan->images.default_albedo_map_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 4);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.default_albedo_map_image, default_albedo_map_data, sizeof(default_albedo_map_data));
+
+		image_create_info.format = VK_FORMAT_R8_UNORM;
+		image_view_create_info.format = image_create_info.format;
+		vulkan->images.default_metallic_map_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 1);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.default_metallic_map_image, default_metallic_map_data, sizeof(default_metallic_map_data));
+
+		image_create_info.format = VK_FORMAT_R8_UNORM;
+		image_view_create_info.format = image_create_info.format;
+		vulkan->images.default_roughness_map_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 1);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.default_roughness_map_image, default_roughness_map_data, sizeof(default_roughness_map_data));
 
 		image_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 		image_view_create_info.format = image_create_info.format;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.default_normal_map_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.default_normal_map_image, default_normal_map_data, sizeof(default_normal_map_data), 32, 1);
+		vulkan->images.default_normal_map_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 4);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.default_normal_map_image, default_normal_map_data, sizeof(default_normal_map_data));
 
 		image_create_info.format = VK_FORMAT_R8_UNORM;
 		image_view_create_info.format = image_create_info.format;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.default_metallic_map_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.default_metallic_map_image, default_metallic_map_data, sizeof(default_metallic_map_data), 8, 1);
-
-		image_create_info.format = VK_FORMAT_R8_UNORM;
-		image_view_create_info.format = image_create_info.format;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.default_roughness_map_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.default_roughness_map_image, default_roughness_map_data, sizeof(default_roughness_map_data), 8, 1);
-
-		image_create_info.format = VK_FORMAT_R8_UNORM;
-		image_view_create_info.format = image_create_info.format;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.default_ao_map_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.default_ao_map_image, default_ao_map_data, sizeof(default_ao_map_data), 8, 1);
-
-		image_create_info.format = VK_FORMAT_R8_UNORM;
-		image_view_create_info.format = image_create_info.format;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.default_height_map_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.default_height_map_image, default_height_map_data, sizeof(default_height_map_data), 8, 1);
+		vulkan->images.default_height_map_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 1);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.default_height_map_image, default_height_map_data, sizeof(default_height_map_data));
 	}
 }
 
-void vulkan_samplers_initialize(vulkan *vulkan) {
+void initialize_vulkan_samplers(vulkan *vulkan) {
 	{ // shadow map sampler
 		VkSamplerCreateInfo sampler_create_info = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
 		sampler_create_info.magFilter = VK_FILTER_LINEAR;
@@ -1543,7 +1542,7 @@ void vulkan_samplers_initialize(vulkan *vulkan) {
 	}
 }
 
-void vulkan_descriptors_initialize(vulkan *vulkan) {
+void initialize_vulkan_descriptors(vulkan *vulkan) {
 	{ // pool
 		VkDescriptorPoolCreateInfo descriptor_pool_create_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
 		descriptor_pool_create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
@@ -1658,16 +1657,15 @@ void vulkan_descriptors_initialize(vulkan *vulkan) {
 	}
 	{ // model default material images
 		descriptor_set_allocate_info.descriptorSetCount = 1;
-		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.sampled_images_set_layouts[5];
+		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.sampled_images_set_layouts[4];
 		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.model_default_material_images));
-		VkDescriptorImageInfo descriptor_image_infos[6] = {};
+		VkDescriptorImageInfo descriptor_image_infos[5] = {};
 		descriptor_image_infos[0] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_albedo_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[1] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_normal_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[2] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_metallic_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[3] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_roughness_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[4] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_ao_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[5] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_height_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		VkWriteDescriptorSet write_descriptor_sets[6] = {};
+		descriptor_image_infos[1] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_metallic_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[2] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_roughness_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[3] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_normal_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[4] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_height_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		VkWriteDescriptorSet write_descriptor_sets[5] = {};
 		for (uint32 i = 0; i < m_countof(write_descriptor_sets); i += 1) {
 			write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			write_descriptor_sets[i].dstSet = vulkan->descriptors.model_default_material_images;
@@ -1719,7 +1717,7 @@ void vulkan_descriptors_initialize(vulkan *vulkan) {
 	// }
 }
 
-void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vulkan) {
+void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vulkan) {
 	auto shader_module_from_file = [vulkan](const char *file_path) {
 		VkShaderModule shader_module = {};
 		file_mapping file_mapping = {};
@@ -1791,7 +1789,7 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout, vulkan->descriptors.sampled_images_set_layouts[5], vulkan->descriptors.sampled_images_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout, vulkan->descriptors.sampled_images_set_layouts[4], vulkan->descriptors.sampled_images_set_layouts[0]};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
@@ -2770,18 +2768,18 @@ void vulkan_pipelines_initialize(VkSampleCountFlagBits sample_count, vulkan *vul
 void initialize_vulkan(vulkan *vulkan, const window &window) {
 	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
 	bool vsync_on = false;
-	vulkan_device_initialize(&vulkan->device);
-	vulkan_swap_chain_initialize(window, vsync_on, vulkan);
-	vulkan_render_passes_initialize(sample_count, vulkan);
-	vulkan_framebuffers_initialize(sample_count, vulkan);
-	vulkan_cmd_buffers_initialize(vulkan);
-	vulkan_syncs_initialize(vulkan);
-	vulkan_memories_initialize(vulkan);
-	vulkan_buffers_initialize(vulkan);
-	vulkan_images_initialize(vulkan);
-	vulkan_samplers_initialize(vulkan);
-	vulkan_descriptors_initialize(vulkan);
-	vulkan_pipelines_initialize(sample_count, vulkan);
+	initialize_vulkan_device(&vulkan->device);
+	initialize_vulkan_swap_chain(window, vsync_on, vulkan);
+	initialize_vulkan_render_passes(sample_count, vulkan);
+	initialize_vulkan_framebuffers(sample_count, vulkan);
+	initialize_vulkan_cmd_buffers(vulkan);
+	initialize_vulkan_syncs(vulkan);
+	initialize_vulkan_memories(vulkan);
+	initialize_vulkan_buffers(vulkan);
+	initialize_vulkan_images(vulkan);
+	initialize_vulkan_samplers(vulkan);
+	initialize_vulkan_descriptors(vulkan);
+	initialize_vulkan_pipelines(sample_count, vulkan);
 }
 
 void vulkan_begin_render(vulkan *vulkan) {

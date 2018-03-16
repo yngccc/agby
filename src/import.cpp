@@ -20,6 +20,104 @@
 
 #include "math.cpp"
 #include "gpk.cpp"
+#include <vulkan/vulkan.h>
+
+uint32 tinygltf_wrap_to_vk_wrap(int32 wrap) {
+	if (wrap == TINYGLTF_TEXTURE_WRAP_REPEAT) {
+		return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	}
+	else if (wrap == TINYGLTF_TEXTURE_WRAP_MIRRORED_REPEAT) {
+		return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+	}
+	else if (wrap == TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE) {
+		return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	}
+	else {
+		m_assert(false);
+		return UINT32_MAX;
+	}
+};
+
+void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
+	for (uint32 i = 0; i < image_width * image_height; i += 1) {
+		uint8 r = image_data[i * 4];
+		image_data[i * 4] = image_data[i * 4 + 2];
+		image_data[i * 4 + 2] = r;
+	}
+}
+
+enum compress_image_type {
+	compress_image_type_color,
+	compress_image_type_grayscale,
+	compress_image_type_normal_map
+};
+
+void compress_image(compress_image_type image_type, uint8 *data, uint32 width, uint32 height,
+										uint8 **compressed_data, uint32 *compressed_data_mipmap_count, uint32 *compressed_data_size) {
+	using namespace nvtt;
+
+	InputOptions input_options = {};
+	CompressionOptions compression_options = {};
+	OutputOptions output_options = {};
+	Compressor compressor = {};
+
+	input_options.setTextureLayout(TextureType_2D, width, height);
+	input_options.setFormat(InputFormat_BGRA_8UB);
+	input_options.setAlphaMode(AlphaMode_None);
+	input_options.setMipmapFilter(MipmapFilter_Kaiser);
+	input_options.setMipmapGeneration(true);
+	input_options.setNormalMap(image_type == compress_image_type_normal_map);
+	if (!input_options.setMipmapData(data, width, height)) {
+		fatal("call to \"input_options.setMipmapData\" failed");
+	}
+	if (image_type == compress_image_type_color) {
+		compression_options.setFormat(Format_BC1);
+	}
+	else if (image_type == compress_image_type_grayscale) {
+		input_options.setGamma(1.0f, 1.0f);
+		compression_options.setFormat(Format_BC4);
+	}
+	else if (image_type == compress_image_type_normal_map) {
+		compression_options.setFormat(Format_BC5);
+	}
+	else {
+		m_assert(false);
+	}
+	compression_options.setQuality(Quality_Normal); // Quality_Production Quality_Highest
+
+	struct output_handler : public OutputHandler {
+		uint32 estimate_compressed_data_size;
+		uint8 *compressed_data;
+		uint32 compressed_data_mipmap_count;
+		uint32 compressed_data_size;
+
+		void beginImage(int size, int width, int height, int depth, int face, int miplevel) {
+			compressed_data_mipmap_count += 1;
+		}
+		bool writeData(const void * data, int size) {
+			memcpy(compressed_data + compressed_data_size, data, size);
+			compressed_data_size += size;
+			m_assert(compressed_data_size <= estimate_compressed_data_size);
+			return true;
+		}
+		void endImage() {}
+	};
+	output_handler output_handler = {};
+	output_handler.estimate_compressed_data_size = compressor.estimateSize(input_options, compression_options);
+	output_handler.compressed_data = (uint8 *)calloc(output_handler.estimate_compressed_data_size, 1);
+	output_handler.compressed_data_mipmap_count = 0;
+	output_handler.compressed_data_size = 0;
+	output_options.setOutputHandler(&output_handler);
+	output_options.setOutputHeader(false);
+
+	if (!compressor.process(input_options, compression_options, output_options)) {
+		fatal("compress image error, call to \"compressor.process\" failed");
+	}
+
+	*compressed_data = output_handler.compressed_data;
+	*compressed_data_mipmap_count = output_handler.compressed_data_mipmap_count;
+	*compressed_data_size = output_handler.compressed_data_size;
+}
 
 void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
 	printf("begin importing skybox: \"%s\"\n", skybox_dir.c_str());
@@ -78,9 +176,10 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		}
 	}
 	gpk_model gpk_model = {"GPK_MODEL_FORMAT"};
+	uint32 current_offset = round_up((uint32)sizeof(gpk_model), 16u);
 	std::vector<gpk_model_scene> gpk_model_scenes;
 	{
-		gpk_model.scene_offset = round_up((uint32)sizeof(gpk_model), 16u);
+		gpk_model.scene_offset = current_offset;
 		gpk_model.scene_count = (uint32)glb_model.scenes.size();
 		m_assert(gpk_model.scene_count > 0);
 		gpk_model_scenes.resize(gpk_model.scene_count);
@@ -95,24 +194,24 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 				dst.node_indices[i] = (uint32)src.nodes[i];
 			}
 		}
+		current_offset = round_up(current_offset + gpk_model.scene_count * (uint32)sizeof(struct gpk_model_scene), 16u);
 	}
 	std::vector<gpk_model_node> gpk_model_nodes;
 	{
-		gpk_model.node_offset = gpk_model.scene_offset + gpk_model.scene_count * sizeof(struct gpk_model_scene);
-		round_up(&gpk_model.node_offset, 16u);
+		gpk_model.node_offset = current_offset;
 		gpk_model.node_count = (uint32)glb_model.nodes.size();
 		m_assert(gpk_model.node_count > 0);
 		gpk_model_nodes.resize(gpk_model.node_count);
 		for (uint32 i = 0; i < gpk_model.node_count; i += 1) {
 			auto &src = glb_model.nodes[i];
 			auto &dst = gpk_model_nodes[i];
-			dst.mesh_index = src.mesh >= 0 ? src.mesh : UINT32_MAX;
+			dst.mesh_index = (src.mesh >= 0 && src.mesh < glb_model.meshes.size()) ? src.mesh : UINT32_MAX;
 			dst.child_count = (uint32)src.children.size();
 			if (dst.child_count > m_countof(dst.children)) {
 				fatal("import.exe error: gltf node has too many (%u)children", dst.child_count);
 			}
 			for (uint32 i = 0; i < dst.child_count; i += 1) {
-				m_assert(src.children[i] >= 0);
+				m_assert(src.children[i] >= 0 && src.children[i] < glb_model.nodes.size());
 				dst.children[i] = src.children[i];
 			}
 			if (src.matrix.size() != 0) {
@@ -134,11 +233,11 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 				dst.local_transform_mat = transform_to_mat4(transform);
 			}
 		}
+		current_offset = round_up(current_offset + gpk_model.node_count * (uint32)sizeof(struct gpk_model_node), 16u);
 	}
 	std::vector<gpk_model_mesh> gpk_model_meshes;
 	{
-		gpk_model.mesh_offset = gpk_model.node_offset + gpk_model.node_count * sizeof(struct gpk_model_node);
-		round_up(&gpk_model.mesh_offset, 16u);
+		gpk_model.mesh_offset = current_offset;
 		gpk_model.mesh_count = (uint32)glb_model.meshes.size();
 		m_assert(gpk_model.mesh_count > 0);
 		gpk_model_meshes.resize(gpk_model.mesh_count);
@@ -156,22 +255,214 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			m_assert(primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end());
 			dst.material_index = primitive.material >= 0 ? primitive.material : UINT32_MAX;
 		}
+		current_offset = round_up(current_offset + gpk_model.mesh_count * (uint32)sizeof(struct gpk_model_mesh), 16u);
+	}
+	struct image_remap {
+		uint32 index;
+		bool is_base_color;
+		bool is_metallic_roughness;
+		bool is_normal;
+	};
+	std::vector<image_remap> image_remaps;
+	uint32 image_count = 0;
+	{
+		image_remaps.resize(glb_model.images.size(), {});
+		for (auto &m : glb_model.materials) {
+			auto base_color_texture = m.values.find("baseColorTexture");
+			if (base_color_texture != m.values.end()) {
+				int32 texture_index = base_color_texture->second.TextureIndex();
+				m_assert(texture_index >= 0 && texture_index < glb_model.textures.size());
+				int32 image_index = glb_model.textures[texture_index].source;
+				m_assert(image_index >= 0 && image_index < glb_model.images.size());
+				image_remaps[image_index].is_base_color = true;
+			}
+
+			auto metallic_roughness_texture = m.values.find("metallicRoughnessTexture");
+			if (metallic_roughness_texture != m.values.end()) {
+				int32 texture_index = metallic_roughness_texture->second.TextureIndex();
+				m_assert(texture_index >= 0 && texture_index < glb_model.textures.size());
+				int32 image_index = glb_model.textures[texture_index].source;
+				m_assert(image_index >= 0 && image_index < glb_model.images.size());
+				image_remaps[image_index].is_metallic_roughness = true;
+			}
+
+			auto normal_texture = m.additionalValues.find("normalTexture");
+			if (normal_texture != m.additionalValues.end()) {
+				int32 texture_index = normal_texture->second.TextureIndex();
+				m_assert(texture_index >= 0 && texture_index < glb_model.textures.size());
+				int32 image_index = glb_model.textures[texture_index].source;
+				m_assert(image_index >= 0 && image_index < glb_model.images.size());
+				image_remaps[image_index].is_normal = true;
+			}
+		}
+		for (auto &remap : image_remaps) {
+			int32 is = (int32)remap.is_base_color + (int32)remap.is_metallic_roughness + (int32)remap.is_normal;
+			m_assert(is == 0 || is == 1);
+			if (is == 0) {
+				remap.index = UINT32_MAX;
+			}
+			else if (is == 1) {
+				remap.index = image_count;
+				image_count += remap.is_metallic_roughness ? 2 : 1;
+			}
+		}
 	}
 	std::vector<gpk_model_material> gpk_model_materials;
 	{
-		gpk_model.material_offset = gpk_model.mesh_offset + gpk_model.mesh_count * sizeof(struct gpk_model_mesh);
-		round_up(&gpk_model.material_offset, 16u);
+		gpk_model.material_offset = current_offset;
 		gpk_model.material_count = (uint32)glb_model.materials.size();
 		gpk_model_materials.resize(gpk_model.material_count);
+		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
+			gpk_model_materials[i].albedo_image_index = UINT32_MAX;
+			gpk_model_materials[i].albedo_factor = {0.8f, 0.8f, 0.8f, 1.0f};
+			gpk_model_materials[i].metallic_image_index = UINT32_MAX;
+			gpk_model_materials[i].roughness_image_index = UINT32_MAX;
+			gpk_model_materials[i].metallic_factor = 0.5f;
+			gpk_model_materials[i].roughness_factor = 0.5f;
+			gpk_model_materials[i].normal_image_index = UINT32_MAX;
+		}
 		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
 			auto &src = glb_model.materials[i];
 			auto &dst = gpk_model_materials[i];
 			m_assert(src.name.length() < sizeof(dst.name));
 			strcpy(dst.name, src.name.c_str());
+			auto base_color_texture = src.values.find("baseColorTexture");
+			auto base_color_factor = src.values.find("baseColorFactor");
+			auto metallic_roughness_texture = src.values.find("metallicRoughnessTexture");
+			auto metallic_factor = src.values.find("metallicFactor");
+			auto roughness_factor = src.values.find("roughnessFactor");
+			auto normal_texture = src.additionalValues.find("normalTexture");
+			if (base_color_texture != src.values.end()) {
+				int32 index = base_color_texture->second.TextureIndex();
+				m_assert(index >= 0 && index < glb_model.textures.size());
+				auto &texture = glb_model.textures[index];
+				m_assert(texture.source >= 0 && texture.source < glb_model.images.size());
+				m_assert(image_remaps[texture.source].is_base_color);
+				dst.albedo_image_index = image_remaps[texture.source].index;
+				if (texture.sampler >= 0 && texture.sampler < glb_model.samplers.size()) {
+					dst.albedo_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
+					dst.albedo_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
+				}
+				else {
+					dst.albedo_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					dst.albedo_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+				}
+			}
+			else if (base_color_factor != src.values.end()) {
+				auto &color = base_color_factor->second.number_array;
+				m_assert(color.size() == 4);
+				dst.albedo_factor = {(float)color[0], (float)color[1], (float)color[2], (float)color[3]};
+			}
+			if (metallic_roughness_texture != src.values.end()) {
+				int32 index = metallic_roughness_texture->second.TextureIndex();
+				m_assert(index >= 0 && index < glb_model.textures.size());
+				auto &texture = glb_model.textures[index];
+				m_assert(texture.source >= 0 && texture.source < glb_model.images.size());
+				m_assert(image_remaps[texture.source].is_metallic_roughness);
+				dst.metallic_image_index = image_remaps[texture.source].index;
+				dst.roughness_image_index = image_remaps[texture.source].index + 1;
+				if (texture.sampler >= 0 && texture.sampler < glb_model.samplers.size()) {
+					dst.metallic_roughness_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
+					dst.metallic_roughness_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
+				}
+				else {
+					dst.metallic_roughness_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					dst.metallic_roughness_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+				}
+			}
+			else {
+				if (metallic_factor != src.values.end()) {
+					auto &factor = metallic_factor->second.number_array;
+					m_assert(factor.size() == 1);
+					dst.metallic_factor = (float)factor[0];
+				}
+				if (roughness_factor != src.values.end()) {
+					auto &factor = roughness_factor->second.number_array;
+					m_assert(factor.size() == 1);
+					dst.roughness_factor = (float)factor[0];
+				}
+			}
+			if (normal_texture != src.additionalValues.end()) {
+				int32 index = normal_texture->second.TextureIndex();
+				m_assert(index >= 0 && index < glb_model.textures.size());
+				auto &texture = glb_model.textures[index];
+				m_assert(texture.source >= 0 && texture.source < glb_model.images.size());
+				m_assert(image_remaps[texture.source].is_normal);
+				dst.normal_image_index = image_remaps[texture.source].index;
+				if (texture.sampler >= 0 && texture.sampler < glb_model.samplers.size()) {
+					dst.normal_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
+					dst.normal_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
+				}
+				else {
+					dst.normal_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					dst.normal_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+				}
+			}
 		}
+		current_offset = round_up(current_offset + gpk_model.material_count * (uint32)sizeof(struct gpk_model_material), 16u);
 	}
-	uint32 current_offset = gpk_model.material_offset + gpk_model.material_count * sizeof(gpk_model_material);
-	round_up(&current_offset, 16u);
+	std::vector<gpk_model_image> gpk_model_images;
+	{
+		gpk_model.image_offset = current_offset;
+		gpk_model.image_count = image_count;
+		gpk_model_images.resize(image_count);
+		uint32 image_index = 0;
+		for (size_t i = 0; i < glb_model.images.size(); i += 1) {
+			auto &image = glb_model.images[i];
+			auto &remap = image_remaps[i];
+			if (remap.index != UINT32_MAX) {
+				m_assert(image.width >= 4 && image.width % 4 == 0);
+				m_assert(image.height >= 4 && image.height % 4 == 0);
+				m_assert(image.component >= 1 && image.component <= 4);
+				if (remap.is_base_color) {
+					auto &gpk_image = gpk_model_images[image_index++];
+					gpk_image.width = image.width;
+					gpk_image.height = image.height;
+					gpk_image.mipmap_count = 1;
+					gpk_image.layer_count = 1;
+					gpk_image.size = image.width * image.height * 4;
+					gpk_image.format = VK_FORMAT_R8G8B8A8_SRGB;
+					gpk_image.format_block_dimension = 1;
+					gpk_image.format_block_size = 4;
+				}
+				else if (remap.is_metallic_roughness) {
+					auto &gpk_metallic_image = gpk_model_images[image_index++];
+					gpk_metallic_image.width = image.width;
+					gpk_metallic_image.height = image.height;
+					gpk_metallic_image.mipmap_count = 1;
+					gpk_metallic_image.layer_count = 1;
+					gpk_metallic_image.size = image.width * image.height;
+					gpk_metallic_image.format = VK_FORMAT_R8_UNORM;
+					gpk_metallic_image.format_block_dimension = 1;
+					gpk_metallic_image.format_block_size = 1;
+					auto &gpk_roughness_image = gpk_model_images[image_index++];
+					gpk_roughness_image.width = image.width;
+					gpk_roughness_image.height = image.height;
+					gpk_roughness_image.mipmap_count = 1;
+					gpk_roughness_image.layer_count = 1;
+					gpk_roughness_image.size = image.width * image.height;
+					gpk_roughness_image.format = VK_FORMAT_R8_UNORM;
+					gpk_roughness_image.format_block_dimension = 1;
+					gpk_roughness_image.format_block_size = 1;
+				}
+				else if (remap.is_normal) {
+					auto &gpk_image = gpk_model_images[image_index++];
+					gpk_image.width = image.width;
+					gpk_image.height = image.height;
+					gpk_image.mipmap_count = 1;
+					gpk_image.layer_count = 1;
+					gpk_image.size = image.width * image.height * 4;
+					gpk_image.format = VK_FORMAT_R8G8B8A8_UNORM;
+					gpk_image.format_block_dimension = 1;
+					gpk_image.format_block_size = 4;
+				}
+				else {
+					m_assert(false);
+				}
+			}
+		}
+		current_offset = round_up(current_offset + gpk_model.image_count * (uint32)sizeof(struct gpk_model_image), 16u);
+	}
 	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
 		auto &src = glb_model.meshes[i];
 		auto &dst = gpk_model_meshes[i];
@@ -205,15 +496,18 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 
 		dst.indices_offset = current_offset;
 		dst.index_count = (uint32)index_accessor.count;
-		current_offset += dst.index_count * sizeof(uint16);
-		round_up(&current_offset, 16u);
+		current_offset = round_up(current_offset + dst.index_count * (uint32)sizeof(uint16), 16u);
 		dst.vertices_offset = current_offset;
 		dst.vertex_size = gpk_model_vertex_position_size + gpk_model_vertex_uv_size + gpk_model_vertex_normal_size + gpk_model_vertex_tangent_size;
 		dst.vertex_count = (uint32)position_accessor.count;
-		current_offset += dst.vertex_size * dst.vertex_count;
-		round_up(&current_offset, 16u);
+		current_offset = round_up(current_offset + dst.vertex_size * dst.vertex_count, 16u);
 	}
-
+	for (uint32 i = 0; i < gpk_model.image_count; i += 1) {
+		auto &image = gpk_model_images[i];
+		image.data_offset = current_offset;
+		current_offset = round_up(current_offset + image.size, 16u);
+	}
+	
 	file_mapping gpk_file_mapping = {};
 	if (!create_file_mapping(gpk_file.c_str(), current_offset, &gpk_file_mapping)) {
 		fatal("cannot create file mapping %s\n", gpk_file.c_str());
@@ -223,6 +517,7 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 	memcpy(gpk_file_mapping.ptr + gpk_model.node_offset, &gpk_model_nodes[0], gpk_model_nodes.size() * sizeof(struct gpk_model_node));
 	memcpy(gpk_file_mapping.ptr + gpk_model.mesh_offset, &gpk_model_meshes[0], gpk_model_meshes.size() * sizeof(struct gpk_model_mesh));
 	memcpy(gpk_file_mapping.ptr + gpk_model.material_offset, &gpk_model_materials[0], gpk_model_materials.size() * sizeof(struct gpk_model_material));
+	memcpy(gpk_file_mapping.ptr + gpk_model.image_offset, &gpk_model_images[0], gpk_model_images.size() * sizeof(struct gpk_model_image));
 	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
 		auto &primitive = glb_model.meshes[i].primitives[0];
 		auto &mesh = gpk_model_meshes[i];
@@ -285,6 +580,51 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			*(vec2 *)(vertex_ptr + sizeof(position))= uv;
 			*(i16vec3 *)(vertex_ptr + sizeof(position) + sizeof(uv)) = compressed_normal;
 			*(i16vec3 *)(vertex_ptr + sizeof(position) + sizeof(uv) + sizeof(compressed_normal)) = compressed_tangent;
+		}
+	}
+	uint32 image_index = 0;
+	for (size_t i = 0; i < glb_model.images.size(); i += 1) {
+		auto &image = glb_model.images[i];
+		auto &remap = image_remaps[i];
+		if (remap.index != UINT32_MAX) {
+			if (remap.is_base_color) {
+				auto &gpk_image = gpk_model_images[image_index++];
+				uint8 *gpk_ptr = gpk_file_mapping.ptr + gpk_image.data_offset;
+				m_assert(image.component == 3 || image.component == 4);
+				for (uint32 i = 0; i < gpk_image.width * gpk_image.height; i += 1) {
+					gpk_ptr[i * 4 + 0] = image.image[i * image.component + 0];
+					gpk_ptr[i * 4 + 1] = image.image[i * image.component + 1];
+					gpk_ptr[i * 4 + 2] = image.image[i * image.component + 2];
+					gpk_ptr[i * 4 + 3] = 255;
+				}
+			}
+			else if (remap.is_metallic_roughness) {
+				auto &gpk_metallic_image = gpk_model_images[image_index++];
+				auto &gpk_roughness_image = gpk_model_images[image_index++];
+				uint8 *gpk_metallic_ptr = gpk_file_mapping.ptr + gpk_metallic_image.data_offset;
+				uint8 *gpk_roughness_ptr = gpk_file_mapping.ptr + gpk_roughness_image.data_offset;
+				m_assert(image.component == 3 || image.component == 4);
+				for (uint32 i = 0; i < gpk_metallic_image.width * gpk_metallic_image.height; i += 1) {
+					gpk_metallic_ptr[i] = image.image[i * image.component + 2];
+				}
+				for (uint32 i = 0; i < gpk_roughness_image.width * gpk_roughness_image.height; i += 1) {
+					gpk_roughness_ptr[i] = image.image[i * image.component + 1];
+				}
+			}
+			else if (remap.is_normal) {
+				auto &gpk_image = gpk_model_images[image_index++];
+				uint8 *gpk_ptr = gpk_file_mapping.ptr + gpk_image.data_offset;
+				m_assert(image.component == 3 || image.component == 4);
+				for (uint32 i = 0; i < gpk_image.width * gpk_image.height; i += 1) {
+					gpk_ptr[i * 4 + 0] = image.image[i * image.component + 0];
+					gpk_ptr[i * 4 + 1] = image.image[i * image.component + 1];
+					gpk_ptr[i * 4 + 2] = image.image[i * image.component + 2];
+					gpk_ptr[i * 4 + 3] = 255;
+				}
+			}
+			else {
+				m_assert(false);
+			}
 		}
 	}
 	flush_file_mapping(gpk_file_mapping);
@@ -578,78 +918,6 @@ aa_bound compute_mesh_bound(FbxMesh *fbx_mesh, mat4 transform) {
 		max_control_point.z = max(max_control_point.z, control_point.z);
 	}
 	return aa_bound{min_control_point, max_control_point};
-}
-
-void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
-	for (uint32 i = 0; i < image_width * image_height; i += 1) {
-		uint8 r = image_data[i * 4];
-		image_data[i * 4] = image_data[i * 4 + 2];
-		image_data[i * 4 + 2] = r;
-	}
-}
-
-void compress_image(image_type image_type, uint8 *data, uint32 width, uint32 height, uint8 **compressed_data, uint32 *compressed_data_mipmap_count, uint32 *compressed_data_size) {
-	using namespace nvtt;
-
-	InputOptions input_options = {};
-	CompressionOptions compression_options = {};
-	OutputOptions output_options = {};
-	Compressor compressor = {};
-
-	input_options.setTextureLayout(TextureType_2D, width, height);
-	input_options.setFormat(InputFormat_BGRA_8UB);
-	input_options.setAlphaMode(AlphaMode_None);
-	input_options.setMipmapFilter(MipmapFilter_Kaiser);
-	input_options.setMipmapGeneration(true);
-	input_options.setNormalMap(image_type == image_type_normal_map);
-	if (!input_options.setMipmapData(data, width, height)) {
-		fatal("call to \"input_options.setMipmapData\" failed");
-	}
-
-	if (image_type == image_type_albedo_map) {
-		compression_options.setFormat(Format_BC1);
-	}
-	else if (image_type == image_type_normal_map) {
-		compression_options.setFormat(Format_BC5);
-	}
-	else {
-		input_options.setGamma(1.0f, 1.0f);
-		compression_options.setFormat(Format_BC4);
-	}
-	compression_options.setQuality(Quality_Normal); // Quality_Production Quality_Highest
-
-	struct output_handler : public OutputHandler {
-		uint32 estimate_compressed_data_size;
-		uint8 *compressed_data;
-		uint32 compressed_data_mipmap_count;
-		uint32 compressed_data_size;
-
-		void beginImage(int size, int width, int height, int depth, int face, int miplevel) {
-			compressed_data_mipmap_count += 1;
-		}
-		bool writeData(const void * data, int size) {
-			memcpy(compressed_data + compressed_data_size, data, size);
-			compressed_data_size += size;
-			m_assert(compressed_data_size <= estimate_compressed_data_size);
-			return true;
-		}
-		void endImage() {}
-	};
-	output_handler output_handler = {};
-	output_handler.estimate_compressed_data_size = compressor.estimateSize(input_options, compression_options);
-	output_handler.compressed_data = (uint8 *)calloc(output_handler.estimate_compressed_data_size, 1);
-	output_handler.compressed_data_mipmap_count = 0;
-	output_handler.compressed_data_size = 0;
-	output_options.setOutputHandler(&output_handler);
-	output_options.setOutputHeader(false);
-
-	if (!compressor.process(input_options, compression_options, output_options)) {
-		fatal("compress image error, call to \"compressor.process\" failed");
-	}
-
-	*compressed_data = output_handler.compressed_data;
-	*compressed_data_mipmap_count = output_handler.compressed_data_mipmap_count;
-	*compressed_data_size = output_handler.compressed_data_size;
 }
 
 void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {

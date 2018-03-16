@@ -147,8 +147,8 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_view_create_info.subresourceRange.levelCount = 1;
 		image_view_create_info.subresourceRange.layerCount = 1;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.imgui_font_atlas_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.imgui_font_atlas_image, font_atlas_image, font_atlas_image_width * font_atlas_image_height * 4, 32, 1);
+		vulkan->images.imgui_font_atlas_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 4);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.imgui_font_atlas_image, font_atlas_image, font_atlas_image_width * font_atlas_image_height * 4);
 
 		VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
 		descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
@@ -195,8 +195,8 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_view_create_info.subresourceRange.levelCount = 1;
 		image_view_create_info.subresourceRange.layerCount = 1;
-		vulkan_image_create(vulkan, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, &vulkan->images.font_atlas_image);
-		vulkan_image_transfer(vulkan, &vulkan->images.font_atlas_image, font_atlas, editor->font_atlas_width * editor->font_atlas_height, 8, 1);
+		vulkan->images.font_atlas_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 1);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.font_atlas_image, font_atlas, editor->font_atlas_width * editor->font_atlas_height);
 
 		VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
 		descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
