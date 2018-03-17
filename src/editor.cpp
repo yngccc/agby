@@ -296,39 +296,27 @@ void editor_select_new_entity(editor* editor, uint32 entity_index) {
 	editor->gizmo_mode = gizmo_mode_transform_translate;
 }
 
-bool ray_intersect_model(ray ray, model *model, mat4 model_transform, uint32 *mesh_index, float *distance) {
-	// float min_distance = ray.len;
-	// uint32 min_mesh_index = UINT32_MAX;
-	// for (uint32 i = 0; i < model->mesh_count; i += 1) {
-	// 	model_mesh *mesh = &model->meshes[i];
-	// 	uint32 current_mesh_index = i;
-	// 	for (uint32 i = 0; i < mesh->instance_count; i += 1) {
-	// 		model_mesh_instance *instance = &mesh->instances[i];
-	// 		mat4 transform = model_transform * instance->transform_mat;
-	// 		for (uint32 i = 0; i < mesh->index_count / 3; i += 1) {
-	// 			vec3 a = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 0]);
-	// 			vec3 b = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 1]);
-	// 			vec3 c = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 2]);
-	// 			a = transform * a;
-	// 			b = transform * b;
-	// 			c = transform * c;
-	// 			float d = 0;
-	// 			if (ray_intersect_triangle(ray, a, b, c, &d) && d < min_distance) {
-	// 				min_distance = d;
-	// 				min_mesh_index = current_mesh_index;
-	// 			}
-	// 		}
-	// 	}
-	// }
-	// if (min_mesh_index != UINT32_MAX) {
-	// 	*mesh_index = min_mesh_index;
-	// 	*distance = min_distance;
-	// 	return true;
-	// }
-	// else {
-	// 	return false;
-	// }
-	return false;
+bool ray_intersect_mesh(ray ray, model_mesh *mesh, mat4 transform, float *distance) {
+	float min_distance = ray.len;
+	for (uint32 i = 0; i < mesh->index_count / 3; i += 1) {
+		vec3 a = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 0]);
+		vec3 b = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 1]);
+		vec3 c = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 2]);
+		a = transform * a;
+		b = transform * b;
+		c = transform * c;
+		float d = 0;
+		if (ray_intersect_triangle(ray, a, b, c, &d) && d < min_distance) {
+			min_distance = d;
+		}
+	}
+	if (min_distance != ray.len) {
+		*distance = min_distance;
+		return true;
+	}
+	else {
+		return false;
+	}
 }
 
 int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd_line_str, int cmd_show) {
@@ -467,7 +455,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
 			}
 		}
-		{ // selection/gizmo modes
+		{ // selection modes, gizmo modes
 			ImGui::PushID("selection_gizmo_mode_popup");
 			if ((ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
 				ImGui::OpenPopup("##popup");
@@ -541,17 +529,24 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
 				ray ray = {editor->camera.position, vec3_normalize(mouse_world_position - editor->camera.position), editor->camera.zfar};
 				if (editor->selection_mode == selection_mode_entity) {
-					float min_distance = ray.len;
+					float entity_min_distance = ray.len;
 					uint32 entity_index = UINT32_MAX;
 					for (uint32 i = 0; i < level->entity_count; i += 1) {
 						if (level->entity_flags[i] & entity_component_flag_render) {
-							entity_render_component *entity_render_component = entity_get_render_component(level, i);
-							model *model = &level->models[entity_render_component->model_index];
-							mat4 model_transform = transform_to_mat4(level->entity_transforms[i]);
-							uint32 mesh_index = 0;
-							float distance = 0;
-							if (ray_intersect_model(ray, model, model_transform, &mesh_index, &distance) && distance < min_distance) {
-								min_distance = distance;
+							entity_render_component *render_component = entity_get_render_component(level, i);
+							model *model = &level->models[render_component->model_index];
+							mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
+							float model_min_distance = ray.len;
+							traverse_model_scenes_track_global_transform(model, [&](model_node *node, mat4 global_transform_mat) {
+								if (node->mesh_index < model->mesh_count) {
+									float distance = 0;
+									if (ray_intersect_mesh(ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {
+										model_min_distance = distance;
+									}
+								}
+							});
+							if (model_min_distance < entity_min_distance) {
+								entity_min_distance = model_min_distance;
 								entity_index = i;
 							}
 						}
@@ -561,15 +556,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				else if (editor->selection_mode == selection_mode_mesh) {
-					if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_render) {
-						entity_render_component *entity_render_component = entity_get_render_component(level, editor->entity_index);
-						model *model = &level->models[entity_render_component->model_index];
-						mat4 model_transform = transform_to_mat4(level->entity_transforms[editor->entity_index]);
-						uint32 mesh_index = UINT32_MAX;
-						float distance = 0;
-						ray_intersect_model(ray, model, model_transform, &mesh_index, &distance);
-						editor->entity_mesh_index = mesh_index;
-					}
 				}
 			}
 		}
@@ -1098,14 +1084,15 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		}
 		{ // gizmo
 			if (editor->entity_index < level->entity_count) {
+				uint32 entity_flags = level->entity_flags[editor->entity_index];
 				mat4 camera_view_mat = camera_view_mat4(editor->camera);
 				mat4 camera_proj_mat = camera_projection_mat4(editor->camera);
 				if (editor->gizmo_mode == gizmo_mode_transform_translate) {
-					ImGuizmo::BeginFrame();
 					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
 					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
 					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
 					mat4 transform_mat = transform_to_mat4(*entity_transform);
+					ImGuizmo::BeginFrame();
 					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
 					entity_transform->translate = mat4_get_translation(transform_mat);
 					if (!level->entity_modifications[editor->entity_index].transform) {
@@ -1113,11 +1100,11 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				else if (editor->gizmo_mode == gizmo_mode_transform_rotate) {
-					ImGuizmo::BeginFrame();
 					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
 					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
 					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
 					mat4 transform_mat = transform_to_mat4(*entity_transform);
+					ImGuizmo::BeginFrame();
 					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::WORLD, (float *)transform_mat);
 					entity_transform->rotate = quat_normalize(mat4_get_rotation(transform_mat));
 					if (!level->entity_modifications[editor->entity_index].transform) {
@@ -1125,107 +1112,112 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 				else if (editor->gizmo_mode == gizmo_mode_transform_scale) {
-					ImGuizmo::BeginFrame();
 					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
 					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
 					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
 					mat4 transform_mat = transform_to_mat4(*entity_transform);
+					ImGuizmo::BeginFrame();
 					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
 					entity_transform->scale = mat4_get_scaling(transform_mat);
 					if (!level->entity_modifications[editor->entity_index].transform) {
 						level->entity_modifications[editor->entity_index].transform = entity_transform;
 					}
 				}
-				else if (editor->gizmo_mode == gizmo_mode_directional_light_rotate) {
-					ImGuizmo::BeginFrame();
+				else if (editor->gizmo_mode == gizmo_mode_directional_light_rotate && entity_flags & entity_component_flag_light) {
 					entity_light_component *old_light_component = entity_get_light_component(level, editor->entity_index);
-					entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
-					memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
-					m_assert(light_component->light_type == light_type_directional);
-					transform transform = transform_identity();
-					transform.translate = editor->camera.position + editor->camera.view * 16;
-					mat4 transform_mat = transform_to_mat4(transform);
-					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::WORLD, (float *)transform_mat);
-					light_component->directional_light.direction = vec3_normalize(mat4_get_rotation(transform_mat) * light_component->directional_light.direction);
-					if (!level->entity_modifications[editor->entity_index].light_component) {
-						level->entity_modifications[editor->entity_index].light_component = light_component;
+					if (old_light_component->light_type == light_type_directional) {
+						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
+						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
+						transform transform = transform_identity();
+						transform.translate = editor->camera.position + editor->camera.view * 16;
+						mat4 transform_mat = transform_to_mat4(transform);
+						ImGuizmo::BeginFrame();
+						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::WORLD, (float *)transform_mat);
+						light_component->directional_light.direction = vec3_normalize(mat4_get_rotation(transform_mat) * light_component->directional_light.direction);
+						if (!level->entity_modifications[editor->entity_index].light_component) {
+							level->entity_modifications[editor->entity_index].light_component = light_component;
+						}
+
+						ImDrawList *draw_list = ImGuizmo::gContext.mDrawList;
+						vec3 line_begin_world = transform.translate;
+						vec3 line_end_world = line_begin_world + light_component->directional_light.direction * 1.25f;
+						vec4 line_begin = camera_proj_mat * camera_view_mat * vec4{line_begin_world.x, line_begin_world.y, line_begin_world.z, 1};
+						vec4 line_end = camera_proj_mat * camera_view_mat * vec4{line_end_world.x, line_end_world.y, line_end_world.z, 1};
+						line_begin /= line_begin.w;
+						line_end /= line_end.w;
+						line_begin.x = line_begin.x * 0.5f + 0.5f;
+						line_begin.y = -line_begin.y * 0.5f + 0.5f;
+						line_end.x = line_end.x * 0.5f + 0.5f;
+						line_end.y = -line_end.y * 0.5f + 0.5f;
+
+						ImVec2 line_begin_imgui = {ImGui::GetIO().DisplaySize.x * line_begin.x, ImGui::GetIO().DisplaySize.y * line_begin.y};
+						ImVec2 line_end_imgui = {ImGui::GetIO().DisplaySize.x * line_end.x, ImGui::GetIO().DisplaySize.y * line_end.y};
+
+						draw_list->AddLine(line_begin_imgui, line_end_imgui, 0xffffffff, 6);
+						draw_list->AddCircleFilled(line_end_imgui, 12, 0xff00ffff);
 					}
-
-					ImDrawList *draw_list = ImGuizmo::gContext.mDrawList;
-					vec3 line_begin_world = transform.translate;
-					vec3 line_end_world = line_begin_world + light_component->directional_light.direction * 1.25f;
-					vec4 line_begin = camera_proj_mat * camera_view_mat * vec4{line_begin_world.x, line_begin_world.y, line_begin_world.z, 1};
-					vec4 line_end = camera_proj_mat * camera_view_mat * vec4{line_end_world.x, line_end_world.y, line_end_world.z, 1};
-					line_begin /= line_begin.w;
-					line_end /= line_end.w;
-					line_begin.x = line_begin.x * 0.5f + 0.5f;
-					line_begin.y = -line_begin.y * 0.5f + 0.5f;
-					line_end.x = line_end.x * 0.5f + 0.5f;
-					line_end.y = -line_end.y * 0.5f + 0.5f;
-
-					ImVec2 line_begin_imgui = {ImGui::GetIO().DisplaySize.x * line_begin.x, ImGui::GetIO().DisplaySize.y * line_begin.y};
-					ImVec2 line_end_imgui = {ImGui::GetIO().DisplaySize.x * line_end.x, ImGui::GetIO().DisplaySize.y * line_end.y};
-
-					draw_list->AddLine(line_begin_imgui, line_end_imgui, 0xffffffff, 6);
-					draw_list->AddCircleFilled(line_end_imgui, 12, 0xff00ffff);
 				}
-				else if (editor->gizmo_mode == gizmo_mode_point_light_translate) {
-					ImGuizmo::BeginFrame();
+				else if (editor->gizmo_mode == gizmo_mode_point_light_translate && entity_flags & entity_component_flag_light) {
 					entity_light_component *old_light_component = entity_get_light_component(level, editor->entity_index);
-					entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
-					memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
-					m_assert(light_component->light_type == light_type_point);
-					transform transform = transform_identity();
-					transform.translate = light_component->point_light.position;
-					mat4 transform_mat = transform_to_mat4(transform);
-					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
-					light_component->point_light.position = mat4_get_translation(transform_mat);
-					if (!level->entity_modifications[editor->entity_index].light_component) {
-						level->entity_modifications[editor->entity_index].light_component = light_component;
+					if (old_light_component->light_type == light_type_point) {
+						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
+						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
+						transform transform = transform_identity();
+						transform.translate = light_component->point_light.position;
+						mat4 transform_mat = transform_to_mat4(transform);
+						ImGuizmo::BeginFrame();
+						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
+						light_component->point_light.position = mat4_get_translation(transform_mat);
+						if (!level->entity_modifications[editor->entity_index].light_component) {
+							level->entity_modifications[editor->entity_index].light_component = light_component;
+						}
 					}
 				}
 				else if (editor->gizmo_mode == gizmo_mode_collision_sphere_scale) {
-					ImGuizmo::BeginFrame();
 					entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
-					entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
-					memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
-					m_assert(collision_component->shape == collision_shape_sphere);
-					auto *sphere = &collision_component->sphere;
-					mat4 transform_mat = mat4_from_translation(level->entity_transforms[editor->entity_index].translate);
-					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
-					static vec3 final_scale = {1, 1, 1};
-					vec3 scale = mat4_get_scaling(transform_mat);
-					if (scale == vec3{1, 1, 1}) {
-						sphere->radius *= max(max(final_scale.x, final_scale.y), final_scale.z);
-						final_scale = {1, 1, 1};
-					}
-					else {
-						final_scale = scale;
-					}
-					if (!level->entity_modifications[editor->entity_index].collision_component) {
-						level->entity_modifications[editor->entity_index].collision_component = collision_component;
-					}
-				}					
+					if (old_collision_component->shape == collision_shape_sphere) {
+						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
+						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
+
+						auto *sphere = &collision_component->sphere;
+						mat4 transform_mat = mat4_from_translation(level->entity_transforms[editor->entity_index].translate);
+						ImGuizmo::BeginFrame();
+						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
+						static vec3 final_scale = {1, 1, 1};
+						vec3 scale = mat4_get_scaling(transform_mat);
+						if (scale == vec3{1, 1, 1}) {
+							sphere->radius *= max(max(final_scale.x, final_scale.y), final_scale.z);
+							final_scale = {1, 1, 1};
+						}
+						else {
+							final_scale = scale;
+						}
+						if (!level->entity_modifications[editor->entity_index].collision_component) {
+							level->entity_modifications[editor->entity_index].collision_component = collision_component;
+						}
+					}					
+				}
 				else if (editor->gizmo_mode == gizmo_mode_collision_box_scale) {
-					ImGuizmo::BeginFrame();
 					entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
-					entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
-					memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
-					m_assert(collision_component->shape == collision_shape_box);
-					auto *box = &collision_component->box;
-					mat4 transform_mat = mat4_from_translation(level->entity_transforms[editor->entity_index].translate);
-					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
-					static vec3 final_scale = {1, 1, 1};
-					vec3 scale = mat4_get_scaling(transform_mat);
-					if (scale == vec3{1, 1, 1}) {
-						box->size *= scale;
-						final_scale = {1, 1, 1};
-					}
-					else {
-						final_scale = scale;
-					}
-					if (!level->entity_modifications[editor->entity_index].collision_component) {
-						level->entity_modifications[editor->entity_index].collision_component = collision_component;
+					if (old_collision_component->shape == collision_shape_box) {
+						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
+						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
+						auto *box = &collision_component->box;
+						mat4 transform_mat = mat4_from_translation(level->entity_transforms[editor->entity_index].translate);
+						ImGuizmo::BeginFrame();
+						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
+						static vec3 final_scale = {1, 1, 1};
+						vec3 scale = mat4_get_scaling(transform_mat);
+						if (scale == vec3{1, 1, 1}) {
+							box->size *= scale;
+							final_scale = {1, 1, 1};
+						}
+						else {
+							final_scale = scale;
+						}
+						if (!level->entity_modifications[editor->entity_index].collision_component) {
+							level->entity_modifications[editor->entity_index].collision_component = collision_component;
+						}
 					}
 				}
 			}
