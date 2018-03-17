@@ -12,12 +12,6 @@
 #define TINYGLTF_NOEXCEPTION
 #include "../vendor/include/tinygltf/tiny_gltf.h"
 
-#define RAPIDJSON_SSE2
-#define RAPIDJSON_ASSERT(x) m_assert(x)
-#include "../vendor/include/rapidjson/document.h"
-#include "../vendor/include/rapidjson/prettywriter.h"
-#include "../vendor/include/rapidjson/error/en.h"
-
 #include "math.cpp"
 #include "gpk.cpp"
 #include <vulkan/vulkan.h>
@@ -569,7 +563,10 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			vec2 uv = *(vec2 *)(uv_data + uv_stride * i);
 			vec3 normal = *(vec3 *)(normal_data + normal_stride * i);
 			i16vec3 compressed_normal = {(int16)round(normal[0] * 32767.0f), (int16)round(normal[1] * 32767.0f), (int16)round(normal[2] * 32767.0f)};
-			vec3 tangent = vec3_normalize(vec3_cross(normal, vec3{0, 1, 0}));
+			vec3 tangent1 = vec3_cross(normal, vec3{0, 0, 1});
+			vec3 tangent2 = vec3_cross(normal, vec3{0, 1, 0});
+			vec3 tangent = vec3_len(tangent1) > vec3_len(tangent2) ? tangent1 : tangent2;
+			tangent = vec3_normalize(tangent);
 			if (tangent_data) {
 				tangent = *(vec3 *)(tangent_data + tangent_stride * i);
 			}
@@ -633,6 +630,36 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 	printf("done importing glb: \"%s\" %d\n", glb_file.c_str(), current_offset);
 }
 
+struct import_json_schema {
+	bool force_import_all;
+	bool force_import_models;
+	bool force_import_skyboxes;
+	struct model {
+		bool import;
+		std::string glb_file;
+		std::string gpk_file;
+	};
+	std::vector<model> models;
+	struct skybox {
+		bool import;
+		std::string dir;
+		std::string gpk_file;
+	};
+	std::vector<skybox> skyboxes;
+};
+
+void from_json(const nlohmann::json &j, import_json_schema &import) {
+	import.force_import_all = j["force_import_all"];
+	import.force_import_models = j["force_import_models"];
+	import.force_import_skyboxes = j["force_import_skyboxes"];
+	for (auto &m : j["models"]) {
+		import.models.push_back({m["import"], m["glb_file"], m["gpk_file"]});
+	}
+	for (auto &s : j["skyboxes"]) {
+		import.skyboxes.push_back({s["import"], s["dir"], s["gpk_file"]});
+	}
+}
+
 void import_json(std::string json_file) {
 	printf("begin importing json file: \"%s\" \n", json_file.c_str());
 
@@ -661,39 +688,21 @@ void import_json(std::string json_file) {
 		CloseHandle(process_info.hThread);
 		CloseHandle(process_info.hProcess);
 	};
-	
-	file_mapping json_file_mapping = {};
-	m_assert(open_file_mapping(json_file.c_str(), &json_file_mapping));
-	m_scope_exit(close_file_mapping(json_file_mapping));
-	rapidjson::Document json;
-	rapidjson::ParseResult json_parse_result = json.Parse((const char *)json_file_mapping.ptr);
-	if (!json_parse_result) {
-		fatal("error: json parse failed:\nFile: %s\nOffset:: %u\nError: %s", json_file.c_str(), (uint32)json_parse_result.Offset(), rapidjson::GetParseError_En(json_parse_result.Code()));
-	}
 
-	bool force_import_all = json["force_import_all"].GetBool();
-	bool force_import_models = json["force_import_models"].GetBool();
-	bool force_import_skyboxes = json["force_import_skyboxes"].GetBool();
-
-	rapidjson::Value::Array models = json["models"].GetArray();
-	for (uint32 i = 0; i < models.Size(); i += 1) {
-		rapidjson::Value::Object model = models[i].GetObject();
-		if (model["import"].GetBool() || force_import_all || force_import_models) {
-			const char *glb_file = model["glb_file"].GetString();
-			const char *gpk_file = model["gpk_file"].GetString();
-			std::string cmdl_str = std::string("import.exe -glb-to-gpk ") + glb_file + " " + gpk_file;
+	std::ifstream json_file_fstream(json_file.c_str());
+	nlohmann::json json_content;
+	json_file_fstream >> json_content;
+	import_json_schema import = json_content;
+	for (auto &m : import.models) {
+		if (m.import || import.force_import_all || import.force_import_models) {
+			std::string cmdl_str = std::string("import.exe -glb-to-gpk ") + m.glb_file + " " + m.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}
 	}
-
-	rapidjson::Value::Array skyboxes = json["skyboxes"].GetArray();
-	for (uint32 i = 0; i < skyboxes.Size(); i += 1) {
-		rapidjson::Value::Object skybox = skyboxes[i].GetObject();
-		if (skybox["import"].GetBool() || force_import_all || force_import_skyboxes) {
-			const char *dir = skybox["dir"].GetString();
-			const char *gpk_file = skybox["gpk_file"].GetString();
-			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + dir + " " + gpk_file;
+	for (auto &s : import.skyboxes) {
+		if (s.import || import.force_import_all || import.force_import_skyboxes) {
+			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + s.dir + " " + s.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}

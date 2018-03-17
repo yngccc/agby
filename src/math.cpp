@@ -6,30 +6,6 @@
 
 #include "common.cpp"
 
-float degree_to_radian(float degree) {
-	return degree * (float)M_PI / 180;
-}
-
-float radian_to_degree(float radian) {
-	return radian / (float)M_PI * 180;
-}
-
-float wrap_angle(float angle) {
-	angle = fmodf(angle, (float)M_PI * 2);
-	if (angle < 0) {
-		angle += (float)M_PI * 2;
-	}
-	return angle;
-}
-
-uint32 mipmap_levels(uint32 width, uint32 height) {
-	return (int)floorf(log2f((float)max(width, height))) + 1;
-}
-
-float luminance(float r, float g, float b) {
-	return sqrtf(0.299f * r * r + 0.587f * g * g + 0.114f * b * b);
-}
-
 union vec2 {
 	struct { float x, y; };
 	struct { float r, g; };
@@ -38,29 +14,25 @@ union vec2 {
 	struct { float min, max; };
 	float e[2];
 
-	bool operator==(const vec2 &v) const { return (this->x == v.x) && (this->y == v.y); }
+	bool operator==(const vec2 &v) const { return (x == v.x) && (y == v.y); }
 	bool operator!=(const vec2 &v) const { return !(*this == v); }
-	vec2 operator+(const vec2 &v) const { return vec2{this->x + v.x, this->y + v.y}; }
-	vec2 operator-() const { return vec2{-this->x, -this->y}; }
-	vec2 operator-(const vec2 &v) const { return vec2{this->x - v.x, this->y - v.y}; }
-	vec2 operator-(float d) const { return vec2{this->x - d, this->y - d}; }
-	vec2 operator*(float d) const { return vec2{this->x * d, this->y * d}; }
-	vec2 operator*(const vec2 &v) const { return vec2{this->x * v.x, this->y * v.y}; }
-	vec2 operator/(float d) const { return vec2{this->x / d, this->y / d}; }
-	vec2 operator/(const vec2 &v) const { return vec2{this->x / v.x, this->y / v.y}; }
-	void operator+=(const vec2 &v) { this->x += v.x; this->y += v.y; }
-	void operator-=(const vec2 &v) { this->x -= v.x; this->y -= v.y; }
-	void operator*=(const vec2 &v) { this->x *= v.x; this->y *= v.y; }
-	void operator*=(float f) { this->x *= f; this->y *= f; }
-	void operator/=(const vec2 &v) { this->x /= v.x; this->y /= v.y; }
-	void operator/=(float f) { this->x /= f; this->y /= f; }
-	float& operator[](uint32 i) { return this->e[i]; }
-	const float& operator[](uint32 i) const { return this->e[i]; }
+	vec2 operator+(const vec2 &v) const { return vec2{x + v.x, y + v.y}; }
+	vec2 operator-() const { return vec2{-x, -y}; }
+	vec2 operator-(const vec2 &v) const { return vec2{x - v.x, y - v.y}; }
+	vec2 operator-(float d) const { return vec2{x - d, y - d}; }
+	vec2 operator*(float d) const { return vec2{x * d, y * d}; }
+	vec2 operator*(const vec2 &v) const { return vec2{x * v.x, y * v.y}; }
+	vec2 operator/(float d) const { return vec2{x / d, y / d}; }
+	vec2 operator/(const vec2 &v) const { return vec2{x / v.x, y / v.y}; }
+	void operator+=(const vec2 &v) { x += v.x; y += v.y; }
+	void operator-=(const vec2 &v) { x -= v.x; y -= v.y; }
+	void operator*=(const vec2 &v) { x *= v.x; y *= v.y; }
+	void operator*=(float f) { x *= f; y *= f; }
+	void operator/=(const vec2 &v) { x /= v.x; y /= v.y; }
+	void operator/=(float f) { x /= f; y /= f; }
+	float& operator[](uint32 i) { return e[i]; }
+	const float& operator[](uint32 i) const { return e[i]; }
 };
-
-float vec2_len(vec2 v) { return sqrtf(v.x * v.x + v.y * v.y); }
-vec2 vec2_normalize(vec2 v) { return v / vec2_len(v); }
-float vec2_dot(vec2 v1, vec2 v2) { return v1.x * v2.x + v1.y * v2.y; }
 
 union vec3 {
 	struct { float x, y, z; };
@@ -70,32 +42,26 @@ union vec3 {
 	struct { float pitch, yaw, roll; };
 	float e[3];
 
-	bool operator==(const vec3 &v) const { return (this->x == v.x) && (this->y == v.y) && (this->z == v.z); }
+	bool operator==(const vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
 	bool operator!=(const vec3 &v) const { return !(*this == v); }
-	vec3 operator+(const vec3 &v) const { return vec3{this->x + v.x, this->y + v.y, this->z + v.z}; }
-	vec3 operator-() const { return vec3{-this->x, -this->y, -this->z}; }
-	vec3 operator-(const vec3 &v) const { return vec3{this->x - v.x, this->y - v.y, this->z - v.z}; }
-	vec3 operator-(float d) const { return vec3{this->x - d, this->y - d, this->z - d}; }
-	vec3 operator*(float d) const { return vec3{this->x * d, this->y * d, this->z * d}; }
-	vec3 operator*(const vec3 &v) const { return vec3{this->x * v.x, this->y * v.y, this->z * v.z}; }
-	vec3 operator/(float d) const { return vec3{this->x / d, this->y / d, this->z / d}; }
-	vec3 operator/(const vec3 &v) const { return vec3{this->x / v.x, this->y / v.y, this->z / v.z}; }
-	void operator+=(const vec3 &v) { this->x += v.x; this->y += v.y; this->z += v.z; }
-	void operator-=(const vec3 &v) { this->x -= v.x; this->y -= v.y; this->z -= v.z; }
-	void operator*=(const vec3 &v) { this->x *= v.x; this->y *= v.y; this->z *= v.z; }
-	void operator*=(float f) { this->x *= f; this->y *= f; this->z *= f; }
-	void operator/=(const vec3 &v) { this->x /= v.x; this->y /= v.y; this->z /= v.z; }
-	void operator/=(float f) { this->x /= f; this->y /= f; this->z /= f; }
-	float& operator[](uint32 i) { return this->e[i]; }
-	const float& operator[](uint32 i) const { return this->e[i]; }
-	vec2 xy() { return vec2{this->x, this->y}; };
+	vec3 operator+(const vec3 &v) const { return vec3{x + v.x, y + v.y, z + v.z}; }
+	vec3 operator-() const { return vec3{-x, -y, -z}; }
+	vec3 operator-(const vec3 &v) const { return vec3{x - v.x, y - v.y, z - v.z}; }
+	vec3 operator-(float d) const { return vec3{x - d, y - d, z - d}; }
+	vec3 operator*(float d) const { return vec3{x * d, y * d, z * d}; }
+	vec3 operator*(const vec3 &v) const { return vec3{x * v.x, y * v.y, z * v.z}; }
+	vec3 operator/(float d) const { return vec3{x / d, y / d, z / d}; }
+	vec3 operator/(const vec3 &v) const { return vec3{x / v.x, y / v.y, z / v.z}; }
+	void operator+=(const vec3 &v) { x += v.x; y += v.y; z += v.z; }
+	void operator-=(const vec3 &v) { x -= v.x; y -= v.y; z -= v.z; }
+	void operator*=(const vec3 &v) { x *= v.x; y *= v.y; z *= v.z; }
+	void operator*=(float f) { x *= f; y *= f; z *= f; }
+	void operator/=(const vec3 &v) { x /= v.x; y /= v.y; z /= v.z; }
+	void operator/=(float f) { x /= f; y /= f; z /= f; }
+	float& operator[](uint32 i) { return e[i]; }
+	const float& operator[](uint32 i) const { return e[i]; }
+	vec2 xy() { return vec2{x, y}; };
 };
-
-float vec3_len(vec3 v) { return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z); }
-vec3 vec3_normalize(vec3 v) { return v / vec3_len(v); }
-float vec3_dot(vec3 v1, vec3 v2) { return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z; }
-vec3 vec3_cross(vec3 v1, vec3 v2) { return vec3{v1.y * v2.z - v2.y * v1.z, v1.z * v2.x - v2.z * v1.x, v1.x * v2.y - v2.x * v1.y}; }
-vec3 vec3_lerp(vec3 v1, vec3 v2, float t) { m_assert(t >= 0 && t <= 1);  return v1 + (v2 - v1) * t; }
 
 union vec4 {
 	struct { float x, y, z, w; };
@@ -104,43 +70,101 @@ union vec4 {
 	struct { float x0, y0, x1, y1; };
 	float e[4];
 
-	bool operator==(const vec4 &v) const { return (this->x == v.x) && (this->y == v.y) && (this->z == v.z) && (this->w == v.w); }
+	bool operator==(const vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
 	bool operator!=(const vec4 &v) const { return !(*this == v); }
-	vec4 operator+(const vec4 &v) const { return vec4{this->x + v.x, this->y + v.y, this->z + v.z, this->w + v.w}; }
-	vec4 operator-() const { return vec4{-this->x, -this->y, -this->z, -this->w}; }
-	vec4 operator-(const vec4 &v) const { return vec4{this->x - v.x, this->y - v.y, this->z - v.z, this->w - v.w}; }
-	vec4 operator-(float d) const { return vec4{this->x - d, this->y - d, this->z - d, this->w - d}; }
-	vec4 operator*(float d) const { return vec4{this->x * d, this->y * d, this->z * d, this->w * d}; }
-	vec4 operator*(const vec4 &v) const { return vec4{this->x * v.x, this->y * v.y, this->z * v.z, this->w * v.w}; }
-	vec4 operator/(float d) const { return vec4{this->x / d, this->y / d, this->z / d, this->w / d}; }
-	vec4 operator/(const vec4 &v) const { return vec4{this->x / v.x, this->y / v.y, this->z / v.z, this->w / v.w}; }
-	void operator+=(const vec4 &v) { this->x += v.x; this->y += v.y; this->z += v.z; this->w += v.w; }
-	void operator-=(const vec4 &v) { this->x -= v.x; this->y -= v.y; this->z -= v.z; this->w -= v.w; }
-	void operator*=(const vec4 &v) { this->x *= v.x; this->y *= v.y; this->z *= v.z; this->w *= v.w; }
-	void operator*=(float f) { this->x *= f; this->y *= f; this->z *= f; this->w *= f; }
-	void operator/=(const vec4 &v) { this->x /= v.x; this->y /= v.y; this->z /= v.z; this->w /= v.w; }
-	void operator/=(float f) { this->x /= f; this->y /= f; this->z /= f; this->w /= f; }
-	float& operator[](uint32 i) { return this->e[i]; }
-	const float& operator[](uint32 i) const { return this->e[i]; }
-	vec3 xyz() const { return vec3{this->x, this->y, this->z}; }
+	vec4 operator+(const vec4 &v) const { return vec4{x + v.x, y + v.y, z + v.z, w + v.w}; }
+	vec4 operator-() const { return vec4{-x, -y, -z, -w}; }
+	vec4 operator-(const vec4 &v) const { return vec4{x - v.x, y - v.y, z - v.z, w - v.w}; }
+	vec4 operator-(float d) const { return vec4{x - d, y - d, z - d, w - d}; }
+	vec4 operator*(float d) const { return vec4{x * d, y * d, z * d, w * d}; }
+	vec4 operator*(const vec4 &v) const { return vec4{x * v.x, y * v.y, z * v.z, w * v.w}; }
+	vec4 operator/(float d) const { return vec4{x / d, y / d, z / d, w / d}; }
+	vec4 operator/(const vec4 &v) const { return vec4{x / v.x, y / v.y, z / v.z, w / v.w}; }
+	void operator+=(const vec4 &v) { x += v.x; y += v.y; z += v.z; w += v.w; }
+	void operator-=(const vec4 &v) { x -= v.x; y -= v.y; z -= v.z; w -= v.w; }
+	void operator*=(const vec4 &v) { x *= v.x; y *= v.y; z *= v.z; w *= v.w; }
+	void operator*=(float f) { x *= f; y *= f; z *= f; w *= f; }
+	void operator/=(const vec4 &v) { x /= v.x; y /= v.y; z /= v.z; w /= v.w; }
+	void operator/=(float f) { x /= f; y /= f; z /= f; w /= f; }
+	float& operator[](uint32 i) { return e[i]; }
+	const float& operator[](uint32 i) const { return e[i]; }
+	vec3 xyz() const { return vec3{x, y, z}; }
 };
 
-float vec4_len(vec4 v) { return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w); }
-vec4 vec4_normalize(vec4 v) { return v / vec4_len(v); }
+union i8vec3 {
+	struct { int8 x, y, z; };
+	struct { int8 r, g, b; };
+	int8 e[3];
+
+	bool operator==(const i8vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
+	bool operator!=(const i8vec3 &v) const { return !(*this == v); }
+	int8& operator[](uint32 i) { return e[i]; }
+	const int8& operator[](uint32 i) const { return e[i]; }
+};
+
+union u8vec3 {
+	struct { uint8 x, y, z; };
+	struct { uint8 r, g, b; };
+	uint8 e[3];
+
+	bool operator==(const u8vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
+	bool operator!=(const u8vec3 &v) const { return !(*this == v); }
+	uint8& operator[](uint32 i) { return e[i]; }
+	const uint8& operator[](uint32 i) const { return e[i]; }
+};
+
+union i8vec4 {
+	struct { int8 x, y, z, w; };
+	struct { int8 r, g, b, a; };
+	int8 e[4];
+
+	bool operator==(const i8vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(const i8vec4 &v) const { return !(*this == v); }
+	int8& operator[](uint32 i) { return e[i]; }
+	const int8& operator[](uint32 i) const { return e[i]; }
+};
 
 union u8vec4 {
 	struct { uint8 x, y, z, w; };
 	struct { uint8 r, g, b, a; };
 	uint8 e[4];
 
-	bool operator==(const u8vec4 &v) const { return (this->x == v.x) && (this->y == v.y) && (this->z == v.z) && (this->w == v.w); }
+	bool operator==(const u8vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(const u8vec4 &v) const { return !(*this == v); }
+	uint8& operator[](uint32 i) { return e[i]; }
+	const uint8& operator[](uint32 i) const { return e[i]; }
 };
 
 union i16vec3 {
 	struct { int16 x, y, z; };
 	int16 e[3];
 
-	bool operator==(const i16vec3 &v) const { return (this->x == v.x) && (this->y == v.y) && (this->z == v.z); }
+	bool operator==(const i16vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
+	bool operator!=(const i16vec3 &v) const { return !(*this == v); }
+	int16& operator[](uint32 i) { return e[i]; }
+	const int16& operator[](uint32 i) const { return e[i]; }
+};
+
+union i16vec4 {
+	struct { int16 x, y, z, w; };
+	struct { int16 r, g, b, a; };
+	int16 e[4];
+
+	bool operator==(const i16vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(const i16vec4 &v) const { return !(*this == v); }
+	int16& operator[](uint32 i) { return e[i]; }
+	const int16& operator[](uint32 i) const { return e[i]; }
+};
+
+union u16vec4 {
+	struct { uint16 x, y, z, w; };
+	struct { uint16 r, g, b, a; };
+	uint16 e[4];
+
+	bool operator==(const u16vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(const u16vec4 &v) const { return !(*this == v); }
+	uint16& operator[](uint32 i) { return e[i]; }
+	const uint16& operator[](uint32 i) const { return e[i]; }
 };
 
 union mat3 {
@@ -148,22 +172,197 @@ union mat3 {
 	vec3 columns[3];
 	vec3 e[3];
 
-	bool operator==(const mat3 &m) const { return (this->c1 == m.c1) && (this->c2 == m.c2) && (this->c3 == m.c3); }
+	bool operator==(const mat3 &m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3); }
+	bool operator!=(const mat3 &m) const { return !(*this == m); }
 	vec3 operator*(const vec3 &v) const {
-		float v0 = this->c1.x * v.x;
-		float v1 = this->c1.y * v.x;
-		float v2 = this->c1.z * v.x;
-		v0 += this->c2.x * v.y;
-		v1 += this->c2.y * v.y;
-		v2 += this->c2.z * v.y;
-		v0 += this->c3.x * v.z;
-		v1 += this->c3.y * v.z;
-		v2 += this->c3.z * v.z;
+		float v0 = c1.x * v.x;
+		float v1 = c1.y * v.x;
+		float v2 = c1.z * v.x;
+		v0 += c2.x * v.y;
+		v1 += c2.y * v.y;
+		v2 += c2.z * v.y;
+		v0 += c3.x * v.z;
+		v1 += c3.y * v.z;
+		v2 += c3.z * v.z;
 		return vec3{v0, v1, v2};
 	}
-	vec3& operator[](uint32 i) { return this->e[i]; }
-	const vec3& operator[](uint32 i) const { return this->e[i]; }
+	vec3& operator[](uint32 i) { return e[i]; }
+	const vec3& operator[](uint32 i) const { return e[i]; }
+	explicit operator float*() { return &c1.x; }
+	explicit operator const float*() const { return &c1.x; }
 };
+
+union mat4 {
+	struct { vec4 c1, c2, c3, c4; };
+	vec4 columns[4];
+	vec4 e[4];
+
+	bool operator==(const mat4 &m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3) && (c4 == m.c4); }
+	bool operator!=(const mat4 &m) const { return !(*this == m); }
+	mat4 operator+(const mat4 &m) const { return mat4{c1 + m.c1, c2 + m.c2, c3 + m.c3, c4 + m.c4}; }
+	mat4 operator*(float d) const { mat4 result = *this; result.c1 = result.c1 * d; result.c2 = result.c2 * d; result.c3 = result.c3 * d; result.c4 = result.c4 * d; return result; }
+	vec4 operator*(const vec4 &v) const {
+		float v0 = c1.x * v.x;
+		float v1 = c1.y * v.x;
+		float v2 = c1.z * v.x;
+		float v3 = c1.w * v.x;
+		v0 += c2.x * v.y;
+		v1 += c2.y * v.y;
+		v2 += c2.z * v.y;
+		v3 += c2.w * v.y;
+		v0 += c3.x * v.z;
+		v1 += c3.y * v.z;
+		v2 += c3.z * v.z;
+		v3 += c3.w * v.z;
+		v0 += c4.x * v.w;
+		v1 += c4.y * v.w;
+		v2 += c4.z * v.w;
+		v3 += c4.w * v.w;
+		return vec4{v0, v1, v2, v3};
+	}
+	vec3 operator*(const vec3 &v) const { vec4 v4 = *this * vec4{v.x, v.y, v.z, 1}; return vec3{v4.x, v4.y, v4.z}; }
+	mat4 operator*(const mat4 &m) const {
+		mat4 result;
+		result.c1 = c1 * m.c1.x + c2 * m.c1.y + c3 * m.c1.z + c4 * m.c1.w;
+		result.c2 = c1 * m.c2.x + c2 * m.c2.y + c3 * m.c2.z + c4 * m.c2.w;
+		result.c3 = c1 * m.c3.x + c2 * m.c3.y + c3 * m.c3.z + c4 * m.c3.w;
+		result.c4 = c1 * m.c4.x + c2 * m.c4.y + c3 * m.c4.z + c4 * m.c4.w;
+		return result;
+	}
+	vec4& operator[](uint32 i) { return e[i]; }
+	const vec4& operator[](uint32 i) const { return e[i]; }
+	explicit operator float*() { return &c1.x; }
+	explicit operator const float*() const { return &c1.x; }
+};
+
+union quat {
+	struct { float x, y, z, w; };
+	struct { float q1, q2, q3, q0; };
+	float e[4];
+
+	bool operator==(const quat &q) const { return x == q.x && y == q.y && z == q.z && w == q.w; }
+	bool operator!=(const quat &q) const { return !(*this == q); }
+	quat operator+(const quat &q) const { return quat{x + q.x, y + q.y, z + q.z, w + q.w}; }
+	quat operator-() const { return quat{-x, -y, -z, -w}; }
+	quat operator*(float d) const { return quat{x * d, y * d, z * d, w * d}; }
+	vec3 operator*(const vec3 &v) const { mat3 quat_to_mat3(quat); return quat_to_mat3(*this) * v; }
+	quat operator*(const quat &q) const {
+		quat result = {
+			w * q.x + x * q.w + y * q.z - z * q.y,
+			w * q.y + y * q.w + z * q.x - x * q.z,
+			w * q.z + z * q.w + x * q.y - y * q.x,
+			w * q.w - x * q.x - y * q.y - z * q.z
+		};
+		return result;
+	}
+	quat operator/(float d) const { return quat{x / d, y / d, z / d, w / d}; }
+	float& operator[](uint32 i) { return e[i]; }
+	const float& operator[](uint32 i) const { return e[i]; }
+};
+
+struct transform {
+	vec3 scale;
+	quat rotate;
+	vec3 translate;
+
+	bool operator==(const transform &t) const { return scale == t.scale && rotate == t.rotate && translate == t.translate; }
+	bool operator!=(const transform &t) const { return !(*this == t); }
+};
+
+struct camera {
+	vec3 position;
+	vec3 view;
+	vec3 up;
+	float fovy;
+	float aspect;
+	float znear;
+	float zfar;
+};
+
+struct plane {
+	vec3 normal;
+	float distance;
+};
+
+struct triangle {
+	vec3 a;
+	vec3 b;
+	vec3 c;
+};
+
+struct sphere {
+	vec3 center;
+	float radius;
+};
+
+struct cylinder {
+	vec3 begin;
+	vec3 end;
+	float radius;
+};
+
+struct capsule {
+	vec3 begin;
+	vec3 end;
+	float radius;
+};
+
+struct aa_bound {
+	vec3 min;
+	vec3 max;
+};
+
+struct ray {
+	vec3 origin;
+	vec3 direction;
+	float len;
+};
+
+float vec2_len(vec2 v) {
+	return sqrtf(v.x * v.x + v.y * v.y);
+}
+
+vec2 vec2_normalize(vec2 v) {
+	float len = vec2_len(v);
+	m_debug_assert(len > 0);
+	return v / len;
+}
+
+float vec2_dot(vec2 v1, vec2 v2) {
+	return v1.x * v2.x + v1.y * v2.y;
+}
+
+float vec3_len(vec3 v) {
+	return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+vec3 vec3_normalize(vec3 v) {
+	float len = vec3_len(v);
+	m_debug_assert(len > 0);
+	return v / len;
+}
+
+float vec3_dot(vec3 v1, vec3 v2) {
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+vec3 vec3_cross(vec3 v1, vec3 v2) {
+	return vec3{v1.y * v2.z - v2.y * v1.z, v1.z * v2.x - v2.z * v1.x, v1.x * v2.y - v2.x * v1.y};
+}
+
+vec3 vec3_lerp(vec3 v1, vec3 v2, float t) {
+	m_assert(t >= 0 && t <= 1);  return v1 + (v2 - v1) * t;
+}
+
+float vec4_len(vec4 v) {
+	return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+}
+
+vec4 vec4_normalize(vec4 v) {
+	float len = vec4_len(v);
+	m_debug_assert(len > 0);
+	return v / len;
+}
 
 void mat3_to_str(const mat3 &m, char *buf, int buf_size) {
 	snprintf(buf, buf_size, "| %.6f %.6f %.6f |\n| %.6f %.6f %.6f |\n| %.6f %.6f %.6f |\n", m.c1.x, m.c2.x, m.c3.x, m.c1.y, m.c2.y, m.c3.y, m.c1.z, m.c2.z, m.c3.z);
@@ -196,6 +395,41 @@ mat3 mat3_inverse(const mat3 &m) {
 	return inverse;
 }
 
+vec3 mat3_get_scaling(const mat3 &m) {
+	vec3 scaling = {vec3_len(m.columns[0]), vec3_len(m.columns[1]), vec3_len(m.columns[2])};
+	return scaling;
+}
+
+quat mat3_get_rotation(const mat3 &m) {
+	float four_x_squared_minus_1 = m[0][0] - m[1][1] - m[2][2];
+	float four_y_squared_minus_1 = m[1][1] - m[0][0] - m[2][2];
+	float four_z_squared_minus_1 = m[2][2] - m[0][0] - m[1][1];
+	float four_w_squared_minus_1 = m[0][0] + m[1][1] + m[2][2];
+	int32 biggest_index = 0;
+	float four_biggest_squared_minus_1 = four_w_squared_minus_1;
+	if (four_x_squared_minus_1 > four_biggest_squared_minus_1) {
+		four_biggest_squared_minus_1 = four_x_squared_minus_1;
+		biggest_index = 1;
+	}
+	if (four_y_squared_minus_1 > four_biggest_squared_minus_1) {
+		four_biggest_squared_minus_1 = four_y_squared_minus_1;
+		biggest_index = 2;
+	}
+	if (four_z_squared_minus_1 > four_biggest_squared_minus_1) {
+		four_biggest_squared_minus_1 = four_z_squared_minus_1;
+		biggest_index = 3;
+	}
+	float biggest_val = sqrtf(four_biggest_squared_minus_1 + 1) * 0.5f;
+	float mult = 0.25f / biggest_val;
+	switch (biggest_index) {
+	case 0: return quat{(m[1][2] - m[2][1]) * mult, (m[2][0] - m[0][2]) * mult, (m[0][1] - m[1][0]) * mult, biggest_val};
+	case 1: return quat{biggest_val, (m[0][1] + m[1][0]) * mult, (m[2][0] + m[0][2]) * mult, (m[1][2] - m[2][1]) * mult};
+	case 2: return quat{(m[0][1] + m[1][0]) * mult, biggest_val, (m[1][2] + m[2][1]) * mult, (m[2][0] - m[0][2]) * mult};
+	case 3: return quat{(m[2][0] + m[0][2]) * mult, (m[1][2] + m[2][1]) * mult, biggest_val, (m[0][1] - m[1][0]) * mult};
+	default: { m_assert(false); return quat{0, 0, 0, 1}; }
+	}
+}
+
 mat3 mat3_from_scaling(float scale) {
 	mat3 mat = {};
 	mat.c1.x = scale; mat.c2.y = scale; mat.c3.z = scale;
@@ -224,50 +458,6 @@ mat3 mat3_from_rotation(vec3 axis, float angle) {
 	mat.c3.y = axis.y * axis.z * c_1 - axis.x * s;
 	mat.c3.z = c + axis.z * axis.z * c_1;
 	return mat;
-}
-
-union mat4 {
-	struct { vec4 c1, c2, c3, c4; };
-	vec4 columns[4];
-	vec4 e[4];
-
-	bool operator==(const mat4 &m) const { return (this->c1 == m.c1) && (this->c2 == m.c2) && (this->c3 == m.c3) && (this->c4 == m.c4); }
-	mat4 operator+(const mat4 &m) const { return mat4{this->c1 + m.c1, this->c2 + m.c2, this->c3 + m.c3, this->c4 + m.c4}; }
-	mat4 operator*(float d) const { mat4 result = *this; result.c1 = result.c1 * d; result.c2 = result.c2 * d; result.c3 = result.c3 * d; result.c4 = result.c4 * d; return result; }
-	vec4 operator*(const vec4 &v) const {
-		float v0 = this->c1.x * v.x;
-		float v1 = this->c1.y * v.x;
-		float v2 = this->c1.z * v.x;
-		float v3 = this->c1.w * v.x;
-		v0 += this->c2.x * v.y;
-		v1 += this->c2.y * v.y;
-		v2 += this->c2.z * v.y;
-		v3 += this->c2.w * v.y;
-		v0 += this->c3.x * v.z;
-		v1 += this->c3.y * v.z;
-		v2 += this->c3.z * v.z;
-		v3 += this->c3.w * v.z;
-		v0 += this->c4.x * v.w;
-		v1 += this->c4.y * v.w;
-		v2 += this->c4.z * v.w;
-		v3 += this->c4.w * v.w;
-		return vec4{v0, v1, v2, v3};
-	}
-	vec3 operator*(const vec3 &v) const { vec4 v4 = *this * vec4{v.x, v.y, v.z, 1}; return vec3{v4.x, v4.y, v4.z}; }
-	mat4 operator*(const mat4 &m) const {
-		mat4 result;
-		result.c1 = this->c1 * m.c1.x + this->c2 * m.c1.y + this->c3 * m.c1.z + this->c4 * m.c1.w;
-		result.c2 = this->c1 * m.c2.x + this->c2 * m.c2.y + this->c3 * m.c2.z + this->c4 * m.c2.w;
-		result.c3 = this->c1 * m.c3.x + this->c2 * m.c3.y + this->c3 * m.c3.z + this->c4 * m.c3.w;
-		result.c4 = this->c1 * m.c4.x + this->c2 * m.c4.y + this->c3 * m.c4.z + this->c4 * m.c4.w;
-		return result;
-	}
-	vec4& operator[](uint32 i) { return this->e[i]; }
-	const vec4& operator[](uint32 i) const { return this->e[i]; }
-};
-
-float *mat4_float_ptr(mat4 &m) {
-	return &(m[0][0]);
 }
 
 mat3 mat4_to_mat3(const mat4 &m) {
@@ -382,16 +572,30 @@ mat4 mat4_from_rotation(vec3 axis, float angle) {
 	return mat;
 }
 
-vec3 mat4_get_translation(const mat4 &m) {
-	return {m.columns[3].x, m.columns[3].y, m.columns[3].z};
-}
-
 vec3 mat4_get_scaling(const mat4 &m) {
-	return {
+	vec3 scaling = {
 		vec3_len(vec3{m.columns[0].x, m.columns[0].y, m.columns[0].z}),
 		vec3_len(vec3{m.columns[1].x, m.columns[1].y, m.columns[1].z}),
 		vec3_len(vec3{m.columns[2].x, m.columns[2].y, m.columns[2].z})
 	};
+	return scaling;
+}
+
+quat mat4_get_rotation(const mat4 &m) {
+	vec3 scaling = mat4_get_scaling(m);
+	mat3 m3 = mat4_to_mat3(m);
+	m3[0] /= scaling.x;
+	m3[1] /= scaling.y;
+	m3[2] /= scaling.z;
+	quat q = mat3_get_rotation(m3);
+	float q_len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+	m_debug_assert(q_len > 0);
+	return q / q_len;
+}
+
+vec3 mat4_get_translation(const mat4 &m) {
+	vec3 translation = {m.columns[3].x, m.columns[3].y, m.columns[3].z};
+	return translation;
 }
 
 mat4 mat4_orthographic_projection(float left, float right, float bottom, float top, float near, float far) {
@@ -458,77 +662,18 @@ mat4 mat4_vulkan_clip() {
 	};
 }
 
-union quat {
-	struct { float x, y, z, w; };
-	struct { float q1, q2, q3, q0; };
-	float e[4];
-
-	quat operator+(const quat &q) const { return quat{ this->x + q.x, this->y + q.y, this->z + q.z, this->w + q.w }; }
-	quat operator-() const { return quat{ -this->x, -this->y, -this->z, -this->w }; }
-	quat operator*(float d) const { return quat{ this->x * d, this->y * d, this->z * d, this->w * d }; }
-	vec3 operator*(const vec3 &v) const { mat3 quat_to_mat3(quat); return quat_to_mat3(*this) * v; }
-	quat operator*(const quat &q) const {
-		quat result = {
-			this->w * q.x + this->x * q.w + this->y * q.z - this->z * q.y,
-			this->w * q.y + this->y * q.w + this->z * q.x - this->x * q.z,
-			this->w * q.z + this->z * q.w + this->x * q.y - this->y * q.x,
-			this->w * q.w - this->x * q.x - this->y * q.y - this->z * q.z
-		};
-		return result;
-	}
-	quat operator/(float d) const { return quat{ this->x / d, this->y / d, this->z / d, this->w / d }; }
-};
-
 quat quat_identity() {
 	return quat{0, 0, 0, 1};
 }
 
 quat quat_normalize(quat q) {
 	float len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+	m_debug_assert(len > 0);
 	return q / len;
 }
 
 quat quat_inverse(quat q) {
 	return quat{q.x, q.y, q.z, -q.w};
-}
-
-quat quat_from_mat3(const mat3 &m) {
-	float four_x_squared_minus_1 = m[0][0] - m[1][1] - m[2][2];
-	float four_y_squared_minus_1 = m[1][1] - m[0][0] - m[2][2];
-	float four_z_squared_minus_1 = m[2][2] - m[0][0] - m[1][1];
-	float four_w_squared_minus_1 = m[0][0] + m[1][1] + m[2][2];
-	int32 biggest_index = 0;
-	float four_biggest_squared_minus_1 = four_w_squared_minus_1;
-	if (four_x_squared_minus_1 > four_biggest_squared_minus_1) {
-		four_biggest_squared_minus_1 = four_x_squared_minus_1;
-		biggest_index = 1;
-	}
-	if (four_y_squared_minus_1 > four_biggest_squared_minus_1) {
-		four_biggest_squared_minus_1 = four_y_squared_minus_1;
-		biggest_index = 2;
-	}
-	if (four_z_squared_minus_1 > four_biggest_squared_minus_1) {
-		four_biggest_squared_minus_1 = four_z_squared_minus_1;
-		biggest_index = 3;
-	}
-	float biggest_val = sqrtf(four_biggest_squared_minus_1 + 1) * 0.5f;
-	float mult = 0.25f / biggest_val;
-	switch (biggest_index) {
-	case 0: return quat{(m[1][2] - m[2][1]) * mult, (m[2][0] - m[0][2]) * mult, (m[0][1] - m[1][0]) * mult, biggest_val};
-	case 1: return quat{biggest_val, (m[0][1] + m[1][0]) * mult, (m[2][0] + m[0][2]) * mult, (m[1][2] - m[2][1]) * mult};
-	case 2: return quat{(m[0][1] + m[1][0]) * mult, biggest_val, (m[1][2] + m[2][1]) * mult, (m[2][0] - m[0][2]) * mult};
-	case 3: return quat{(m[2][0] + m[0][2]) * mult, (m[1][2] + m[2][1]) * mult, biggest_val, (m[0][1] - m[1][0]) * mult};
-	default: { m_assert(false); return quat{0, 0, 0, 1}; }
-	}
-}
-
-quat quat_from_mat4(const mat4 &m) {
-	vec3 scaling = mat4_get_scaling(m);
-	mat3 m3 = mat4_to_mat3(m);
-	m3[0] /= scaling.x;
-	m3[1] /= scaling.y;
-	m3[2] /= scaling.z;
-	return quat_normalize(quat_from_mat3(m3));
 }
 
 mat3 quat_to_mat3(quat q) {
@@ -638,12 +783,6 @@ quat quat_slerp(quat q1, quat q2, float t) {
 	}
 }
 
-struct transform {
-	vec3 scale;
-	quat rotate;
-	vec3 translate;
-};
-
 transform transform_identity() {
 	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, vec3{0, 0, 0}};
 }
@@ -655,16 +794,6 @@ transform transform_from_translation(const vec3 &t) {
 mat4 transform_to_mat4(const transform &t) {
 	return mat4_from_translation(t.translate) * quat_to_mat4(t.rotate) * mat4_from_scaling(t.scale);
 }
-
-struct camera {
-	vec3 position;
-	vec3 view;
-	vec3 up;
-	float fovy;
-	float aspect;
-	float znear;
-	float zfar;
-};
 
 mat4 camera_projection_mat4(const camera &camera) {
 	return mat4_perspective_projection(camera.fovy, camera.aspect, camera.znear, camera.zfar);
@@ -734,39 +863,6 @@ mat4 camera_shadow_map_projection_mat4(const camera &camera, vec3 directional_li
 	return mat4_orthographic_projection(-50, 50, -50, 50, 0, 100) * light_view_mat4;
 }
 
-struct plane {
-	vec3 normal;
-	float distance;
-};
-
-struct triangle {
-	vec3 a;
-	vec3 b;
-	vec3 c;
-};
-
-struct sphere {
-	vec3 center;
-	float radius;
-};
-
-struct cylinder {
-	vec3 begin;
-	vec3 end;
-	float radius;
-};
-
-struct capsule {
-	vec3 begin;
-	vec3 end;
-	float radius;
-};
-
-struct aa_bound {
-	vec3 min;
-	vec3 max;
-};
-
 float aa_bound_volume(const aa_bound &bound) {
 	return fabsf(bound.min.x - bound.max.x) * fabsf(bound.min.y - bound.max.y) * fabsf(bound.min.z - bound.max.z);
 }
@@ -834,12 +930,6 @@ aa_bound aa_bound_expand(const aa_bound &bound1, const aa_bound &bound2) {
 	}
 	return bound;
 }
-
-struct ray {
-	vec3 origin;
-	vec3 direction;
-	float len;
-};
 
 bool ray_intersect_sphere(const ray &ray, const sphere &sphere, float *intersection = nullptr) {
 	vec3 m = ray.origin - sphere.center;
@@ -1012,6 +1102,30 @@ bool ray_intersect_triangle(const ray &ray, vec3 a, vec3 b, vec3 c, float *dista
 		barycentric_coord->u = 1 - barycentric_coord->v - barycentric_coord->w;
 	}
 	return true;
+}
+
+float degree_to_radian(float degree) {
+	return degree * (float)M_PI / 180;
+}
+
+float radian_to_degree(float radian) {
+	return radian / (float)M_PI * 180;
+}
+
+float wrap_angle(float angle) {
+	angle = fmodf(angle, (float)M_PI * 2);
+	if (angle < 0) {
+		angle += (float)M_PI * 2;
+	}
+	return angle;
+}
+
+uint32 mipmap_levels(uint32 width, uint32 height) {
+	return (int)floorf(log2f((float)max(width, height))) + 1;
+}
+
+float luminance(float r, float g, float b) {
+	return sqrtf(0.299f * r * r + 0.587f * g * g + 0.114f * b * b);
 }
 
 void barycentric_coords(vec3 a, vec3 b, vec3 c, vec3 *p, uint32 p_count, vec3 *coords) {

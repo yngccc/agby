@@ -94,8 +94,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
-	auto extra_level_load = [](rapidjson::Document *json_doc) {};
-	level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", extra_level_load);
+	level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", [](nlohmann::json &json){}, false);
 	game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
 
 	btDiscreteDynamicsWorld *bt_world = nullptr;
@@ -252,7 +251,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 				}
 			}
 			if (!falling && ImGui::IsKeyPressed(' ')) {
-				physics_component->bt_rigid_body->setLinearVelocity(linear_velocity + btVector3(0, 10, 0));
+				physics_component->bt_rigid_body->setLinearVelocity(linear_velocity + btVector3(0, 5, 0));
 			}
 		}
 		{ // physics simulation
@@ -288,7 +287,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			render_done_flag = 1;
 		}
 		
-		level_process_entity_modifications_additions(level);
+		level_update_entity_components(level);
 		level->main_thread_frame_memory_arena.size = 0;
 		level->render_thread_frame_memory_arena.size = 0;
 

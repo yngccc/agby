@@ -846,8 +846,8 @@ class TinyGLTF {
 #endif
 #endif
 
-#include "./json.hpp"
-#include "./stb_image.h"
+#include "../json/json.hpp"
+#include "../stb/stb_image.h"
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif

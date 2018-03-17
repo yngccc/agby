@@ -125,7 +125,7 @@ void array_set(T (&array)[N], const T &value) {
 }
 
 template <typename T, uint32 dst_size, uint32 src_size>
-void array_copy(T(&dst_array)[dst_size], T(&src_array)[src_size]) {
+void array_copy(T(&dst_array)[dst_size], const T(&src_array)[src_size]) {
   static_assert(src_size <= dst_size, "");
   memcpy(dst_array, src_array, src_size);
 }

@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
 	gpk_model *gpk_model = (struct gpk_model *)gpk_file_mapping.ptr;
 	uint32 total_vertex_count = 0;
 	uint32 total_index_count = 0;
-	for (uint32 i = 0; i < gpk_model->mesh_count; i += 1) {
+	for (uint32 i = 0; i < gpk_model->node_count; i += 1) {
 		gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
 		total_vertex_count += gpk_model_mesh->vertex_count;
 		total_index_count += gpk_model_mesh->index_count;
@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
 	uint32 *adjaceny_indices = (uint32 *)calloc(total_index_count, sizeof(uint32));
 	uint32 accumulate_position_index = 0;
 	uint32 accumulate_index_index = 0;
-	for (uint32 i = 0; i < gpk_model->mesh_count; i += 1) {
+	for (uint32 i = 0; i < gpk_model->node_count; i += 1) {
 		gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
 		uint8 *gpk_indices = gpk_file_mapping.ptr + gpk_model_mesh->indices_offset;
 		uint8 *gpk_vertices = gpk_file_mapping.ptr + gpk_model_mesh->vertices_offset;
