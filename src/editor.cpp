@@ -87,7 +87,6 @@ struct editor {
 	gizmo_mode gizmo_mode;
 	
 	uint32 entity_index;
-	uint32 entity_mesh_index;
 	bool entity_show_collision_shape;
 
 	undoable undoables[256];
@@ -153,11 +152,11 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
 		descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
 		descriptor_set_allocate_info.descriptorSetCount = 1;
-		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.sampled_images_set_layouts[0];
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.imgui_font_atlas_image));
-		VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_image_samplers[vulkan->images.imgui_font_atlas_image.mipmap_count], vulkan->images.imgui_font_atlas_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
+		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.imgui_font_atlas_texture));
+		VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_samplers[vulkan->images.imgui_font_atlas_image.mipmap_count], vulkan->images.imgui_font_atlas_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-		write_descriptor_set.dstSet = vulkan->descriptors.imgui_font_atlas_image;
+		write_descriptor_set.dstSet = vulkan->descriptors.imgui_font_atlas_texture;
 		write_descriptor_set.dstBinding = 0;
 		write_descriptor_set.descriptorCount = 1;
 		write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -201,11 +200,11 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
 		descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
 		descriptor_set_allocate_info.descriptorSetCount = 1;
-		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.sampled_images_set_layouts[0];
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.font_atlas_image));
-		VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.font_atlas_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
+		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.font_atlas_texture));
+		VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_samplers[0], vulkan->images.font_atlas_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-		write_descriptor_set.dstSet = vulkan->descriptors.font_atlas_image;
+		write_descriptor_set.dstSet = vulkan->descriptors.font_atlas_texture;
 		write_descriptor_set.dstBinding = 0;
 		write_descriptor_set.descriptorCount = 1;
 		write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -243,7 +242,6 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		editor->camera_move_speed = 10;
 
 		editor->entity_index = UINT32_MAX;
-		editor->entity_mesh_index= UINT32_MAX;
 		editor->entity_show_collision_shape = true;
 
 		char new_level_file[] = "agby_assets\\levels\\level_new.json";
@@ -292,16 +290,15 @@ struct write_editor_settings {
 
 void editor_select_new_entity(editor* editor, uint32 entity_index) {
 	editor->entity_index = entity_index;
-	editor->entity_mesh_index = UINT32_MAX;
 	editor->gizmo_mode = gizmo_mode_transform_translate;
 }
 
 bool ray_intersect_mesh(ray ray, model_mesh *mesh, mat4 transform, float *distance) {
 	float min_distance = ray.len;
 	for (uint32 i = 0; i < mesh->index_count / 3; i += 1) {
-		vec3 a = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 0]);
-		vec3 b = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 1]);
-		vec3 c = *(vec3 *)(mesh->vertices_data + mesh->vertex_size * ((uint16 *)mesh->indices_data)[i * 3 + 2]);
+		vec3 a = *(vec3 *)(mesh->vertices_data + ((uint16 *)mesh->indices_data)[i * 3 + 0] * sizeof(struct gpk_model_vertex));
+		vec3 b = *(vec3 *)(mesh->vertices_data + ((uint16 *)mesh->indices_data)[i * 3 + 1] * sizeof(struct gpk_model_vertex));
+		vec3 c = *(vec3 *)(mesh->vertices_data + ((uint16 *)mesh->indices_data)[i * 3 + 2] * sizeof(struct gpk_model_vertex));
 		a = transform * a;
 		b = transform * b;
 		c = transform * c;
@@ -764,7 +761,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							for (uint32 i = 0; i < level->model_count; i += 1) {
 								if (ImGui::Selectable(level->models[i].gpk_file, render_component->model_index == i)) {
 									render_component->model_index = i;
-									editor->entity_mesh_index = UINT32_MAX;
 								}
 							}
 							ImGui::EndCombo();
@@ -1299,18 +1295,6 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 					}
 				}
 			}
-			{ // entity mesh outline
-				if (editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_render) {
-					entity_render_component *entity_render_component = entity_get_render_component(level, editor->entity_index);
-					if (entity_render_component->model_index < level->model_count && editor->entity_mesh_index < level->models[entity_render_component->model_index].node_count) {
-						for (uint32 i = 0; i < level->render_data.model_count; i += 1) {
-							if (level->render_data.models[i].model_index == entity_render_component->model_index) {
-								level->render_data.models[i].meshes[editor->entity_mesh_index].render_vertices_outline = true;
-							}
-						}														
-					}
-				}
-			}
 			{ // imgui
 				round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(ImDrawVert));
 				editor->render_data.imgui_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
@@ -1372,7 +1356,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 			VkDeviceSize vertices_offset = 0;
 			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
 			vkCmdBindIndexBuffer(cmd_buffer, vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, vertices_offset, VK_INDEX_TYPE_UINT16);
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline.layout, 0, 1, &vulkan->descriptors.imgui_font_atlas_image, 0, nullptr);
+			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline.layout, 0, 1, &vulkan->descriptors.imgui_font_atlas_texture, 0, nullptr);
 			vec2 push_consts = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
 			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.imgui_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_consts), &push_consts);
 			ImDrawData *imgui_draw_data = ImGui::GetDrawData();
@@ -1397,6 +1381,18 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		level_generate_render_commands(level, vulkan, editor->camera, extra_main_render_pass_render_commands, extra_swap_chain_render_commands);
 		bool screen_shot = ImGui::IsKeyReleased(keycode_print_screen);
 		vulkan_end_render(vulkan, screen_shot);
+
+		{
+			entity_addition *addition = level->entity_addition;
+			uint32 addition_count = 0;
+			while (addition) {
+				addition_count += 1;
+				addition = addition->next;
+			}
+			if (addition_count > 0) {
+				editor_select_new_entity(editor, level->entity_count + addition_count - 1);
+			}
+		}
 
 		level_update_entity_components(level);
 		level->main_thread_frame_memory_arena.size = 0;

@@ -6,6 +6,8 @@ layout(location = 0) in vec3 position_in;
 layout(location = 1) in vec2 uv_in;
 layout(location = 2) in vec3 normal_in;
 layout(location = 3) in vec3 tangent_in;
+layout(location = 4) in uvec4 joint_indices_in;
+layout(location = 5) in vec4 joint_weights_in;
 
 layout(location = 0) out vec3 position_out;
 layout(location = 1) out vec4 shadow_map_coord_out;
@@ -39,6 +41,10 @@ layout(set = 0, binding = 1) uniform mesh_uniform {
   float roughness;
   float metallic;
   float height_map_scale;
+};
+
+layout(set = 0, binding = 2) uniform mesh_uniform_2 {
+  mat4 joint_mats[256];
 };
 
 void main() {

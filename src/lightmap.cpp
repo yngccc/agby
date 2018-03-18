@@ -46,7 +46,7 @@ int main(int argc, char **argv) {
 			indices[accumulate_index_index + i] = accumulate_position_index + index;
 		}
 		for (uint32 i = 0; i < gpk_model_mesh->vertex_count; i += 1) {
-			vec3 vertex = *(vec3 *)(gpk_vertices + gpk_model_mesh->vertex_size * i);
+			vec3 vertex = *(vec3 *)(gpk_vertices + sizeof(gpk_model_vertex) * i);
 			positions[accumulate_position_index + i] = {vertex.x, vertex.y, vertex.z};
 		}
 		accumulate_index_index += gpk_model_mesh->index_count;

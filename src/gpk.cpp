@@ -4,16 +4,6 @@
 
 #pragma once
 
-const uint32 gpk_model_vertex_index_size = 2;         // ushort
-const uint32 gpk_model_vertex_position_size = 12;     // float/float/float
-const uint32 gpk_model_vertex_uv_size = 8;            // float/float
-const uint32 gpk_model_vertex_normal_size = 6;        // short_snorm/short_snorm/short_snorm
-const uint32 gpk_model_vertex_tangent_size = 6;       // short_snorm/short_snorm/short_snorm
-const uint32 gpk_model_vertex_joint_indices_size = 4; // u8/u8/u8/u8
-const uint32 gpk_model_vertex_joint_weights_size = 8; // short_unorm/short_unorm/short_unorm/short_unorm
-const uint32 gpk_model_vertex_max_joint_count = 4;
-const uint32 gpk_model_mesh_max_joint_count = 256;
-
 struct gpk_model {
 	char format_str[32];
 	uint32 scene_offset;
@@ -22,6 +12,8 @@ struct gpk_model {
 	uint32 node_count;
 	uint32 mesh_offset;
 	uint32 mesh_count;
+	uint32 skin_offset;
+	uint32 skin_count;
 	uint32 material_offset;
 	uint32 material_count;
 	uint32 image_offset;
@@ -36,6 +28,7 @@ struct gpk_model_scene {
 
 struct gpk_model_node {
 	uint32 mesh_index;
+	uint32 skin_index;
 	mat4 local_transform_mat;
 	uint32 children[32];
 	uint32 child_count;
@@ -47,8 +40,29 @@ struct gpk_model_mesh {
 	uint32 indices_offset;
 	uint32 index_count;
 	uint32 vertices_offset;
-	uint32 vertex_size;
 	uint32 vertex_count;
+};
+
+struct gpk_model_vertex {
+	vec3 position;
+	vec2 uv;
+	i16vec3 normal;
+	i16vec3 tangent;
+	u8vec4 joint_indices;
+	u16vec4 joint_weights;
+};
+static_assert(sizeof(gpk_model_vertex) == 44, "12 + 8 + 6 + 6 + 4 + 8");
+
+struct gpk_model_skin {
+	char name[64];
+	uint32 root_node_index;
+	uint32 joint_count;
+	uint32 joints_offset;
+};
+
+struct gpk_model_joint {
+	uint32 node_index;
+	mat4 inverse_bind_mat;
 };
 
 struct gpk_model_material {

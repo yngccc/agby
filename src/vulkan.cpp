@@ -237,20 +237,20 @@ struct vulkan_samplers {
 	VkSampler shadow_map_sampler;
 	VkSampler gaussian_blur_sampler;
 	VkSampler skybox_cubemap_sampler;
-	VkSampler mipmap_image_samplers[16];
+	VkSampler mipmap_samplers[16];
 };
 
 struct vulkan_descriptors {
-	VkDescriptorPool pool;
-	VkDescriptorSetLayout uniform_buffers_set_layout;
-	VkDescriptorSetLayout sampled_images_set_layouts[8];
-
 	VkDescriptorSet frame_uniform_buffer_offsets[vulkan_buffering_count];
-	VkDescriptorSet main_framebuffer_images[vulkan_swap_chain_image_count];
-	VkDescriptorSet shadow_map_framebuffer_images[vulkan_buffering_count][3];
-	VkDescriptorSet model_default_material_images;
-	VkDescriptorSet imgui_font_atlas_image;
-	VkDescriptorSet font_atlas_image;
+	VkDescriptorSet main_framebuffer_textures[vulkan_swap_chain_image_count];
+	VkDescriptorSet shadow_map_framebuffer_textures[vulkan_buffering_count][3];
+	VkDescriptorSet model_default_material_textures;
+	VkDescriptorSet imgui_font_atlas_texture;
+	VkDescriptorSet font_atlas_texture;
+
+	VkDescriptorSetLayout uniform_buffer_offsets_descriptor_set_layouts[8];
+	VkDescriptorSetLayout textures_descriptor_set_layouts[8];
+	VkDescriptorPool pool;
 };
 
 struct vulkan_pipeline {
@@ -262,8 +262,6 @@ struct vulkan_pipelines {
 	vulkan_pipeline static_model_pipeline;
 	vulkan_pipeline static_model_wireframe_pipeline;
 	vulkan_pipeline static_model_shadow_map_pipeline;
-	vulkan_pipeline animated_model_pipeline;
-	vulkan_pipeline animated_model_shadow_map_pipeline;
 	vulkan_pipeline shadow_map_gaussian_blur_pipelines[2];
 	vulkan_pipeline skybox_pipeline;
 	vulkan_pipeline imgui_pipeline;
@@ -1527,8 +1525,8 @@ void initialize_vulkan_samplers(vulkan *vulkan) {
 		sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 		m_vk_assert(vkCreateSampler(vulkan->device.device, &sampler_create_info, nullptr, &vulkan->samplers.skybox_cubemap_sampler));
 	}
-	{ // mipmap images ? 
-		for (uint32 i = 0; i < m_countof(vulkan->samplers.mipmap_image_samplers); i += 1) {
+	{ // mipmap images
+		for (uint32 i = 0; i < m_countof(vulkan->samplers.mipmap_samplers); i += 1) {
 			VkSamplerCreateInfo sampler_create_info = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
 			sampler_create_info.magFilter = VK_FILTER_LINEAR;
 			sampler_create_info.minFilter = VK_FILTER_LINEAR;
@@ -1537,7 +1535,7 @@ void initialize_vulkan_samplers(vulkan *vulkan) {
 			sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 			sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 			sampler_create_info.maxLod = (float)i;
-			m_vk_assert(vkCreateSampler(vulkan->device.device, &sampler_create_info, nullptr, &vulkan->samplers.mipmap_image_samplers[i]));
+			m_vk_assert(vkCreateSampler(vulkan->device.device, &sampler_create_info, nullptr, &vulkan->samplers.mipmap_samplers[i]));
 		}
 	}
 }
@@ -1554,54 +1552,52 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 	}
 	{ // set layouts
 		{
-			VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[3] = {};
+			VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[m_countof(vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts)] = {};
 			for (uint32 i = 0; i < m_countof(descriptor_set_layout_bindings); i += 1) {
 				descriptor_set_layout_bindings[i] = {i, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-			}
-			VkDescriptorSetLayoutCreateInfo descriptor_set_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-			descriptor_set_layout_info.bindingCount = m_countof(descriptor_set_layout_bindings);
-			descriptor_set_layout_info.pBindings = descriptor_set_layout_bindings;
-			m_vk_assert(vkCreateDescriptorSetLayout(vulkan->device.device, &descriptor_set_layout_info, nullptr, &vulkan->descriptors.uniform_buffers_set_layout));
-		}
-		{
-			VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[m_countof(vulkan->descriptors.sampled_images_set_layouts)] = {};
-			for (uint32 i = 0; i < m_countof(vulkan->descriptors.sampled_images_set_layouts); i += 1) {
-				descriptor_set_layout_bindings[i] = {i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-			}
-			for (uint32 i = 0; i < m_countof(vulkan->descriptors.sampled_images_set_layouts); i += 1) {
 				VkDescriptorSetLayoutCreateInfo descriptor_set_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
 				descriptor_set_layout_info.bindingCount = i + 1;
 				descriptor_set_layout_info.pBindings = descriptor_set_layout_bindings;
-				m_vk_assert(vkCreateDescriptorSetLayout(vulkan->device.device, &descriptor_set_layout_info, nullptr, &vulkan->descriptors.sampled_images_set_layouts[i]));
+				m_vk_assert(vkCreateDescriptorSetLayout(vulkan->device.device, &descriptor_set_layout_info, nullptr, &vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[i]));
+			}
+		}
+		{
+			VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[m_countof(vulkan->descriptors.textures_descriptor_set_layouts)] = {};
+			for (uint32 i = 0; i < m_countof(descriptor_set_layout_bindings); i += 1) {
+				descriptor_set_layout_bindings[i] = {i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+				VkDescriptorSetLayoutCreateInfo descriptor_set_layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+				descriptor_set_layout_info.bindingCount = i + 1;
+				descriptor_set_layout_info.pBindings = descriptor_set_layout_bindings;
+				m_vk_assert(vkCreateDescriptorSetLayout(vulkan->device.device, &descriptor_set_layout_info, nullptr, &vulkan->descriptors.textures_descriptor_set_layouts[i]));
 			}
 		}
 	}
-	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-	descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
 	{ // frame uniform buffer offsets
-		VkDescriptorSetLayout set_layouts[vulkan_buffering_count];
 		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-			set_layouts[i] = vulkan->descriptors.uniform_buffers_set_layout;
-		}
-		descriptor_set_allocate_info.descriptorSetCount = vulkan_buffering_count;
-		descriptor_set_allocate_info.pSetLayouts = set_layouts;
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, vulkan->descriptors.frame_uniform_buffer_offsets));
-		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
+			VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+			descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
+			descriptor_set_allocate_info.descriptorSetCount = 1;
+			descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2];
+			m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.frame_uniform_buffer_offsets[i]));
+
 			VkDescriptorBufferInfo descriptor_buffer_infos[3] = {};
-			descriptor_buffer_infos[0] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 128 * sizeof(union mat4)};
-			descriptor_buffer_infos[1] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 128 * sizeof(union mat4)};
-			descriptor_buffer_infos[2] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 128 * sizeof(union mat4)};
-			VkWriteDescriptorSet write_descriptor_sets[3] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+			descriptor_buffer_infos[0] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 256 * sizeof(mat4)};
+			descriptor_buffer_infos[1] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 256 * sizeof(mat4)};
+			descriptor_buffer_infos[2] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 256 * sizeof(mat4)};
+			VkWriteDescriptorSet write_descriptor_sets[3] = {};
+			write_descriptor_sets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			write_descriptor_sets[0].dstSet = vulkan->descriptors.frame_uniform_buffer_offsets[i];
 			write_descriptor_sets[0].dstBinding = 0;
 			write_descriptor_sets[0].descriptorCount = 1;
 			write_descriptor_sets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 			write_descriptor_sets[0].pBufferInfo = &descriptor_buffer_infos[0];
+			write_descriptor_sets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			write_descriptor_sets[1].dstSet = vulkan->descriptors.frame_uniform_buffer_offsets[i];
 			write_descriptor_sets[1].dstBinding = 1;
 			write_descriptor_sets[1].descriptorCount = 1;
 			write_descriptor_sets[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 			write_descriptor_sets[1].pBufferInfo = &descriptor_buffer_infos[1];
+			write_descriptor_sets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			write_descriptor_sets[2].dstSet = vulkan->descriptors.frame_uniform_buffer_offsets[i];
 			write_descriptor_sets[2].dstBinding = 2;
 			write_descriptor_sets[2].descriptorCount = 1;
@@ -1611,19 +1607,20 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 		}
 	}
 	{ // main framebuffer images
-		VkDescriptorSetLayout set_layouts[vulkan_buffering_count];
 		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-			set_layouts[i] = vulkan->descriptors.sampled_images_set_layouts[0];
-		}
-		descriptor_set_allocate_info.descriptorSetCount = vulkan_buffering_count;
-		descriptor_set_allocate_info.pSetLayouts = set_layouts;
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, vulkan->descriptors.main_framebuffer_images));
-		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-			auto *framebuffer = &vulkan->framebuffers.main_framebuffers[i];
-			VkImageView image_view = (framebuffer->sample_count == VK_SAMPLE_COUNT_1_BIT) ? framebuffer->color_attachment.image_view : framebuffer->color_resolve_attachment.image_view;
-			VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_image_samplers[0], image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+			descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
+			descriptor_set_allocate_info.descriptorSetCount = 1;
+			descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
+			m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.main_framebuffer_textures[i]));
+
+			VkImageView image_view = vulkan->framebuffers.main_framebuffers[i].color_attachment.image_view;
+			if (vulkan->framebuffers.main_framebuffers[i].sample_count != VK_SAMPLE_COUNT_1_BIT) { 
+				image_view = vulkan->framebuffers.main_framebuffers[i].color_resolve_attachment.image_view;
+			}
+			VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_samplers[0], image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 			VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-			write_descriptor_set.dstSet = vulkan->descriptors.main_framebuffer_images[i];
+			write_descriptor_set.dstSet = vulkan->descriptors.main_framebuffer_textures[i];
 			write_descriptor_set.dstBinding = 0;
 			write_descriptor_set.descriptorCount = 1;
 			write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1632,43 +1629,40 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 		}
 	}
 	{ // shadow map framebuffer images
-		VkDescriptorSetLayout set_layouts[vulkan_buffering_count * 3];
 		for (uint32 i = 0; i < vulkan_buffering_count * 3; i += 1) {
-			set_layouts[i] = vulkan->descriptors.sampled_images_set_layouts[0];
-		}
-		descriptor_set_allocate_info.descriptorSetCount = vulkan_buffering_count * 3;
-		descriptor_set_allocate_info.pSetLayouts = set_layouts;
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.shadow_map_framebuffer_images[0][0]));
-		for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
-			auto *framebuffer = &vulkan->framebuffers.shadow_map_framebuffers[i];
-			VkDescriptorSet *images = vulkan->descriptors.shadow_map_framebuffer_images[i];
+			VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+			descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
+			descriptor_set_allocate_info.descriptorSetCount = 1;
+			descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
+			m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.shadow_map_framebuffer_textures[i / 3][i % 3]));
+
 			VkSampler samplers[3] = {vulkan->samplers.gaussian_blur_sampler, vulkan->samplers.gaussian_blur_sampler, vulkan->samplers.shadow_map_sampler};
-			for (uint32 i = 0; i < 3; i += 1) {
-				VkDescriptorImageInfo descriptor_image_info = {samplers[i], framebuffer->color_attachments[i].image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-				VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-				write_descriptor_set.dstSet = images[i];
-				write_descriptor_set.dstBinding = 0;
-				write_descriptor_set.descriptorCount = 1;
-				write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				write_descriptor_set.pImageInfo = &descriptor_image_info;
-				vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-			}
+			VkDescriptorImageInfo descriptor_image_info = {samplers[i % 3], vulkan->framebuffers.shadow_map_framebuffers[i / 3].color_attachments[i % 3].image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+			write_descriptor_set.dstSet = vulkan->descriptors.shadow_map_framebuffer_textures[i / 3][i % 3];
+			write_descriptor_set.dstBinding = 0;
+			write_descriptor_set.descriptorCount = 1;
+			write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			write_descriptor_set.pImageInfo = &descriptor_image_info;
+			vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
 		}
 	}
 	{ // model default material images
+		VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+		descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
 		descriptor_set_allocate_info.descriptorSetCount = 1;
-		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.sampled_images_set_layouts[4];
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.model_default_material_images));
+		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[4];
+		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.model_default_material_textures));
 		VkDescriptorImageInfo descriptor_image_infos[5] = {};
-		descriptor_image_infos[0] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_albedo_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[1] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_metallic_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[2] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_roughness_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[3] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_normal_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		descriptor_image_infos[4] = {vulkan->samplers.mipmap_image_samplers[0], vulkan->images.default_height_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[0] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_albedo_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[1] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_metallic_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[2] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_roughness_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[3] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_normal_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[4] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_height_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		VkWriteDescriptorSet write_descriptor_sets[5] = {};
 		for (uint32 i = 0; i < m_countof(write_descriptor_sets); i += 1) {
 			write_descriptor_sets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			write_descriptor_sets[i].dstSet = vulkan->descriptors.model_default_material_images;
+			write_descriptor_sets[i].dstSet = vulkan->descriptors.model_default_material_textures;
 			write_descriptor_sets[i].dstBinding = i;
 			write_descriptor_sets[i].descriptorCount = 1;
 			write_descriptor_sets[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1676,45 +1670,6 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 		}
 		vkUpdateDescriptorSets(vulkan->device.device, m_countof(write_descriptor_sets), write_descriptor_sets, 0, nullptr);
 	}
-	// { // text
-	// 	descriptor_set_allocate_info.descriptorSetCount = 1;
-	// 	descriptor_set_allocate_info.pSetLayouts = vulkan->pipelines.text_pipeline.descriptor_set_layouts;
-	// 	m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptor_sets.text_uniform_descriptor_set));
-	// 	VkDescriptorBufferInfo descriptor_buffer_infos[1] = {{vulkan->buffers.frame_uniforms_buffer.buffer, 0, 256 * sizeof(union mat4)}};
-	// 	VkWriteDescriptorSet write_descriptor_sets[1] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
-	// 	write_descriptor_sets[0].dstSet = vulkan->descriptor_sets.text_uniform_descriptor_set;
-	// 	write_descriptor_sets[0].dstBinding = 0;
-	// 	write_descriptor_sets[0].descriptorCount = 1;
-	// 	write_descriptor_sets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	// 	write_descriptor_sets[0].pBufferInfo = &descriptor_buffer_infos[0];
-	// 	vkUpdateDescriptorSets(vulkan->device.device, m_countof(write_descriptor_sets), write_descriptor_sets, 0, nullptr);
-	// }
-	// { // bound
-	// 	descriptor_set_allocate_info.descriptorSetCount = 1;
-	// 	descriptor_set_allocate_info.pSetLayouts = vulkan->pipelines.bound_pipeline.descriptor_set_layouts;
-	// 	m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptor_sets.bound_uniform_descriptor_set));
-	// 	VkDescriptorBufferInfo descriptor_buffer_info = {vulkan->buffers.frame_uniforms_buffer.buffer, 0, 128};
-	// 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	// 	write_descriptor_set.dstSet = vulkan->descriptor_sets.bound_uniform_descriptor_set;
-	// 	write_descriptor_set.dstBinding = 0;
-	// 	write_descriptor_set.descriptorCount = 1;
-	// 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	// 	write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
-	// 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-	// }
-	// { // reference grid
-	// 	descriptor_set_allocate_info.descriptorSetCount = 1;
-	// 	descriptor_set_allocate_info.pSetLayouts = vulkan->pipelines.reference_grid_pipeline.descriptor_set_layouts;
-	// 	m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptor_sets.reference_grid_uniform_descriptor_set));
-	// 	VkDescriptorBufferInfo descriptor_buffer_info = {vulkan->buffers.frame_uniforms_buffer.buffer, 0, 128};
-	// 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	// 	write_descriptor_set.dstSet = vulkan->descriptor_sets.reference_grid_uniform_descriptor_set;
-	// 	write_descriptor_set.dstBinding = 0;
-	// 	write_descriptor_set.descriptorCount = 1;
-	// 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-	// 	write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
-	// 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-	// }
 }
 
 void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vulkan) {
@@ -1740,12 +1695,15 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		shader_stages[1].module = shader_module_from_file("shaders\\static_model.frag.spv");
 		shader_stages[1].pName = "main";
 
-		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 32, VK_VERTEX_INPUT_RATE_VERTEX};
-		VkVertexInputAttributeDescription vertex_attributes[4] = {};
-		vertex_attributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
-		vertex_attributes[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, 12};
-		vertex_attributes[2] = {2, 0, VK_FORMAT_R16G16B16_SNORM, 20};
-		vertex_attributes[3] = {3, 0, VK_FORMAT_R16G16B16_SNORM, 26};
+		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 44, VK_VERTEX_INPUT_RATE_VERTEX};
+		VkVertexInputAttributeDescription vertex_attributes[6] = {
+			{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+			{1, 0, VK_FORMAT_R32G32_SFLOAT, 12},
+			{2, 0, VK_FORMAT_R16G16B16_SNORM, 20},
+			{3, 0, VK_FORMAT_R16G16B16_SNORM, 26},
+			{4, 0, VK_FORMAT_R8G8B8A8_UINT, 32},
+			{5, 0, VK_FORMAT_R16G16B16_UNORM, 36}
+		};
 
 		VkPipelineVertexInputStateCreateInfo vertex_input_state = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
 		vertex_input_state.vertexBindingDescriptionCount = m_countof(vertex_input_bindings);
@@ -1789,7 +1747,11 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout, vulkan->descriptors.sampled_images_set_layouts[4], vulkan->descriptors.sampled_images_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {
+			vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2], 
+			vulkan->descriptors.textures_descriptor_set_layouts[4], 
+			vulkan->descriptors.textures_descriptor_set_layouts[0]
+		};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
@@ -1827,9 +1789,8 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		shader_stages[1].module = shader_module_from_file("shaders\\static_model_wireframe.frag.spv");
 		shader_stages[1].pName = "main";
 
-		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 32, VK_VERTEX_INPUT_RATE_VERTEX};
-		VkVertexInputAttributeDescription vertex_attributes[1] = {};
-		vertex_attributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
+		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 44, VK_VERTEX_INPUT_RATE_VERTEX};
+		VkVertexInputAttributeDescription vertex_attributes[1] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}};
 
 		VkPipelineVertexInputStateCreateInfo vertex_input_state = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
 		vertex_input_state.vertexBindingDescriptionCount = m_countof(vertex_input_bindings);
@@ -1875,7 +1836,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
@@ -1913,7 +1874,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		shader_stages[1].module = shader_module_from_file("shaders\\static_model_shadow_map.frag.spv");
 		shader_stages[1].pName = "main";
 
-		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 32, VK_VERTEX_INPUT_RATE_VERTEX};
+		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 44, VK_VERTEX_INPUT_RATE_VERTEX};
 		VkVertexInputAttributeDescription vertex_attributes[1] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}};
 
 		VkPipelineVertexInputStateCreateInfo vertex_input_state = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
@@ -1958,7 +1919,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
@@ -1985,180 +1946,6 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		create_info.subpass = 0;
 		create_info.basePipelineHandle = VK_NULL_HANDLE;
 		vulkan_pipeline *pipeline = &vulkan->pipelines.static_model_shadow_map_pipeline;
-		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
-		pipeline->layout = layout;
-	}
-	{ // animated model
-		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
-		shader_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		shader_stages[0].module = shader_module_from_file("shaders\\animated_model.vert.spv");
-		shader_stages[0].pName = "main";
-		shader_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		shader_stages[1].module = shader_module_from_file("shaders\\animated_model.frag.spv");
-		shader_stages[1].pName = "main";
-
-		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 44, VK_VERTEX_INPUT_RATE_VERTEX};
-		VkVertexInputAttributeDescription vertex_attributes[6] = {};
-		vertex_attributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
-		vertex_attributes[1] = {1, 0, VK_FORMAT_R32G32_SFLOAT, 12};
-		vertex_attributes[2] = {2, 0, VK_FORMAT_R16G16B16_SNORM, 20};
-		vertex_attributes[3] = {3, 0, VK_FORMAT_R16G16B16_SNORM, 26};
-		vertex_attributes[4] = {4, 0, VK_FORMAT_R8G8B8A8_UINT, 32};
-		vertex_attributes[5] = {5, 0, VK_FORMAT_R16G16B16A16_SFLOAT, 36};
-
-		VkPipelineVertexInputStateCreateInfo vertex_input_state = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-		vertex_input_state.vertexBindingDescriptionCount = m_countof(vertex_input_bindings);
-		vertex_input_state.pVertexBindingDescriptions = vertex_input_bindings;
-		vertex_input_state.vertexAttributeDescriptionCount = m_countof(vertex_attributes);
-		vertex_input_state.pVertexAttributeDescriptions = vertex_attributes;
-
-		VkPipelineInputAssemblyStateCreateInfo input_assembly_state = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-		input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-		VkPipelineViewportStateCreateInfo viewport_state = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-		viewport_state.viewportCount = 1;
-		viewport_state.scissorCount = 1;
-
-		VkPipelineRasterizationStateCreateInfo rasterization_state = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-		rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
-		rasterization_state.cullMode = VK_CULL_MODE_BACK_BIT;
-		rasterization_state.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-		rasterization_state.lineWidth = 1;
-
-		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = sample_count;
-
-		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-		depth_stencil_state.depthTestEnable = VK_TRUE;
-		depth_stencil_state.depthWriteEnable = VK_TRUE;
-		depth_stencil_state.depthCompareOp = VK_COMPARE_OP_GREATER;
-		depth_stencil_state.stencilTestEnable = VK_FALSE;
-
-		VkPipelineColorBlendAttachmentState color_blend_attachment_state = {};
-		color_blend_attachment_state.blendEnable = VK_FALSE;
-		color_blend_attachment_state.colorWriteMask = 0xf;
-
-		VkPipelineColorBlendStateCreateInfo color_blend_state = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-		color_blend_state.logicOpEnable = VK_FALSE;
-		color_blend_state.attachmentCount = 1;
-		color_blend_state.pAttachments = &color_blend_attachment_state;
-
-		VkDynamicState dynamic_states[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-		VkPipelineDynamicStateCreateInfo dynamic_state = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
-		dynamic_state.pDynamicStates = dynamic_states;
-
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout, vulkan->descriptors.sampled_images_set_layouts[5]};
-		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128}};
-		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-		layout_info.setLayoutCount = m_countof(set_layouts);
-		layout_info.pSetLayouts = set_layouts;
-		layout_info.pushConstantRangeCount = m_countof(push_constant_ranges);
-		layout_info.pPushConstantRanges = push_constant_ranges;
-		VkPipelineLayout layout = {};
-		m_vk_assert(vkCreatePipelineLayout(vulkan->device.device, &layout_info, nullptr, &layout));
-
-		VkGraphicsPipelineCreateInfo create_info = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-		create_info.stageCount = m_countof(shader_stages);
-		create_info.pStages = shader_stages;
-		create_info.pVertexInputState = &vertex_input_state;
-		create_info.pInputAssemblyState = &input_assembly_state;
-		create_info.pTessellationState = nullptr;
-		create_info.pViewportState = &viewport_state;
-		create_info.pRasterizationState = &rasterization_state;
-		create_info.pMultisampleState = &multisample_state;
-		create_info.pDepthStencilState = &depth_stencil_state;
-		create_info.pColorBlendState = &color_blend_state;
-		create_info.pDynamicState = &dynamic_state;
-		create_info.layout = layout;
-		create_info.renderPass = vulkan->render_passes.main_render_pass;
-		create_info.subpass = 0;
-		create_info.basePipelineHandle = VK_NULL_HANDLE;
-		vulkan_pipeline *pipeline = &vulkan->pipelines.animated_model_pipeline;
-		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
-		pipeline->layout = layout;
-	}
-	{ // animated model shadow map
-		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
-		shader_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		shader_stages[0].module = shader_module_from_file("shaders\\animated_model_shadow_map.vert.spv");
-		shader_stages[0].pName = "main";
-		shader_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		shader_stages[1].module = shader_module_from_file("shaders\\animated_model_shadow_map.frag.spv");
-		shader_stages[1].pName = "main";
-
-		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 44, VK_VERTEX_INPUT_RATE_VERTEX};
-		VkVertexInputAttributeDescription vertex_attributes[3] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 0, VK_FORMAT_R8G8B8A8_UINT, 32}, {2, 0, VK_FORMAT_R16G16B16A16_SFLOAT, 36}};
-
-		VkPipelineVertexInputStateCreateInfo vertex_input_state = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-		vertex_input_state.vertexBindingDescriptionCount = m_countof(vertex_input_bindings);
-		vertex_input_state.pVertexBindingDescriptions = vertex_input_bindings;
-		vertex_input_state.vertexAttributeDescriptionCount = m_countof(vertex_attributes);
-		vertex_input_state.pVertexAttributeDescriptions = vertex_attributes;
-
-		VkPipelineInputAssemblyStateCreateInfo input_assembly_state = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-		input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-		VkPipelineViewportStateCreateInfo viewport_state = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-		viewport_state.viewportCount = 1;
-		viewport_state.scissorCount = 1;
-
-		VkPipelineRasterizationStateCreateInfo rasterization_state = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-		rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
-		rasterization_state.cullMode = VK_CULL_MODE_FRONT_BIT;
-		rasterization_state.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-		rasterization_state.lineWidth = 1;
-
-		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-		depth_stencil_state.depthTestEnable = VK_TRUE;
-		depth_stencil_state.depthWriteEnable = VK_TRUE;
-		depth_stencil_state.depthCompareOp = VK_COMPARE_OP_LESS;
-		depth_stencil_state.stencilTestEnable = VK_FALSE;
-
-		VkPipelineColorBlendAttachmentState color_blend_attachment_state = {};
-		color_blend_attachment_state.blendEnable = VK_FALSE;
-		color_blend_attachment_state.colorWriteMask = 0xf;
-
-		VkPipelineColorBlendStateCreateInfo color_blend_state = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-		color_blend_state.logicOpEnable = VK_FALSE;
-		color_blend_state.attachmentCount = 1;
-		color_blend_state.pAttachments = &color_blend_attachment_state;
-
-		VkDynamicState dynamic_states[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-		VkPipelineDynamicStateCreateInfo dynamic_state = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
-		dynamic_state.pDynamicStates = dynamic_states;
-
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout};
-		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
-		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-		layout_info.setLayoutCount = m_countof(set_layouts);
-		layout_info.pSetLayouts = set_layouts;
-		layout_info.pushConstantRangeCount = m_countof(push_constant_ranges);
-		layout_info.pPushConstantRanges = push_constant_ranges;
-		VkPipelineLayout layout = {};
-		m_vk_assert(vkCreatePipelineLayout(vulkan->device.device, &layout_info, nullptr, &layout));
-
-		VkGraphicsPipelineCreateInfo create_info = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-		create_info.stageCount = m_countof(shader_stages);
-		create_info.pStages = shader_stages;
-		create_info.pVertexInputState = &vertex_input_state;
-		create_info.pInputAssemblyState = &input_assembly_state;
-		create_info.pTessellationState = nullptr;
-		create_info.pViewportState = &viewport_state;
-		create_info.pRasterizationState = &rasterization_state;
-		create_info.pMultisampleState = &multisample_state;
-		create_info.pDepthStencilState = &depth_stencil_state;
-		create_info.pColorBlendState = &color_blend_state;
-		create_info.pDynamicState = &dynamic_state;
-		create_info.layout = layout;
-		create_info.renderPass = vulkan->render_passes.shadow_map_render_passes[0];
-		create_info.subpass = 0;
-		create_info.basePipelineHandle = VK_NULL_HANDLE;
-		vulkan_pipeline *pipeline = &vulkan->pipelines.animated_model_shadow_map_pipeline;
 		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->pipeline));
 		pipeline->layout = layout;
 	}
@@ -2210,7 +1997,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.sampled_images_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.textures_descriptor_set_layouts[0]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
@@ -2297,7 +2084,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.sampled_images_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.textures_descriptor_set_layouts[0]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
@@ -2388,7 +2175,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.sampled_images_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.textures_descriptor_set_layouts[0]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
@@ -2482,7 +2269,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout, vulkan->descriptors.sampled_images_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2], vulkan->descriptors.textures_descriptor_set_layouts[0]};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
@@ -2571,7 +2358,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
@@ -2655,7 +2442,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffers_set_layout};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
@@ -2733,7 +2520,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.sampled_images_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.textures_descriptor_set_layouts[0]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);

@@ -200,6 +200,7 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			auto &src = glb_model.nodes[i];
 			auto &dst = gpk_model_nodes[i];
 			dst.mesh_index = (src.mesh >= 0 && src.mesh < glb_model.meshes.size()) ? src.mesh : UINT32_MAX;
+			dst.skin_index = (src.skin >= 0 && src.skin < glb_model.skins.size()) ? src.skin : UINT32_MAX;
 			dst.child_count = (uint32)src.children.size();
 			if (dst.child_count > m_countof(dst.children)) {
 				fatal("import.exe error: gltf node has too many (%u)children", dst.child_count);
@@ -250,6 +251,24 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			dst.material_index = primitive.material >= 0 ? primitive.material : UINT32_MAX;
 		}
 		current_offset = round_up(current_offset + gpk_model.mesh_count * (uint32)sizeof(struct gpk_model_mesh), 16u);
+	}
+	std::vector<gpk_model_skin> gpk_model_skins;
+	{
+		gpk_model.skin_offset = current_offset;
+		gpk_model.skin_count = (uint32)glb_model.skins.size();
+		gpk_model_skins.resize(gpk_model.skin_count);
+		for (uint32 i = 0; i < gpk_model.skin_count; i += 1) {
+			auto &src = glb_model.skins[i];
+			auto &dst = gpk_model_skins[i];
+			m_assert(src.name.length() < sizeof(dst.name));
+			strcpy(dst.name, src.name.c_str());
+			m_assert(src.skeleton >= 0 && src.skeleton < glb_model.nodes.size());
+			dst.root_node_index = (uint32)src.skeleton;
+			m_assert(src.joints.size() > 0 && src.joints.size() < glb_model.nodes.size());
+			m_assert(src.joints.size() < 256);
+			dst.joint_count = (uint32)src.joints.size();
+		}
+		current_offset = round_up(current_offset + gpk_model.skin_count * (uint32)sizeof(struct gpk_model_skin), 16u);
 	}
 	struct image_remap {
 		uint32 index;
@@ -492,9 +511,13 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		dst.index_count = (uint32)index_accessor.count;
 		current_offset = round_up(current_offset + dst.index_count * (uint32)sizeof(uint16), 16u);
 		dst.vertices_offset = current_offset;
-		dst.vertex_size = gpk_model_vertex_position_size + gpk_model_vertex_uv_size + gpk_model_vertex_normal_size + gpk_model_vertex_tangent_size;
 		dst.vertex_count = (uint32)position_accessor.count;
-		current_offset = round_up(current_offset + dst.vertex_size * dst.vertex_count, 16u);
+		current_offset = round_up(current_offset + dst.vertex_count * (uint32)sizeof(struct gpk_model_vertex), 16u);
+	}
+	for (uint32 i = 0; i < gpk_model.skin_count; i += 1) {
+		auto & skin = gpk_model_skins[i];
+		skin.joints_offset = current_offset;
+		current_offset = round_up(current_offset + skin.joint_count * (uint32)sizeof(struct gpk_model_joint), 16u);
 	}
 	for (uint32 i = 0; i < gpk_model.image_count; i += 1) {
 		auto &image = gpk_model_images[i];
@@ -510,6 +533,7 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 	memcpy(gpk_file_mapping.ptr + gpk_model.scene_offset, &gpk_model_scenes[0], gpk_model_scenes.size() * sizeof(struct gpk_model_scene));
 	memcpy(gpk_file_mapping.ptr + gpk_model.node_offset, &gpk_model_nodes[0], gpk_model_nodes.size() * sizeof(struct gpk_model_node));
 	memcpy(gpk_file_mapping.ptr + gpk_model.mesh_offset, &gpk_model_meshes[0], gpk_model_meshes.size() * sizeof(struct gpk_model_mesh));
+	memcpy(gpk_file_mapping.ptr + gpk_model.skin_offset, &gpk_model_skins[0], gpk_model_skins.size() * sizeof(struct gpk_model_skin));
 	memcpy(gpk_file_mapping.ptr + gpk_model.material_offset, &gpk_model_materials[0], gpk_model_materials.size() * sizeof(struct gpk_model_material));
 	memcpy(gpk_file_mapping.ptr + gpk_model.image_offset, &gpk_model_images[0], gpk_model_images.size() * sizeof(struct gpk_model_image));
 	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
@@ -565,18 +589,43 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			i16vec3 compressed_normal = {(int16)round(normal[0] * 32767.0f), (int16)round(normal[1] * 32767.0f), (int16)round(normal[2] * 32767.0f)};
 			vec3 tangent1 = vec3_cross(normal, vec3{0, 0, 1});
 			vec3 tangent2 = vec3_cross(normal, vec3{0, 1, 0});
-			vec3 tangent = vec3_len(tangent1) > vec3_len(tangent2) ? tangent1 : tangent2;
-			tangent = vec3_normalize(tangent);
+			vec3 tangent = vec3_normalize(vec3_len(tangent1) > vec3_len(tangent2) ? tangent1 : tangent2);
 			if (tangent_data) {
 				tangent = *(vec3 *)(tangent_data + tangent_stride * i);
 			}
 			i16vec3 compressed_tangent = {(int16)round(tangent[0] * 32767.0f), (int16)round(tangent[1] * 32767.0f), (int16)round(tangent[2] * 32767.0f)};
-			m_assert(mesh.vertex_size == sizeof(position) + sizeof(uv) + sizeof(compressed_normal) + sizeof(compressed_tangent));
-			uint8 *vertex_ptr = gpk_file_mapping.ptr + mesh.vertices_offset + mesh.vertex_size * i;
-			*(vec3 *)(vertex_ptr + 0) = position;
-			*(vec2 *)(vertex_ptr + sizeof(position))= uv;
-			*(i16vec3 *)(vertex_ptr + sizeof(position) + sizeof(uv)) = compressed_normal;
-			*(i16vec3 *)(vertex_ptr + sizeof(position) + sizeof(uv) + sizeof(compressed_normal)) = compressed_tangent;
+			u8vec4 joint_indices = {0, 0, 0, 0};
+			u16vec4 joint_weights = {UINT16_MAX, 0, 0, 0};
+
+			gpk_model_vertex *vertex = ((gpk_model_vertex *)(gpk_file_mapping.ptr + mesh.vertices_offset)) + i;
+			vertex->position = position;
+			vertex->uv = uv;
+			vertex->normal = compressed_normal;
+			vertex->tangent = compressed_tangent;
+			vertex->joint_indices = joint_indices;
+			vertex->joint_weights = joint_weights;
+		}
+	}
+	for (uint32 i = 0; i < gpk_model.skin_count; i += 1) {
+		auto &skin = glb_model.skins[i];
+		mat4 *inverse_bind_mats = nullptr;
+		{
+			auto &accessor = glb_model.accessors[skin.inverseBindMatrices];
+			m_assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+			m_assert(accessor.type == TINYGLTF_TYPE_MAT4);
+			m_assert(accessor.count == skin.joints.size());
+			auto &buffer_view = glb_model.bufferViews[accessor.bufferView];
+			m_assert(buffer_view.byteStride == 0 || buffer_view.byteStride == sizeof(mat4));
+			auto &buffer = glb_model.buffers[buffer_view.buffer];
+			inverse_bind_mats = (mat4 *)(&buffer.data[accessor.byteOffset + buffer_view.byteOffset]);
+		}
+		auto &gpk_skin = gpk_model_skins[i];
+		gpk_model_joint *gpk_joints = (gpk_model_joint *)(gpk_file_mapping.ptr + gpk_skin.joints_offset);
+		m_assert(gpk_skin.joint_count == skin.joints.size());
+		for (uint32 i = 0; i < gpk_skin.joint_count; i += 1) {
+			m_assert(skin.joints[i] >= 0 && skin.joints[i] < glb_model.nodes.size());
+			gpk_joints[i].node_index = (uint32)skin.joints[i];
+			gpk_joints[i].inverse_bind_mat = inverse_bind_mats[i];
 		}
 	}
 	uint32 image_index = 0;

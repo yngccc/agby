@@ -2,8 +2,6 @@
 
 layout(location = 0) in vec3 position_in;
 
-layout(location = 0) out vec3 position_out;
-
 out gl_PerVertex {
   vec4 gl_Position;
 };
