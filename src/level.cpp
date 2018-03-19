@@ -27,7 +27,7 @@ struct model_node {
 	uint32 child_count;
 };
 
-struct model_mesh {
+struct model_mesh_primitive {
 	uint32 material_index;
 	uint32 index_count;
 	uint32 index_buffer_offset;
@@ -35,6 +35,11 @@ struct model_mesh {
 	uint32 vertex_buffer_offset;
 	uint8 *vertices_data;
 	uint8 *indices_data;
+};
+
+struct model_mesh {
+	model_mesh_primitive *primitives;
+	uint32 primitive_count;
 	char name[sizeof(gpk_model_mesh::name)];
 };
 
@@ -593,31 +598,38 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 	for (uint32 i = 0; i < model->mesh_count; i += 1) {
 		gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh*)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
 		model_mesh *model_mesh = &model->meshes[i];
-		model_mesh->material_index = gpk_model_mesh->material_index;
 		array_copy(model_mesh->name, gpk_model_mesh->name);
+		model_mesh->primitive_count = gpk_model_mesh->primitive_count;
+		model_mesh->primitives = allocate_memory<struct model_mesh_primitive>(&level->assets_memory_arena, model_mesh->primitive_count);
+		for (uint32 i = 0; i < model_mesh->primitive_count; i += 1) {
+			gpk_model_mesh_primitive *gpk_primitive = ((gpk_model_mesh_primitive *)(gpk_file_mapping.ptr + gpk_model_mesh->primitive_offset)) + i;
+			model_mesh_primitive *primitive = &model_mesh->primitives[i];
 
-		uint32 indices_size = gpk_model_mesh->index_count * sizeof(uint16);
-		uint32 vertices_size = gpk_model_mesh->vertex_count * sizeof(struct gpk_model_vertex);
-		uint8 *indices_data = gpk_file_mapping.ptr + gpk_model_mesh->indices_offset;
-		uint8 *vertices_data = gpk_file_mapping.ptr + gpk_model_mesh->vertices_offset;
+			primitive->material_index = gpk_primitive->material_index;
+
+			uint32 indices_size = gpk_primitive->index_count * sizeof(uint16);
+			uint32 vertices_size = gpk_primitive->vertex_count * sizeof(struct gpk_model_vertex);
+			uint8 *indices_data = gpk_file_mapping.ptr + gpk_primitive->indices_offset;
+			uint8 *vertices_data = gpk_file_mapping.ptr + gpk_primitive->vertices_offset;
 			
-		model_mesh->index_count = gpk_model_mesh->index_count;
-		round_up(&vulkan->buffers.level_vertex_buffer_offset, (uint32)sizeof(uint16));
-		model_mesh->index_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		vulkan->buffers.level_vertex_buffer_offset += indices_size;
+			primitive->index_count = gpk_primitive->index_count;
+			round_up(&vulkan->buffers.level_vertex_buffer_offset, (uint32)sizeof(uint16));
+			primitive->index_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+			vulkan->buffers.level_vertex_buffer_offset += indices_size;
 
-		model_mesh->vertex_count = gpk_model_mesh->vertex_count;
-		round_up(&vulkan->buffers.level_vertex_buffer_offset, (uint32)sizeof(struct gpk_model_vertex));
-		model_mesh->vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		vulkan->buffers.level_vertex_buffer_offset += vertices_size;
+			primitive->vertex_count = gpk_primitive->vertex_count;
+			round_up(&vulkan->buffers.level_vertex_buffer_offset, (uint32)sizeof(struct gpk_model_vertex));
+			primitive->vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
+			vulkan->buffers.level_vertex_buffer_offset += vertices_size;
 
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->index_buffer_offset, indices_data, indices_size);
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, model_mesh->vertex_buffer_offset, vertices_data, vertices_size);
-		if (store_vertices) {
-			model_mesh->indices_data = allocate_memory<uint8>(&level->assets_memory_arena, indices_size);
-			model_mesh->vertices_data = allocate_memory<uint8>(&level->assets_memory_arena, vertices_size);
-			memcpy(model_mesh->indices_data, indices_data, indices_size);
-			memcpy(model_mesh->vertices_data, vertices_data, vertices_size);
+			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, primitive->index_buffer_offset, indices_data, indices_size);
+			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, primitive->vertex_buffer_offset, vertices_data, vertices_size);
+			if (store_vertices) {
+				primitive->indices_data = allocate_memory<uint8>(&level->assets_memory_arena, indices_size);
+				primitive->vertices_data = allocate_memory<uint8>(&level->assets_memory_arena, vertices_size);
+				memcpy(primitive->indices_data, indices_data, indices_size);
+				memcpy(primitive->vertices_data, vertices_data, vertices_size);
+			}
 		}
 	}
 	for (uint32 i = 0; i < model->skin_count; i += 1) {
@@ -1442,10 +1454,13 @@ void level_generate_render_commands(level *level, vulkan *vulkan, camera camera,
 					model_render_data *model_render_data = &level->render_data.models[i];
 					model *model = &level->models[model_render_data->model_index];
 					for (uint32 i = 0; i < model_render_data->mesh_count; i += 1) {
-						model_mesh *mesh = &model->meshes[model_render_data->meshes[i].mesh_index];
 						uint32 offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, model_render_data->meshes[i].joints_frame_uniform_buffer_offset};
 						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_shadow_map_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
-						vkCmdDrawIndexed(cmd_buffer, mesh->index_count, 1, mesh->index_buffer_offset / sizeof(uint16), mesh->vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
+						model_mesh *mesh = &model->meshes[model_render_data->meshes[i].mesh_index];
+						for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
+							model_mesh_primitive *primitive = &mesh->primitives[i];
+							vkCmdDrawIndexed(cmd_buffer, primitive->index_count, 1, primitive->index_buffer_offset / sizeof(uint16), primitive->vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
+						}
 					}
 				}
 			}
@@ -1514,22 +1529,25 @@ void level_generate_render_commands(level *level, vulkan *vulkan, camera camera,
 				model_render_data *model_render_data = &level->render_data.models[i];
 				model *model = &level->models[model_render_data->model_index];
 				for (uint32 i = 0; i < model_render_data->mesh_count; i += 1) {
-					model_mesh *mesh = &model->meshes[model_render_data->meshes[i].mesh_index];
 					uint32 offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, model_render_data->meshes[i].joints_frame_uniform_buffer_offset};
 					vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
-					if (mesh->material_index < model->material_count) {
- 						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 1, 1, &model->materials[mesh->material_index].textures_descriptor_set, 0, nullptr);
-					}
-					else {
-						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 1, 1, &vulkan->descriptors.model_default_material_textures, 0, nullptr);
-					}
-					vkCmdDrawIndexed(cmd_buffer, mesh->index_count, 1, mesh->index_buffer_offset / sizeof(uint16), mesh->vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
-					if (model_render_data->meshes[i].render_vertices_outline) {
-						vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_wireframe_pipeline.pipeline);
-						uint32 frame_uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, 0};
-						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_wireframe_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(frame_uniform_buffer_offsets), frame_uniform_buffer_offsets);
-						vkCmdDrawIndexed(cmd_buffer, mesh->index_count, 1, mesh->index_buffer_offset / sizeof(uint16), mesh->vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
-						vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.pipeline);
+					model_mesh *mesh = &model->meshes[model_render_data->meshes[i].mesh_index];
+					for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
+						model_mesh_primitive *primitive = &mesh->primitives[i];
+						if (primitive->material_index < model->material_count) {
+							vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 1, 1, &model->materials[primitive->material_index].textures_descriptor_set, 0, nullptr);
+						}
+						else {
+							vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 1, 1, &vulkan->descriptors.model_default_material_textures, 0, nullptr);
+						}
+						vkCmdDrawIndexed(cmd_buffer, primitive->index_count, 1, primitive->index_buffer_offset / sizeof(uint16), primitive->vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
+						if (model_render_data->meshes[i].render_vertices_outline) {
+							vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_wireframe_pipeline.pipeline);
+							uint32 frame_uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, 0};
+							vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_wireframe_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(frame_uniform_buffer_offsets), frame_uniform_buffer_offsets);
+							vkCmdDrawIndexed(cmd_buffer, primitive->index_count, 1, primitive->index_buffer_offset / sizeof(uint16), primitive->vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
+							vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.pipeline);
+						}
 					}
 				}
 			}

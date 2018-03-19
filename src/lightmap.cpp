@@ -28,32 +28,32 @@ int main(int argc, char **argv) {
 	gpk_model *gpk_model = (struct gpk_model *)gpk_file_mapping.ptr;
 	uint32 total_vertex_count = 0;
 	uint32 total_index_count = 0;
-	for (uint32 i = 0; i < gpk_model->node_count; i += 1) {
-		gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
-		total_vertex_count += gpk_model_mesh->vertex_count;
-		total_index_count += gpk_model_mesh->index_count;
-	}
+	// for (uint32 i = 0; i < gpk_model->node_count; i += 1) {
+	// 	gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
+	// 	total_vertex_count += gpk_model_mesh->vertex_count;
+	// 	total_index_count += gpk_model_mesh->index_count;
+	// }
 	m_assert(total_index_count % 3 == 0);
 	DirectX::XMFLOAT3 *positions = (DirectX::XMFLOAT3 *)calloc(total_vertex_count, sizeof(DirectX::XMFLOAT3));
 	uint32 *indices = (uint32 *)calloc(total_index_count, sizeof(uint32));
 	uint32 *adjaceny_indices = (uint32 *)calloc(total_index_count, sizeof(uint32));
 	uint32 accumulate_position_index = 0;
 	uint32 accumulate_index_index = 0;
-	for (uint32 i = 0; i < gpk_model->node_count; i += 1) {
-		gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
-		uint8 *gpk_indices = gpk_file_mapping.ptr + gpk_model_mesh->indices_offset;
-		uint8 *gpk_vertices = gpk_file_mapping.ptr + gpk_model_mesh->vertices_offset;
-		for (uint32 i = 0; i < gpk_model_mesh->index_count; i += 1) {
-			uint16 index = *(uint16 *)(gpk_indices + sizeof(uint16) * i);
-			indices[accumulate_index_index + i] = accumulate_position_index + index;
-		}
-		for (uint32 i = 0; i < gpk_model_mesh->vertex_count; i += 1) {
-			vec3 vertex = *(vec3 *)(gpk_vertices + sizeof(gpk_model_vertex) * i);
-			positions[accumulate_position_index + i] = {vertex.x, vertex.y, vertex.z};
-		}
-		accumulate_index_index += gpk_model_mesh->index_count;
-		accumulate_position_index += gpk_model_mesh->vertex_count;
-	}
+	// for (uint32 i = 0; i < gpk_model->node_count; i += 1) {
+	// 	gpk_model_mesh *gpk_model_mesh = ((struct gpk_model_mesh *)(gpk_file_mapping.ptr + gpk_model->mesh_offset)) + i;
+	// 	uint8 *gpk_indices = gpk_file_mapping.ptr + gpk_model_mesh->indices_offset;
+	// 	uint8 *gpk_vertices = gpk_file_mapping.ptr + gpk_model_mesh->vertices_offset;
+	// 	for (uint32 i = 0; i < gpk_model_mesh->index_count; i += 1) {
+	// 		uint16 index = *(uint16 *)(gpk_indices + sizeof(uint16) * i);
+	// 		indices[accumulate_index_index + i] = accumulate_position_index + index;
+	// 	}
+	// 	for (uint32 i = 0; i < gpk_model_mesh->vertex_count; i += 1) {
+	// 		vec3 vertex = *(vec3 *)(gpk_vertices + sizeof(gpk_model_vertex) * i);
+	// 		positions[accumulate_position_index + i] = {vertex.x, vertex.y, vertex.z};
+	// 	}
+	// 	accumulate_index_index += gpk_model_mesh->index_count;
+	// 	accumulate_position_index += gpk_model_mesh->vertex_count;
+	// }
 	HRESULT generate_adjacency_result = GenerateAdjacencyAndPointReps(indices, total_index_count / 3, positions, total_vertex_count, 0, nullptr, adjaceny_indices);
 	m_assert(generate_adjacency_result == S_OK);
 	std::vector<DirectX::UVAtlasVertex> mesh_vertex_buffer;

@@ -36,13 +36,18 @@ struct gpk_model_node {
 	uint32 child_count;
 };
 
-struct gpk_model_mesh {
-	char name[64];
+struct gpk_model_mesh_primitive {
 	uint32 material_index;
 	uint32 indices_offset;
 	uint32 index_count;
 	uint32 vertices_offset;
 	uint32 vertex_count;
+};
+
+struct gpk_model_mesh {
+	char name[64];
+	uint32 primitive_offset;
+	uint32 primitive_count;
 };
 
 struct gpk_model_vertex {

@@ -166,14 +166,14 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		m_assert(gpk_model.scene_count > 0);
 		gpk_model_scenes.resize(gpk_model.scene_count);
 		for (uint32 i = 0; i < gpk_model.scene_count; i += 1) {
-			auto &src = glb_model.scenes[i];
-			auto &dst = gpk_model_scenes[i];
-			m_assert(src.name.length() < sizeof(dst.name));
-			strcpy(dst.name, src.name.c_str());
-			dst.node_index_count = (uint32)src.nodes.size();
-			m_assert(dst.node_index_count <= m_countof(dst.node_indices));
-			for (uint32 i = 0; i < dst.node_index_count; i += 1) {
-				dst.node_indices[i] = (uint32)src.nodes[i];
+			auto &scene = glb_model.scenes[i];
+			auto &gpk_scene = gpk_model_scenes[i];
+			m_assert(scene.name.length() < sizeof(gpk_scene.name));
+			strcpy(gpk_scene.name, scene.name.c_str());
+			gpk_scene.node_index_count = (uint32)scene.nodes.size();
+			m_assert(gpk_scene.node_index_count <= m_countof(gpk_scene.node_indices));
+			for (uint32 i = 0; i < gpk_scene.node_index_count; i += 1) {
+				gpk_scene.node_indices[i] = (uint32)scene.nodes[i];
 			}
 		}
 		current_offset = round_up(current_offset + gpk_model.scene_count * (uint32)sizeof(struct gpk_model_scene), 16u);
@@ -185,33 +185,33 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		m_assert(gpk_model.node_count > 0);
 		gpk_model_nodes.resize(gpk_model.node_count);
 		for (uint32 i = 0; i < gpk_model.node_count; i += 1) {
-			auto &src = glb_model.nodes[i];
-			auto &dst = gpk_model_nodes[i];
-			dst.mesh_index = (src.mesh >= 0 && src.mesh < glb_model.meshes.size()) ? src.mesh : UINT32_MAX;
-			dst.skin_index = (src.skin >= 0 && src.skin < glb_model.skins.size()) ? src.skin : UINT32_MAX;
-			dst.child_count = (uint32)src.children.size();
-			m_assert(dst.child_count <= m_countof(dst.children));
-			for (uint32 i = 0; i < dst.child_count; i += 1) {
-				m_assert(src.children[i] >= 0 && src.children[i] < glb_model.nodes.size());
-				dst.children[i] = src.children[i];
+			auto &node = glb_model.nodes[i];
+			auto &gpk_node = gpk_model_nodes[i];
+			gpk_node.mesh_index = (node.mesh >= 0 && node.mesh < glb_model.meshes.size()) ? node.mesh : UINT32_MAX;
+			gpk_node.skin_index = (node.skin >= 0 && node.skin < glb_model.skins.size()) ? node.skin : UINT32_MAX;
+			gpk_node.child_count = (uint32)node.children.size();
+			m_assert(gpk_node.child_count <= m_countof(gpk_node.children));
+			for (uint32 i = 0; i < gpk_node.child_count; i += 1) {
+				m_assert(node.children[i] >= 0 && node.children[i] < glb_model.nodes.size());
+				gpk_node.children[i] = node.children[i];
 			}
-			if (src.matrix.size() != 0) {
+			if (node.matrix.size() != 0) {
 				for (uint32 i = 0; i < 16; i += 1) {
-					dst.local_transform_mat[i / 4][i % 4] = (float)src.matrix[i];
+					gpk_node.local_transform_mat[i / 4][i % 4] = (float)node.matrix[i];
 				}
 			}
 			else {
 				transform transform = transform_identity();
-				if (src.rotation.size() != 0) {
-					transform.rotate = {(float)src.rotation[0], (float)src.rotation[1], (float)src.rotation[2], (float)src.rotation[3]};
+				if (node.rotation.size() != 0) {
+					transform.rotate = {(float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2], (float)node.rotation[3]};
 				}
-				if (src.scale.size() != 0) {
-					transform.scale =  {(float)src.scale[0], (float)src.scale[1], (float)src.scale[2]};
+				if (node.scale.size() != 0) {
+					transform.scale =  {(float)node.scale[0], (float)node.scale[1], (float)node.scale[2]};
 				}
-				if (src.translation.size() != 0) {
-					transform.translate = {(float)src.translation[0], (float)src.translation[1], (float)src.translation[2]};
+				if (node.translation.size() != 0) {
+					transform.translate = {(float)node.translation[0], (float)node.translation[1], (float)node.translation[2]};
 				}
-				dst.local_transform_mat = transform_to_mat4(transform);
+				gpk_node.local_transform_mat = transform_to_mat4(transform);
 			}
 		}
 		current_offset = round_up(current_offset + gpk_model.node_count * (uint32)sizeof(struct gpk_model_node), 16u);
@@ -223,17 +223,18 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		m_assert(gpk_model.mesh_count > 0);
 		gpk_model_meshes.resize(gpk_model.mesh_count);
 		for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
-			auto &src = glb_model.meshes[i];
-			auto &dst = gpk_model_meshes[i];
-			m_assert(src.name.length() < sizeof(dst.name));
-			strcpy(dst.name, src.name.c_str());
-			m_assert(src.primitives.size() == 1);
-			auto &primitive = src.primitives[0];
-			m_assert(primitive.mode == TINYGLTF_MODE_TRIANGLES);
-			m_assert(primitive.indices >= 0);
-			m_assert(primitive.attributes.find("POSITION") != primitive.attributes.end());
-			m_assert(primitive.attributes.find("NORMAL") != primitive.attributes.end());
-			dst.material_index = primitive.material >= 0 ? primitive.material : UINT32_MAX;
+			auto &mesh = glb_model.meshes[i];
+			auto &gpk_mesh = gpk_model_meshes[i];
+			m_assert(mesh.name.length() < sizeof(gpk_mesh.name));
+			strcpy(gpk_mesh.name, mesh.name.c_str());
+			m_assert(mesh.primitives.size() > 0);
+			gpk_mesh.primitive_count = (uint32)mesh.primitives.size();
+			for (auto &p : mesh.primitives) {
+				m_assert(p.mode == TINYGLTF_MODE_TRIANGLES);
+				m_assert(p.indices >= 0);
+				m_assert(p.attributes.find("POSITION") != p.attributes.end());
+				m_assert(p.attributes.find("NORMAL") != p.attributes.end());
+			}
 		}
 		current_offset = round_up(current_offset + gpk_model.mesh_count * (uint32)sizeof(struct gpk_model_mesh), 16u);
 	}
@@ -244,15 +245,15 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		gpk_model_skins.resize(gpk_model.skin_count);
 		m_assert(gpk_model.skin_count <= 1);
 		for (uint32 i = 0; i < gpk_model.skin_count; i += 1) {
-			auto &src = glb_model.skins[i];
-			auto &dst = gpk_model_skins[i];
-			m_assert(src.name.length() < sizeof(dst.name));
-			strcpy(dst.name, src.name.c_str());
-			m_assert(src.skeleton >= 0 && src.skeleton < glb_model.nodes.size());
-			dst.root_node_index = (uint32)src.skeleton;
-			m_assert(src.joints.size() > 0 && src.joints.size() < glb_model.nodes.size());
-			m_assert(src.joints.size() < 256);
-			dst.joint_count = (uint32)src.joints.size();
+			auto &skin = glb_model.skins[i];
+			auto &gpk_skin = gpk_model_skins[i];
+			m_assert(skin.name.length() < sizeof(gpk_skin.name));
+			strcpy(gpk_skin.name, skin.name.c_str());
+			m_assert(skin.skeleton >= 0 && skin.skeleton < glb_model.nodes.size());
+			gpk_skin.root_node_index = (uint32)skin.skeleton;
+			m_assert(skin.joints.size() > 0 && skin.joints.size() < glb_model.nodes.size());
+			m_assert(skin.joints.size() < 256);
+			gpk_skin.joint_count = (uint32)skin.joints.size();
 		}
 		current_offset = round_up(current_offset + gpk_model.skin_count * (uint32)sizeof(struct gpk_model_skin), 16u);
 	}
@@ -262,12 +263,12 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		gpk_model.animation_count = (uint32)glb_model.animations.size();
 		gpk_model_animations.resize(gpk_model.animation_count);
 		for (uint32 i = 0; i < gpk_model.animation_count; i += 1) {
-			auto &src = glb_model.animations[i];
-			auto &dst = gpk_model_animations[i];
-			m_assert(src.name.length() < sizeof(dst.name));
-			strcpy(dst.name, src.name.c_str());
-			dst.channel_count = (uint32)src.channels.size();
-			dst.sampler_count = (uint32)src.samplers.size();
+			auto &animation = glb_model.animations[i];
+			auto &gpk_animation = gpk_model_animations[i];
+			m_assert(animation.name.length() < sizeof(gpk_animation.name));
+			strcpy(gpk_animation.name, animation.name.c_str());
+			gpk_animation.channel_count = (uint32)animation.channels.size();
+			gpk_animation.sampler_count = (uint32)animation.samplers.size();
 		}
 		current_offset = round_up(current_offset + gpk_model.animation_count * (uint32)sizeof(struct gpk_model_animation), 16u);
 	}
@@ -336,80 +337,80 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			gpk_model_materials[i].normal_image_index = UINT32_MAX;
 		}
 		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
-			auto &src = glb_model.materials[i];
-			auto &dst = gpk_model_materials[i];
-			m_assert(src.name.length() < sizeof(dst.name));
-			strcpy(dst.name, src.name.c_str());
-			auto base_color_texture = src.values.find("baseColorTexture");
-			auto base_color_factor = src.values.find("baseColorFactor");
-			auto metallic_roughness_texture = src.values.find("metallicRoughnessTexture");
-			auto metallic_factor = src.values.find("metallicFactor");
-			auto roughness_factor = src.values.find("roughnessFactor");
-			auto normal_texture = src.additionalValues.find("normalTexture");
-			if (base_color_texture != src.values.end()) {
+			auto &material = glb_model.materials[i];
+			auto &gpk_material = gpk_model_materials[i];
+			m_assert(material.name.length() < sizeof(gpk_material.name));
+			strcpy(gpk_material.name, material.name.c_str());
+			auto base_color_texture = material.values.find("baseColorTexture");
+			auto base_color_factor = material.values.find("baseColorFactor");
+			auto metallic_roughness_texture = material.values.find("metallicRoughnessTexture");
+			auto metallic_factor = material.values.find("metallicFactor");
+			auto roughness_factor = material.values.find("roughnessFactor");
+			auto normal_texture = material.additionalValues.find("normalTexture");
+			if (base_color_texture != material.values.end()) {
 				int32 index = base_color_texture->second.TextureIndex();
 				m_assert(index >= 0 && index < glb_model.textures.size());
 				auto &texture = glb_model.textures[index];
 				m_assert(texture.source >= 0 && texture.source < glb_model.images.size());
 				m_assert(image_remaps[texture.source].is_base_color);
-				dst.albedo_image_index = image_remaps[texture.source].index;
+				gpk_material.albedo_image_index = image_remaps[texture.source].index;
 				if (texture.sampler >= 0 && texture.sampler < glb_model.samplers.size()) {
-					dst.albedo_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
-					dst.albedo_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
+					gpk_material.albedo_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
+					gpk_material.albedo_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
 				}
 				else {
-					dst.albedo_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					dst.albedo_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.albedo_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.albedo_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 				}
 			}
-			else if (base_color_factor != src.values.end()) {
+			else if (base_color_factor != material.values.end()) {
 				auto &color = base_color_factor->second.number_array;
 				m_assert(color.size() == 4);
-				dst.albedo_factor = {(float)color[0], (float)color[1], (float)color[2], (float)color[3]};
+				gpk_material.albedo_factor = {(float)color[0], (float)color[1], (float)color[2], (float)color[3]};
 			}
-			if (metallic_roughness_texture != src.values.end()) {
+			if (metallic_roughness_texture != material.values.end()) {
 				int32 index = metallic_roughness_texture->second.TextureIndex();
 				m_assert(index >= 0 && index < glb_model.textures.size());
 				auto &texture = glb_model.textures[index];
 				m_assert(texture.source >= 0 && texture.source < glb_model.images.size());
 				m_assert(image_remaps[texture.source].is_metallic_roughness);
-				dst.metallic_image_index = image_remaps[texture.source].index;
-				dst.roughness_image_index = image_remaps[texture.source].index + 1;
+				gpk_material.metallic_image_index = image_remaps[texture.source].index;
+				gpk_material.roughness_image_index = image_remaps[texture.source].index + 1;
 				if (texture.sampler >= 0 && texture.sampler < glb_model.samplers.size()) {
-					dst.metallic_roughness_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
-					dst.metallic_roughness_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
+					gpk_material.metallic_roughness_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
+					gpk_material.metallic_roughness_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
 				}
 				else {
-					dst.metallic_roughness_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					dst.metallic_roughness_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.metallic_roughness_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.metallic_roughness_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 				}
 			}
 			else {
-				if (metallic_factor != src.values.end()) {
+				if (metallic_factor != material.values.end()) {
 					auto &factor = metallic_factor->second.number_array;
 					m_assert(factor.size() == 1);
-					dst.metallic_factor = (float)factor[0];
+					gpk_material.metallic_factor = (float)factor[0];
 				}
-				if (roughness_factor != src.values.end()) {
+				if (roughness_factor != material.values.end()) {
 					auto &factor = roughness_factor->second.number_array;
 					m_assert(factor.size() == 1);
-					dst.roughness_factor = (float)factor[0];
+					gpk_material.roughness_factor = (float)factor[0];
 				}
 			}
-			if (normal_texture != src.additionalValues.end()) {
+			if (normal_texture != material.additionalValues.end()) {
 				int32 index = normal_texture->second.TextureIndex();
 				m_assert(index >= 0 && index < glb_model.textures.size());
 				auto &texture = glb_model.textures[index];
 				m_assert(texture.source >= 0 && texture.source < glb_model.images.size());
 				m_assert(image_remaps[texture.source].is_normal);
-				dst.normal_image_index = image_remaps[texture.source].index;
+				gpk_material.normal_image_index = image_remaps[texture.source].index;
 				if (texture.sampler >= 0 && texture.sampler < glb_model.samplers.size()) {
-					dst.normal_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
-					dst.normal_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
+					gpk_material.normal_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
+					gpk_material.normal_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
 				}
 				else {
-					dst.normal_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					dst.normal_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.normal_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.normal_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 				}
 			}
 		}
@@ -478,61 +479,63 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		current_offset = round_up(current_offset + gpk_model.image_count * (uint32)sizeof(struct gpk_model_image), 16u);
 	}
 	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
-		auto &src = glb_model.meshes[i];
-		auto &dst = gpk_model_meshes[i];
-		auto &primitive = src.primitives[0];
+		auto &mesh = glb_model.meshes[i];
+		auto &gpk_mesh = gpk_model_meshes[i];
+		gpk_mesh.primitive_offset = current_offset;
+		current_offset = round_up(current_offset + gpk_mesh.primitive_count * (uint32)sizeof(struct gpk_model_mesh_primitive), 16u);
 
-		auto &index_accessor = glb_model.accessors[primitive.indices];
-		m_assert(index_accessor.count > 0);
-		m_assert(index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT || index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE);
-		m_assert(index_accessor.type == TINYGLTF_TYPE_SCALAR);
-		
-		auto &position_accessor = glb_model.accessors[primitive.attributes["POSITION"]];
-		m_assert(position_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-		m_assert(position_accessor.type == TINYGLTF_TYPE_VEC3);
+		for (uint32 i = 0; i < gpk_mesh.primitive_count; i += 1) {
+			auto &primitive = mesh.primitives[i];
 
-		auto &normal_accessor = glb_model.accessors[primitive.attributes["NORMAL"]];
-		m_assert(normal_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-		m_assert(normal_accessor.type == TINYGLTF_TYPE_VEC3);
-		m_assert(normal_accessor.count == position_accessor.count);
+			auto &index_accessor = glb_model.accessors[primitive.indices];
+			m_assert(index_accessor.count > 0);
+			m_assert(index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT || index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE);
+			m_assert(index_accessor.type == TINYGLTF_TYPE_SCALAR);
 
-		if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
-			auto &uv_accessor = glb_model.accessors[primitive.attributes["TEXCOORD_0"]];
-			m_assert(uv_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-			m_assert(uv_accessor.type == TINYGLTF_TYPE_VEC2);
-			m_assert(uv_accessor.count == position_accessor.count);
+			auto &position_accessor = glb_model.accessors[primitive.attributes["POSITION"]];
+			m_assert(position_accessor.count > 0);
+			m_assert(position_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+			m_assert(position_accessor.type == TINYGLTF_TYPE_VEC3);
+
+			auto &normal_accessor = glb_model.accessors[primitive.attributes["NORMAL"]];
+			m_assert(normal_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+			m_assert(normal_accessor.type == TINYGLTF_TYPE_VEC3);
+			m_assert(normal_accessor.count == position_accessor.count);
+
+			if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
+				auto &uv_accessor = glb_model.accessors[primitive.attributes["TEXCOORD_0"]];
+				m_assert(uv_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+				m_assert(uv_accessor.type == TINYGLTF_TYPE_VEC2);
+				m_assert(uv_accessor.count == position_accessor.count);
+			}
+
+			if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
+				auto &tangent_accessor = glb_model.accessors[primitive.attributes["TANGENT"]];
+				m_assert(tangent_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+				m_assert(tangent_accessor.type == TINYGLTF_TYPE_VEC4);
+				m_assert(tangent_accessor.count == position_accessor.count);
+			}
+
+			if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
+				auto weights = primitive.attributes.find("WEIGHTS_0");
+				m_assert(weights != primitive.attributes.end());
+				auto &joint_accessor = glb_model.accessors[primitive.attributes["JOINTS_0"]];
+				m_assert(joint_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT);
+				m_assert(joint_accessor.type == TINYGLTF_TYPE_VEC4);
+				m_assert(joint_accessor.count == position_accessor.count);
+
+				auto &weight_accessor = glb_model.accessors[primitive.attributes["WEIGHTS_0"]];
+				m_assert(weight_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+				m_assert(weight_accessor.type == TINYGLTF_TYPE_VEC4);
+				m_assert(weight_accessor.count == position_accessor.count);
+			}
+			else {
+				m_assert(glb_model.skins.size() == 0);
+			}
+
+			current_offset = round_up(current_offset + (uint32)index_accessor.count * (uint32)sizeof(uint16), 16u);
+			current_offset = round_up(current_offset + (uint32)position_accessor.count * (uint32)sizeof(struct gpk_model_vertex), 16u);
 		}
-
-		if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
-			auto &tangent_accessor = glb_model.accessors[primitive.attributes["TANGENT"]];
-			m_assert(tangent_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-			m_assert(tangent_accessor.type == TINYGLTF_TYPE_VEC4);
-			m_assert(tangent_accessor.count == position_accessor.count);
-		}
-
-		if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
-			auto weights = primitive.attributes.find("WEIGHTS_0");
-			m_assert(weights != primitive.attributes.end());
-			auto &joint_accessor = glb_model.accessors[primitive.attributes["JOINTS_0"]];
-			m_assert(joint_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT);
-			m_assert(joint_accessor.type == TINYGLTF_TYPE_VEC4);
-			m_assert(joint_accessor.count == position_accessor.count);
-
-			auto &weight_accessor = glb_model.accessors[primitive.attributes["WEIGHTS_0"]];
-			m_assert(weight_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-			m_assert(weight_accessor.type == TINYGLTF_TYPE_VEC4);
-			m_assert(weight_accessor.count == position_accessor.count);
-		}
-		else {
-			m_assert(glb_model.skins.size() == 0);
-		}
-
-		dst.indices_offset = current_offset;
-		dst.index_count = (uint32)index_accessor.count;
-		current_offset = round_up(current_offset + dst.index_count * (uint32)sizeof(uint16), 16u);
-		dst.vertices_offset = current_offset;
-		dst.vertex_count = (uint32)position_accessor.count;
-		current_offset = round_up(current_offset + dst.vertex_count * (uint32)sizeof(struct gpk_model_vertex), 16u);
 	}
 	for (uint32 i = 0; i < gpk_model.skin_count; i += 1) {
 		auto & skin = gpk_model_skins[i];
@@ -576,116 +579,131 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 	memcpy(gpk_file_mapping.ptr + gpk_model.material_offset, &gpk_model_materials[0], gpk_model_materials.size() * sizeof(struct gpk_model_material));
 	memcpy(gpk_file_mapping.ptr + gpk_model.image_offset, &gpk_model_images[0], gpk_model_images.size() * sizeof(struct gpk_model_image));
 	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
-		auto &primitive = glb_model.meshes[i].primitives[0];
-		auto &mesh = gpk_model_meshes[i];
+		auto &mesh = glb_model.meshes[i];
+		auto &gpk_mesh = gpk_model_meshes[i];
 
-		auto &index_accessor = glb_model.accessors[primitive.indices];
-		auto &index_buffer_view = glb_model.bufferViews[index_accessor.bufferView];
-		auto &index_buffer = glb_model.buffers[index_buffer_view.buffer];
-		unsigned char *index_data = &index_buffer.data[index_buffer_view.byteOffset + index_accessor.byteOffset];
-		m_assert(index_buffer_view.byteStride == 0);
-		if (index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-			memcpy(gpk_file_mapping.ptr + mesh.indices_offset, index_data, mesh.index_count * sizeof(uint16));
-		}
-		if (index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
-			for (uint32 i = 0; i < mesh.index_count; i += 1) {
-				((uint16 *)(gpk_file_mapping.ptr + mesh.indices_offset))[i] = index_data[i];
-			}
-		}
-		
-		auto &position_accessor = glb_model.accessors[primitive.attributes["POSITION"]];
-		auto &position_buffer_view = glb_model.bufferViews[position_accessor.bufferView];
-		auto &position_buffer = glb_model.buffers[position_buffer_view.buffer];
-		uint32 position_stride = position_buffer_view.byteStride == 0 ? 12 : (uint32)position_buffer_view.byteStride;
-		unsigned char *position_data = &position_buffer.data[position_buffer_view.byteOffset + position_accessor.byteOffset];
-		
-		auto &normal_accessor = glb_model.accessors[primitive.attributes["NORMAL"]];
-		auto &normal_buffer_view = glb_model.bufferViews[normal_accessor.bufferView];
-		auto &normal_buffer = glb_model.buffers[normal_buffer_view.buffer];
-		uint32 normal_stride = normal_buffer_view.byteStride == 0 ? 12 : (uint32)normal_buffer_view.byteStride;
-		unsigned char *normal_data = &normal_buffer.data[normal_buffer_view.byteOffset + normal_accessor.byteOffset];
+		uint32 indices_vertices_offset = round_up(gpk_mesh.primitive_offset + gpk_mesh.primitive_count * (uint32)sizeof(struct gpk_model_mesh_primitive), 16u);
+		for (uint32 i = 0; i < gpk_mesh.primitive_count; i += 1) {
+			auto &primitive = mesh.primitives[i];
+			auto &gpk_primitive = ((gpk_model_mesh_primitive *)(gpk_file_mapping.ptr + gpk_mesh.primitive_offset))[i];
 
-		uint8 *uv_data = nullptr;
-		uint32 uv_stride = 0;
-		if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
-			auto &uv_accessor = glb_model.accessors[primitive.attributes["TEXCOORD_0"]];
-			auto &uv_buffer_view = glb_model.bufferViews[uv_accessor.bufferView];
-			auto &uv_buffer = glb_model.buffers[uv_buffer_view.buffer];
-			uv_stride = uv_buffer_view.byteStride == 0 ? 8 : (uint32)uv_buffer_view.byteStride;
-			uv_data = &uv_buffer.data[uv_buffer_view.byteOffset + uv_accessor.byteOffset];
-		}
+			auto &index_accessor = glb_model.accessors[primitive.indices];
+			auto &index_buffer_view = glb_model.bufferViews[index_accessor.bufferView];
+			auto &index_buffer = glb_model.buffers[index_buffer_view.buffer];
+			unsigned char *index_data = &index_buffer.data[index_buffer_view.byteOffset + index_accessor.byteOffset];
+			m_assert(index_buffer_view.byteStride == 0);
 
-		uint8 *tangent_data = nullptr;
-		uint32 tangent_stride = 0;
-		if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
-			auto &tangent_accessor = glb_model.accessors[primitive.attributes["TANGENT"]];
-			auto &tangent_buffer_view = glb_model.bufferViews[tangent_accessor.bufferView];
-			auto &tangent_buffer = glb_model.buffers[tangent_buffer_view.buffer];
-			tangent_stride = tangent_buffer_view.byteStride == 0 ? 16 : (uint32)tangent_buffer_view.byteStride;
-			tangent_data = &tangent_buffer.data[tangent_buffer_view.byteOffset + tangent_accessor.byteOffset];
-		}
+			auto &position_accessor = glb_model.accessors[primitive.attributes["POSITION"]];
+			auto &position_buffer_view = glb_model.bufferViews[position_accessor.bufferView];
+			auto &position_buffer = glb_model.buffers[position_buffer_view.buffer];
+			uint32 position_stride = position_buffer_view.byteStride == 0 ? 12 : (uint32)position_buffer_view.byteStride;
+			unsigned char *position_data = &position_buffer.data[position_buffer_view.byteOffset + position_accessor.byteOffset];
 
-		uint8 *joint_data = nullptr;
-		uint32 joint_stride = 0;
-		uint8 *weight_data = nullptr;
-		uint32 weight_stride = 0;
-		uint32 skin_joint_count = 0;
-		if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
-			auto &joint_accessor = glb_model.accessors[primitive.attributes["JOINTS_0"]];
-			auto &joint_buffer_view = glb_model.bufferViews[joint_accessor.bufferView];
-			auto &joint_buffer = glb_model.buffers[joint_buffer_view.buffer];
-			joint_stride = joint_buffer_view.byteStride == 0 ? 8 : (uint32)joint_buffer_view.byteStride;
-			joint_data = &joint_buffer.data[joint_buffer_view.byteOffset + joint_accessor.byteOffset];
+			auto &normal_accessor = glb_model.accessors[primitive.attributes["NORMAL"]];
+			auto &normal_buffer_view = glb_model.bufferViews[normal_accessor.bufferView];
+			auto &normal_buffer = glb_model.buffers[normal_buffer_view.buffer];
+			uint32 normal_stride = normal_buffer_view.byteStride == 0 ? 12 : (uint32)normal_buffer_view.byteStride;
+			unsigned char *normal_data = &normal_buffer.data[normal_buffer_view.byteOffset + normal_accessor.byteOffset];
 
-			auto &weight_accessor = glb_model.accessors[primitive.attributes["WEIGHTS_0"]];
-			auto &weight_buffer_view = glb_model.bufferViews[weight_accessor.bufferView];
-			auto &weight_buffer = glb_model.buffers[weight_buffer_view.buffer];
-			weight_stride = weight_buffer_view.byteStride == 0 ? 16 : (uint32)weight_buffer_view.byteStride;
-			weight_data = &weight_buffer.data[weight_buffer_view.byteOffset + weight_accessor.byteOffset];
-
-			skin_joint_count = (uint32)glb_model.skins[0].joints.size();
-			m_assert(skin_joint_count < 256);
-		}
-		
-		for (uint32 i = 0; i < mesh.vertex_count; i += 1) {
-			gpk_model_vertex *vertex = ((gpk_model_vertex *)(gpk_file_mapping.ptr + mesh.vertices_offset)) + i;
-
-			vertex->position = *(vec3 *)(position_data + position_stride * i);
-
-			if (uv_data) {
-				vertex->uv = *(vec2 *)(uv_data + uv_stride * i);
-			}
-			else {
-				vertex->uv = {};
+			uint8 *uv_data = nullptr;
+			uint32 uv_stride = 0;
+			if (primitive.attributes.find("TEXCOORD_0") != primitive.attributes.end()) {
+				auto &uv_accessor = glb_model.accessors[primitive.attributes["TEXCOORD_0"]];
+				auto &uv_buffer_view = glb_model.bufferViews[uv_accessor.bufferView];
+				auto &uv_buffer = glb_model.buffers[uv_buffer_view.buffer];
+				uv_stride = uv_buffer_view.byteStride == 0 ? 8 : (uint32)uv_buffer_view.byteStride;
+				uv_data = &uv_buffer.data[uv_buffer_view.byteOffset + uv_accessor.byteOffset];
 			}
 
-			vec3 normal = *(vec3 *)(normal_data + normal_stride * i);
-			vertex->normal = {(int16)roundf(normal[0] * 32767.0f), (int16)roundf(normal[1] * 32767.0f), (int16)roundf(normal[2] * 32767.0f)};
-
-			vec3 tangent = {};
-			if (tangent_data) {
-				tangent = *(vec3 *)(tangent_data + tangent_stride * i);
+			uint8 *tangent_data = nullptr;
+			uint32 tangent_stride = 0;
+			if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
+				auto &tangent_accessor = glb_model.accessors[primitive.attributes["TANGENT"]];
+				auto &tangent_buffer_view = glb_model.bufferViews[tangent_accessor.bufferView];
+				auto &tangent_buffer = glb_model.buffers[tangent_buffer_view.buffer];
+				tangent_stride = tangent_buffer_view.byteStride == 0 ? 16 : (uint32)tangent_buffer_view.byteStride;
+				tangent_data = &tangent_buffer.data[tangent_buffer_view.byteOffset + tangent_accessor.byteOffset];
 			}
-			else {
-				vec3 tangent1 = vec3_cross(normal, vec3{0, 0, 1});
-				vec3 tangent2 = vec3_cross(normal, vec3{0, 1, 0});
-				tangent = vec3_normalize(vec3_len(tangent1) > vec3_len(tangent2) ? tangent1 : tangent2);
-			}
-			vertex->tangent = {(int16)roundf(tangent[0] * 32767.0f), (int16)roundf(tangent[1] * 32767.0f), (int16)roundf(tangent[2] * 32767.0f)};
 
-			if (joint_data) {
-				u16vec4 js = *(u16vec4 *)(joint_data + joint_stride * i);
-				m_assert(js[0] < skin_joint_count && js[1] < skin_joint_count && js[2] < skin_joint_count && js[3] < skin_joint_count);
-				vertex->joints = {(uint8)js[0], (uint8)js[1], (uint8)js[2], (uint8)js[3]};
+			uint8 *joint_data = nullptr;
+			uint32 joint_stride = 0;
+			uint8 *weight_data = nullptr;
+			uint32 weight_stride = 0;
+			uint32 skin_joint_count = 0;
+			if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
+				auto &joint_accessor = glb_model.accessors[primitive.attributes["JOINTS_0"]];
+				auto &joint_buffer_view = glb_model.bufferViews[joint_accessor.bufferView];
+				auto &joint_buffer = glb_model.buffers[joint_buffer_view.buffer];
+				joint_stride = joint_buffer_view.byteStride == 0 ? 8 : (uint32)joint_buffer_view.byteStride;
+				joint_data = &joint_buffer.data[joint_buffer_view.byteOffset + joint_accessor.byteOffset];
 
-				vec4 ws = *(vec4 *)(weight_data + weight_stride * i);
-				m_assert(ws[0] >= 0 && ws[1] >= 0 && ws[2] >= 0 && ws[3] >= 0);
-				m_assert(ws[0] <= 1 && ws[1] <= 1 && ws[2] <= 1 && ws[3] <= 1);
-				vertex->weights = {(uint16)roundf(ws[0] * 65535.0f), (uint16)roundf(ws[1] * 65535.0f), (uint16)roundf(ws[2] * 65535.0f), (uint16)roundf(ws[3] * 65535.0f)};
+				auto &weight_accessor = glb_model.accessors[primitive.attributes["WEIGHTS_0"]];
+				auto &weight_buffer_view = glb_model.bufferViews[weight_accessor.bufferView];
+				auto &weight_buffer = glb_model.buffers[weight_buffer_view.buffer];
+				weight_stride = weight_buffer_view.byteStride == 0 ? 16 : (uint32)weight_buffer_view.byteStride;
+				weight_data = &weight_buffer.data[weight_buffer_view.byteOffset + weight_accessor.byteOffset];
+
+				skin_joint_count = (uint32)glb_model.skins[0].joints.size();
+				m_assert(skin_joint_count < 256);
 			}
-			else {
-				vertex->joints = {0, 0, 0, 0};
-				vertex->weights = {UINT16_MAX, 0, 0, 0};
+
+			gpk_primitive.material_index = (primitive.material >= 0 && primitive.material < glb_model.materials.size()) ? (uint32)primitive.material : UINT32_MAX;
+			gpk_primitive.indices_offset = indices_vertices_offset;
+			gpk_primitive.index_count = (uint32)index_accessor.count;
+			indices_vertices_offset = round_up(indices_vertices_offset + gpk_primitive.index_count * (uint32)sizeof(uint16), 16u);
+			gpk_primitive.vertices_offset = indices_vertices_offset;
+			gpk_primitive.vertex_count = (uint32)position_accessor.count;
+			indices_vertices_offset = round_up(indices_vertices_offset + gpk_primitive.vertex_count * (uint32)sizeof(struct gpk_model_vertex), 16u);
+
+			if (index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+				memcpy(gpk_file_mapping.ptr + gpk_primitive.indices_offset, index_data, gpk_primitive.index_count * sizeof(uint16));
+			}
+			if (index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+				for (uint32 i = 0; i < gpk_primitive.index_count; i += 1) {
+					((uint16 *)(gpk_file_mapping.ptr + gpk_primitive.indices_offset))[i] = index_data[i];
+				}
+			}
+
+			for (uint32 i = 0; i < gpk_primitive.vertex_count; i += 1) {
+				gpk_model_vertex *vertex = ((gpk_model_vertex *)(gpk_file_mapping.ptr + gpk_primitive.vertices_offset)) + i;
+
+				vertex->position = *(vec3 *)(position_data + position_stride * i);
+
+				if (uv_data) {
+					vertex->uv = *(vec2 *)(uv_data + uv_stride * i);
+				}
+				else {
+					vertex->uv = {};
+				}
+
+				vec3 normal = *(vec3 *)(normal_data + normal_stride * i);
+				vertex->normal = {(int16)roundf(normal[0] * 32767.0f), (int16)roundf(normal[1] * 32767.0f), (int16)roundf(normal[2] * 32767.0f)};
+
+				vec3 tangent = {};
+				if (tangent_data) {
+					tangent = *(vec3 *)(tangent_data + tangent_stride * i);
+				}
+				else {
+					vec3 tangent1 = vec3_cross(normal, vec3{0, 0, 1});
+					vec3 tangent2 = vec3_cross(normal, vec3{0, 1, 0});
+					tangent = vec3_normalize(vec3_len(tangent1) > vec3_len(tangent2) ? tangent1 : tangent2);
+				}
+				vertex->tangent = {(int16)roundf(tangent[0] * 32767.0f), (int16)roundf(tangent[1] * 32767.0f), (int16)roundf(tangent[2] * 32767.0f)};
+
+				if (joint_data) {
+					u16vec4 js = *(u16vec4 *)(joint_data + joint_stride * i);
+					m_assert(js[0] < skin_joint_count && js[1] < skin_joint_count && js[2] < skin_joint_count && js[3] < skin_joint_count);
+					vertex->joints = {(uint8)js[0], (uint8)js[1], (uint8)js[2], (uint8)js[3]};
+
+					vec4 ws = *(vec4 *)(weight_data + weight_stride * i);
+					m_assert(ws[0] >= 0 && ws[1] >= 0 && ws[2] >= 0 && ws[3] >= 0);
+					m_assert(ws[0] <= 1 && ws[1] <= 1 && ws[2] <= 1 && ws[3] <= 1);
+					vertex->weights = {(uint16)roundf(ws[0] * 65535.0f), (uint16)roundf(ws[1] * 65535.0f), (uint16)roundf(ws[2] * 65535.0f), (uint16)roundf(ws[3] * 65535.0f)};
+				}
+				else {
+					vertex->joints = {0, 0, 0, 0};
+					vertex->weights = {UINT16_MAX, 0, 0, 0};
+				}
 			}
 		}
 	}

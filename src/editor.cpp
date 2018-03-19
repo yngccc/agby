@@ -295,16 +295,19 @@ void editor_select_new_entity(editor* editor, uint32 entity_index) {
 
 bool ray_intersect_mesh(ray ray, model_mesh *mesh, mat4 transform, float *distance) {
 	float min_distance = ray.len;
-	for (uint32 i = 0; i < mesh->index_count / 3; i += 1) {
-		vec3 a = *(vec3 *)(mesh->vertices_data + ((uint16 *)mesh->indices_data)[i * 3 + 0] * sizeof(struct gpk_model_vertex));
-		vec3 b = *(vec3 *)(mesh->vertices_data + ((uint16 *)mesh->indices_data)[i * 3 + 1] * sizeof(struct gpk_model_vertex));
-		vec3 c = *(vec3 *)(mesh->vertices_data + ((uint16 *)mesh->indices_data)[i * 3 + 2] * sizeof(struct gpk_model_vertex));
-		a = transform * a;
-		b = transform * b;
-		c = transform * c;
-		float d = 0;
-		if (ray_intersect_triangle(ray, a, b, c, &d) && d < min_distance) {
-			min_distance = d;
+	for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
+		model_mesh_primitive *primitive = &mesh->primitives[i];
+		for (uint32 i = 0; i < primitive->index_count / 3; i += 1) {
+			vec3 a = *(vec3 *)(primitive->vertices_data + ((uint16 *)primitive->indices_data)[i * 3 + 0] * sizeof(struct gpk_model_vertex));
+			vec3 b = *(vec3 *)(primitive->vertices_data + ((uint16 *)primitive->indices_data)[i * 3 + 1] * sizeof(struct gpk_model_vertex));
+			vec3 c = *(vec3 *)(primitive->vertices_data + ((uint16 *)primitive->indices_data)[i * 3 + 2] * sizeof(struct gpk_model_vertex));
+			a = transform * a;
+			b = transform * b;
+			c = transform * c;
+			float d = 0;
+			if (ray_intersect_triangle(ray, a, b, c, &d) && d < min_distance) {
+				min_distance = d;
+			}
 		}
 	}
 	if (min_distance != ray.len) {
@@ -530,20 +533,22 @@ int main(int argc, char **argv) {
 					for (uint32 i = 0; i < level->entity_count; i += 1) {
 						if (level->entity_flags[i] & entity_component_flag_render) {
 							entity_render_component *render_component = entity_get_render_component(level, i);
-							model *model = &level->models[render_component->model_index];
-							mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
-							float model_min_distance = ray.len;
-							traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
-								if (node->mesh_index < model->mesh_count) {
-									float distance = 0;
-									if (ray_intersect_mesh(ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {
-										model_min_distance = distance;
+							if (render_component->model_index < level->model_count) {
+								model *model = &level->models[render_component->model_index];
+								mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
+								float model_min_distance = ray.len;
+								traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
+									if (node->mesh_index < model->mesh_count) {
+										float distance = 0;
+										if (ray_intersect_mesh(ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {
+											model_min_distance = distance;
+										}
 									}
+								});
+								if (model_min_distance < entity_min_distance) {
+									entity_min_distance = model_min_distance;
+									entity_index = i;
 								}
-							});
-							if (model_min_distance < entity_min_distance) {
-								entity_min_distance = model_min_distance;
-								entity_index = i;
 							}
 						}
 					}
