@@ -189,6 +189,7 @@ struct entity_addition {
 struct mesh_render_data {
 	uint32 mesh_index;
 	uint32 frame_uniform_buffer_offset;
+	uint32 joints_frame_uniform_buffer_offset;
  	bool render_vertices_outline;
 };
 
@@ -262,13 +263,13 @@ void initialize_level(level *level, vulkan *vulkan) {
 
 	for (uint32 i = 0; i < m_countof(level->entity_components_memory_arenas); i += 1) {
 		level->entity_components_memory_arenas[i].name = "entity_components";
-		level->entity_components_memory_arenas[i].capacity = m_megabytes(8);
+		level->entity_components_memory_arenas[i].capacity = m_megabytes(4);
 		level->entity_components_memory_arenas[i].memory = allocate_virtual_memory(level->entity_components_memory_arenas[i].capacity);
 		m_assert(level->entity_components_memory_arenas[i].memory);
 	}
 
 	level->assets_memory_arena.name = "assets";
-	level->assets_memory_arena.capacity = m_megabytes(64);
+	level->assets_memory_arena.capacity = m_megabytes(8);
 	level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
 	m_assert(level->assets_memory_arena.memory);
 
@@ -1160,7 +1161,7 @@ camera level_get_player_camera(level *level, vulkan *vulkan, float r, float thet
 template <typename F>
 void traverse_model_node_hierarchy(model_node *nodes, uint32 index, F f) {
 	model_node *node = &nodes[index];
-	f(node);
+	f(node, index);
 	for (uint32 i = 0; i < node->child_count; i += 1) {
 		traverse_model_node_hierarchy(nodes, node->children[i], f);
 	}
@@ -1180,7 +1181,7 @@ template <typename F>
 void traverse_model_node_hierarchy_track_global_transform(model_node *nodes, uint32 index, mat4 global_transform_mat, F f) {
 	model_node *node = &nodes[index];
 	global_transform_mat = global_transform_mat * node->local_transform_mat;
-	f(node, global_transform_mat);
+	f(node, index, global_transform_mat);
 	for (uint32 i = 0; i < node->child_count; i += 1) {
 		traverse_model_node_hierarchy_track_global_transform(nodes, node->children[i], global_transform_mat, f);
 	}
@@ -1199,8 +1200,13 @@ void traverse_model_scenes_track_global_transform(model *model, F f) {
 template <typename F>
 void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F generate_extra_render_data) {
 	level->render_data = {};
-	vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] = 0;
-	vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] = 0;
+
+	uint32 *frame_vertex_buffer_offset = &vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
+	uint32 *frame_uniform_buffer_offset = &vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
+	uint8 *frame_uniform_buffer_ptr = vulkan->buffers.frame_uniform_buffer_ptrs[vulkan->frame_index];
+
+	*frame_vertex_buffer_offset = 0;
+	*frame_uniform_buffer_offset = 0;
 
 	uint32 uniform_alignment = (uint32)vulkan->device.physical_device_properties.limits.minUniformBufferOffsetAlignment;
 
@@ -1247,9 +1253,9 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 			uint32 point_light_count;
 			uint32 spot_light_count;
 		};
-		round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
-		level->render_data.common_data_frame_uniform_buffer_offset = vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
-		common_uniform *uniform = (struct common_uniform *)(vulkan->buffers.frame_uniform_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index]);
+		round_up(frame_uniform_buffer_offset, uniform_alignment);
+		level->render_data.common_data_frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
+		common_uniform *uniform = (struct common_uniform *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
 		uniform->camera_view_proj_mat = mat4_vulkan_clip() * camera_view_projection_mat4(camera);
 		uniform->camera_position = vec4{m_unpack3(camera.position.e), 0};
 		struct camera shadow_map_camera = camera;
@@ -1265,11 +1271,11 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 		}
 		uniform->point_light_count = point_light_count;
 		uniform->spot_light_count = 0;
-		vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] += sizeof(struct common_uniform);
+		*frame_uniform_buffer_offset += sizeof(struct common_uniform);
 	}
 	{ // models
 		if (level->render_component_count > 0) {
-			round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
+			round_up(frame_uniform_buffer_offset, uniform_alignment);
 			level->render_data.models = allocate_memory<struct model_render_data>(&level->render_thread_frame_memory_arena, level->render_component_count);
 			level->render_data.model_count = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
@@ -1279,39 +1285,63 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 						model_render_data *model_render_data = &level->render_data.models[level->render_data.model_count++];
 						model_render_data->model_index = render_component->model_index;
 						model *model = &level->models[render_component->model_index];
+						uint32 joints_frame_uniform_buffer_offset = 0;
+						if (model->skin_count > 0) {
+							model_skin *skin = &model->skins[0];
+							round_up(frame_uniform_buffer_offset, uniform_alignment);
+							joints_frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
+							mat4 *joint_mats = (mat4 *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
+							*frame_uniform_buffer_offset += skin->joint_count * sizeof(mat4);
+							traverse_model_scenes_track_global_transform(model, [skin, joint_mats](model_node *node, uint32 index, mat4 global_transform) {
+								for (uint32 i = 0; i < skin->joint_count; i += 1) {
+									if (skin->joints[i].node_index == index) {
+										joint_mats[i] = global_transform * skin->joints[i].inverse_bind_mat;
+										break;
+									}
+								}
+							});
+							for (uint32 i = 0; i < skin->joint_count; i += 1) {
+								m_assert(joint_mats[i] != mat4{});
+							}
+						}
 						model_render_data->mesh_count = 0;
-						traverse_model_scenes(model, [&](model_node *node) {
+						traverse_model_scenes(model, [&](model_node *node, uint32 index) {
 							if (node->mesh_index < model->mesh_count) {
 								model_render_data->mesh_count += 1;
 							}
 						});
-						mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
 						model_render_data->meshes = allocate_memory<struct mesh_render_data>(&level->render_thread_frame_memory_arena, model_render_data->mesh_count);
 						uint32 mesh_render_data_index = 0;
-						traverse_model_scenes_track_global_transform(model, [&](model_node *node, mat4 global_transform) {
+						mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
+						traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform) {
 							if (node->mesh_index < model->mesh_count) {
 								mesh_render_data *mesh = &model_render_data->meshes[mesh_render_data_index++];
 								mesh->mesh_index = node->mesh_index;
 								struct {
 									mat4 model_mat;
-									mat4 normal_mat;
-									vec2 uv_scale;
-									float roughness;
 									float metallic;
+									float roughness;
 									float height_map_scale;
 								} uniforms = {};
-								uniforms.model_mat = transform_mat * global_transform;
-								uniforms.normal_mat = mat4_transpose(mat4_inverse(uniforms.model_mat));
-								uniforms.uv_scale = {1, 1};
-								uniforms.roughness = 1;
-								uniforms.metallic = 0;
+								uniforms.model_mat = transform_mat;
+								uniforms.metallic = 0.5f;
+								uniforms.roughness = 0.5f;
 								uniforms.height_map_scale = 0;
-								uint8 *uniform_buffer_ptr = vulkan->buffers.frame_uniform_buffer_ptrs[vulkan->frame_index];
-								uint32 *frame_uniform_buffer_offset = &vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
+
 								round_up(frame_uniform_buffer_offset, uniform_alignment);
 								mesh->frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
-								memcpy(uniform_buffer_ptr + *frame_uniform_buffer_offset, &uniforms, sizeof(uniforms));
+								memcpy(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset, &uniforms, sizeof(uniforms));
 								*frame_uniform_buffer_offset += sizeof(uniforms);
+
+								if (model->skin_count > 0) {
+									mesh->joints_frame_uniform_buffer_offset = joints_frame_uniform_buffer_offset;
+								}
+								else {
+									round_up(frame_uniform_buffer_offset, uniform_alignment);
+									mesh->joints_frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
+									*(mat4 *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset) = global_transform;
+									*frame_uniform_buffer_offset += sizeof(mat4);
+								}
 							}
 						});
 					}
@@ -1350,7 +1380,7 @@ void level_generate_render_commands(level *level, vulkan *vulkan, camera camera,
 					model *model = &level->models[model_render_data->model_index];
 					for (uint32 i = 0; i < model_render_data->mesh_count; i += 1) {
 						model_mesh *mesh = &model->meshes[model_render_data->meshes[i].mesh_index];
-						uint32 offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, 0};
+						uint32 offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, model_render_data->meshes[i].joints_frame_uniform_buffer_offset};
 						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_shadow_map_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
 						vkCmdDrawIndexed(cmd_buffer, mesh->index_count, 1, mesh->index_buffer_offset / sizeof(uint16), mesh->vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
 					}
@@ -1422,8 +1452,8 @@ void level_generate_render_commands(level *level, vulkan *vulkan, camera camera,
 				model *model = &level->models[model_render_data->model_index];
 				for (uint32 i = 0; i < model_render_data->mesh_count; i += 1) {
 					model_mesh *mesh = &model->meshes[model_render_data->meshes[i].mesh_index];
-					uint32 frame_uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, 0};
-					vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(frame_uniform_buffer_offsets), frame_uniform_buffer_offsets);
+					uint32 offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, model_render_data->meshes[i].frame_uniform_buffer_offset, model_render_data->meshes[i].joints_frame_uniform_buffer_offset};
+					vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
 					if (mesh->material_index < model->material_count) {
  						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 1, 1, &model->materials[mesh->material_index].textures_descriptor_set, 0, nullptr);
 					}

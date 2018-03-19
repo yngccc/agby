@@ -72,13 +72,12 @@ void initialize_game(game *game, vulkan *vulkan) {
 	}
 }
 
-int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd_line_str, int cmd_show) {
+int main(int argc, char **argv) {
 	set_exe_dir_as_current();
-	show_command_prompt();
 
 	memory_arena general_memory_arena = {};
 	general_memory_arena.name = "general";
-	general_memory_arena.capacity = m_megabytes(64);
+	general_memory_arena.capacity = m_megabytes(16);
 	general_memory_arena.memory = allocate_virtual_memory(general_memory_arena.capacity);
 	m_assert(general_memory_arena.memory);
 	
@@ -109,13 +108,13 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 		for (uint32 i = 0; i < level->collision_component_count; i += 1) {
 			if (level->collision_components[i].bt_collision_object) {
 				bt_world->addCollisionObject(level->collision_components[i].bt_collision_object);
-				console("friction %f\n", level->collision_components[i].bt_collision_object->getFriction());
+				printf("friction %f\n", level->collision_components[i].bt_collision_object->getFriction());
 			}
 		}
 		for (uint32 i = 0; i < level->physics_component_count; i += 1) {
 			if (level->physics_components[i].bt_rigid_body) {
 				bt_world->addRigidBody(level->physics_components[i].bt_rigid_body);
-				console("damping %f\n", level->physics_components[i].bt_rigid_body->getLinearDamping());
+				printf("damping %f\n", level->physics_components[i].bt_rigid_body->getLinearDamping());
 			}
 		}
 

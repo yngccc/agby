@@ -48,8 +48,8 @@ struct gpk_model_vertex {
 	vec2 uv;
 	i16vec3 normal;
 	i16vec3 tangent;
-	u8vec4 joint_indices;
-	u16vec4 joint_weights;
+	u8vec4 joints;
+	u16vec4 weights;
 };
 static_assert(sizeof(gpk_model_vertex) == 44, "12 + 8 + 6 + 6 + 4 + 8");
 

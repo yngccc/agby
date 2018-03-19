@@ -28,9 +28,8 @@ layout(set = 0, binding = 0) uniform common_uniform {
 layout(set = 0, binding = 1) uniform mesh_uniform {
   mat4 model_mat;
   mat4 normal_mat;
-  vec2 uv_scale;
-  float roughness;
   float metallic;
+  float roughness;
   float height_map_scale;
 };
 
@@ -116,7 +115,7 @@ vec3 cook_torrance_brdf(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color
 
 void main() {
   vec3 view = normalize(tbn_camera_position_in - tbn_position_in);
-  vec2 uv = parallax_mapping(uv_in * uv_scale,  view);
+  vec2 uv = parallax_mapping(uv_in,  view);
   vec2 normal_xy = texture(normal_map, uv).xy * 2 - 1;
   float normal_z = sqrt(1 - normal_xy.x * normal_xy.x - normal_xy.y * normal_xy.y);
   vec3 normal = vec3(normal_xy, normal_z);
@@ -127,7 +126,7 @@ void main() {
   color_out = vec4(ambient_light.color.rgb * albedo, 1);
   for (uint i = 0; i < directional_light_count; i += 1) {
     vec3 brdf = cook_torrance_brdf(normal, view, tbn_directional_lights_in[i], directional_lights[i].color.rgb, albedo, metallic, roughness);
-    brdf = brdf * shadow_mapping();
+    // brdf = brdf * shadow_mapping();
     color_out.rgb += brdf;
   }
   for (uint i = 0; i < point_light_count; i += 1) {

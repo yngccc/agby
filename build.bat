@@ -19,6 +19,7 @@ set flags=/nologo /Od /MD /EHsc /W3 /GS /sdl /FC /D_CRT_SECURE_NO_WARNINGS /D "_
 set dirs=/I %VULKAN_SDK%\include /link /LIBPATH:..\vendor\lib\windows
 set libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib
 set bullet3_libs=BulletCollision.lib BulletDynamics.lib BulletInverseDynamics.lib BulletInverseDynamicsUtils.lib BulletSoftBody.lib LinearMath.lib Bullet3Common.lib Bullet3Collision.lib Bullet3Dynamics.lib Bullet3Geometry.lib
+set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
 
 rem cl ..\src\codegen.cpp %flags% %libs%
 rem if not %ERRORLEVEL% EQU 0 (
@@ -27,7 +28,7 @@ rem 	exit /b
 rem )
 rem codegen ..\src\common.cpp ..\src\math.cpp ..\src\vulkan.cpp ..\src\assets.cpp ..\src\menu.cpp ..\src\level.cpp ..\src\editor.cpp
 
-set compile_editor=start /b cl ..\src\editor.cpp %flags% %dirs% %libs% %bullet3_libs% 
+set compile_editor=start /b cl ..\src\editor.cpp %flags% %dirs% %libs% %bullet3_libs%
 set compile_game=start /b cl ..\src\game.cpp %flags% %dirs% %libs% %bullet3_libs%
 set compile_import=start /b cl ..\src\import.cpp %flags% %dirs% %libs% nvtt.lib
 set compile_lightmap=start /b cl ..\src\lightmap.cpp %flags% %dirs% %libs% UVAtlas.lib DirectXMesh.lib

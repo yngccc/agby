@@ -326,13 +326,13 @@ const char *vk_result_to_str(VkResult result) {
 
 VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT object_type, uint64_t object, size_t location, int32 messageCode, const char *layer_prefix, const char *message, void *user_data) {
 	if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
-		console("vulkan error: %s\n", message);
+		printf("vulkan error: %s\n", message);
 	}
 	else if (flags & VK_DEBUG_REPORT_WARNING_BIT_EXT) {
-		console("vulkan warning: %s\n", message);
+		printf("vulkan warning: %s\n", message);
 	}
 	else if (flags & VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT) {
-		console("vulkan performance warning: %s\n", message);
+		printf("vulkan performance warning: %s\n", message);
 	}
 	return VK_FALSE;
 };
@@ -344,7 +344,7 @@ bool vulkan_allocate_buffer(vulkan_device *vulkan_device, VkBufferCreateInfo buf
 	VkMemoryRequirements memory_requirements = {};
 	vkGetBufferMemoryRequirements(vulkan_device->device, *vulkan_buffer, &memory_requirements);
 	VkPhysicalDeviceMemoryProperties *memory_properties = &vulkan_device->physical_device_memory_properties;
-	uint32 memory_type_index = UINT_MAX;
+	uint32 memory_type_index = UINT32_MAX;
 	for (uint32 i = 0; i < memory_properties->memoryTypeCount; i += 1) {
 		if ((memory_requirements.memoryTypeBits & (1 << i)) && 
 			  (memory_properties->memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && (memory_properties->memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
@@ -352,7 +352,7 @@ bool vulkan_allocate_buffer(vulkan_device *vulkan_device, VkBufferCreateInfo buf
 		  break;
 		}
 	}
-	if (memory_type_index == UINT_MAX) {
+	if (memory_type_index == UINT32_MAX) {
 		vkDestroyBuffer(vulkan_device->device, *vulkan_buffer, nullptr);
 		return false;
 	}
@@ -378,14 +378,14 @@ bool vulkan_allocate_image(vulkan_device *vulkan_device, VkImageCreateInfo image
 	VkMemoryRequirements requirements = {};
 	vkGetImageMemoryRequirements(vulkan_device->device, *image, &requirements);
 	VkPhysicalDeviceMemoryProperties *properties = &vulkan_device->physical_device_memory_properties;
-	uint32 memory_type_index = UINT_MAX;
+	uint32 memory_type_index = UINT32_MAX;
 	for (uint32 i = 0; i < properties->memoryTypeCount; i += 1) {
 		if ((requirements.memoryTypeBits & (1 << i)) && properties->memoryTypes[i].propertyFlags == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
 			memory_type_index = i;
 			break;
 		}
 	}
-	if (memory_type_index == UINT_MAX) {
+	if (memory_type_index == UINT32_MAX) {
 		vkDestroyImage(vulkan_device->device, *image, nullptr);
 		return false;
 	}
@@ -423,15 +423,13 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 	info_str.capacity = memory_arena.capacity / 2;
 	info_str.buf = allocate_memory<char>(&memory_arena, info_str.capacity);
 	m_scope_exit(
-		console("%s\n", info_str.buf);
+		printf("%s\n", info_str.buf);
 		free_virtual_memory(memory_arena.memory);
 	);
 	{ // dynamic load vulkan DLL
 		HMODULE vulkan_1_dll = LoadLibraryA("vulkan-1.dll");
-		if (!vulkan_1_dll) {
-			fatal("call to LoadLibrary(\"vulkan-1.dll\") failed");
-		}
-		#define m_x(shape, name) name = (shape)GetProcAddress(vulkan_1_dll, #name); if (!name) { fatal("GetProcAddress(vulkan-1.dll, \"name\") failed"); }
+		m_assert(vulkan_1_dll);
+		#define m_x(shape, name) name = (shape)GetProcAddress(vulkan_1_dll, #name); m_assert(name);
 		m_vulkan_procs
 		#undef m_x      
 	}
@@ -486,7 +484,7 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		instance_info.ppEnabledExtensionNames = enabled_extensions;
 		m_vk_assert(vkCreateInstance(&instance_info, nullptr, &vulkan_device->instance));
 
-		#define m_x(shape, name) name = (shape)vkGetInstanceProcAddr(vulkan_device->instance, #name); if (!name) { fatal("cannot get \"" #name "\" from vulkan-1.dll"); }
+		#define m_x(shape, name) name = (shape)vkGetInstanceProcAddr(vulkan_device->instance, #name); m_assert(name);
 		m_vulkan_instance_procs
 		#undef m_x
 
@@ -558,9 +556,7 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 				break;
 			}
 		}
-		if (!vulkan_device->physical_device) {
-			fatal("cannot find a capable physical GPU device");
-		}
+		m_assert(vulkan_device->physical_device);
 	}
 	{ // create device, graphic/compute/transfer queues
 		uint32 queue_families_count = 0;
@@ -590,9 +586,7 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 				break;
 			}
 		}
-		if (vulkan_device->queue_family_index == -1) {
-			fatal("vulkan error, cannot find a GPU queue");
-		}
+		m_assert(vulkan_device->queue_family_index != -1);
 
 		float queue_priority = 1;
 		VkDeviceQueueCreateInfo queue_create_info = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -615,7 +609,7 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		device_info.ppEnabledExtensionNames = device_extensions;
 		device_info.pEnabledFeatures = &device_features;
 		m_vk_assert(vkCreateDevice(vulkan_device->physical_device, &device_info, nullptr, &vulkan_device->device));
-		#define m_x(shape, name) name = (shape)vkGetDeviceProcAddr(vulkan_device->device, #name); if (!name) { fatal("cannot get \"" #name "\" from vulkan-1.dll"); }
+		#define m_x(shape, name) name = (shape)vkGetDeviceProcAddr(vulkan_device->device, #name); m_assert(name);
 		m_vulkan_device_procs
 		#undef m_x
 		vkGetDeviceQueue(vulkan_device->device, vulkan_device->queue_family_index, 0, &vulkan_device->queue);
@@ -631,7 +625,7 @@ void initialize_vulkan_swap_chain(window window, bool vsync_on, vulkan *vulkan) 
 	info_str.capacity = memory_arena.capacity / 2;
 	info_str.buf = allocate_memory<char>(&memory_arena, info_str.capacity);
 	m_scope_exit(
-		console("%s\n", info_str.buf);
+		printf("%s\n", info_str.buf);
 	  free_virtual_memory(memory_arena.memory);
 	);
 	{ // create surface
@@ -641,23 +635,15 @@ void initialize_vulkan_swap_chain(window window, bool vsync_on, vulkan *vulkan) 
 		m_vk_assert(vkCreateWin32SurfaceKHR(vulkan->device.instance, &surface_create_info, nullptr, &vulkan->swap_chain.surface));
 		VkBool32 physical_device_surface_support = VK_FALSE;
 		m_vk_assert(vkGetPhysicalDeviceSurfaceSupportKHR(vulkan->device.physical_device, vulkan->device.queue_family_index, vulkan->swap_chain.surface, &physical_device_surface_support));
-		if (physical_device_surface_support == VK_FALSE) {
-			fatal("GPU physical device does not support vulkan surface");
-		}
+		m_assert(physical_device_surface_support);
 	}
 	{ // check surface capabilities
 		m_vk_assert(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->device.physical_device, vulkan->swap_chain.surface, &vulkan->swap_chain.surface_capabilities));
-		if (vulkan->swap_chain.surface_capabilities.maxImageCount < vulkan_swap_chain_image_count) {
-			fatal("vulkan surface does not support at least %d images", vulkan_swap_chain_image_count);
-		}
-		if (!(vulkan->swap_chain.surface_capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) || !(vulkan->swap_chain.surface_capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
-			fatal("vulkan surface images lack required capabilities");
-		}
+		m_assert(vulkan->swap_chain.surface_capabilities.maxImageCount >= vulkan_swap_chain_image_count);
+		m_assert((vulkan->swap_chain.surface_capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) && (vulkan->swap_chain.surface_capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT));
 		uint32 surface_image_formats_count = 0;
 		vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->device.physical_device, vulkan->swap_chain.surface, &surface_image_formats_count, nullptr);
-		if (surface_image_formats_count == 0) {
-			fatal("call to \"vkGetPhysicalDeviceSurfaceFormatsKHR\" return zero format");
-		}
+		m_assert(surface_image_formats_count > 0);
 		VkSurfaceFormatKHR *surface_image_formats = allocate_memory<VkSurfaceFormatKHR>(&memory_arena, surface_image_formats_count);
 		vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->device.physical_device, vulkan->swap_chain.surface, &surface_image_formats_count, surface_image_formats);
 		if (!(surface_image_formats_count == 1 && surface_image_formats[0].format == VK_FORMAT_UNDEFINED)) {
@@ -668,9 +654,7 @@ void initialize_vulkan_swap_chain(window window, bool vsync_on, vulkan *vulkan) 
 					break;
 				}
 			}
-			if (!support_bgra_unorm) {
-				fatal("vulkan surface does not support B8G8R8A8_UNORM format");
-			}
+			m_assert(support_bgra_unorm);
 		}
 	}
 	{ // set present mode
@@ -1285,15 +1269,18 @@ void initialize_vulkan_memories(vulkan *vulkan) {
 	}
 }
 
-void vulkan_buffer_create(vulkan_device *vulkan_device, vulkan_memory *vulkan_memory, VkBufferCreateInfo buffer_create_info, vulkan_buffer *vulkan_buffer) {
-	m_vk_assert(vkCreateBuffer(vulkan_device->device, &buffer_create_info, nullptr, &vulkan_buffer->buffer));
-	VkMemoryRequirements buffer_memory_requirements = {};
-	vkGetBufferMemoryRequirements(vulkan_device->device, vulkan_buffer->buffer, &buffer_memory_requirements);
-	uint64 memory_offset = round_up(vulkan_memory->size, buffer_memory_requirements.alignment);
-	vulkan_memory->size = memory_offset + buffer_memory_requirements.size;
+vulkan_buffer allocate_vulkan_buffer(vulkan_device *vulkan_device, vulkan_memory *vulkan_memory, VkBufferCreateInfo buffer_create_info) {
+	vulkan_buffer buffer = {};
+	m_vk_assert(vkCreateBuffer(vulkan_device->device, &buffer_create_info, nullptr, &buffer.buffer));
+	VkMemoryRequirements memory_requirements = {};
+	vkGetBufferMemoryRequirements(vulkan_device->device, buffer.buffer, &memory_requirements);
+	m_assert(memory_requirements.memoryTypeBits & (1 << vulkan_memory->memory_type_index));
+	uint64 memory_offset = round_up(vulkan_memory->size, memory_requirements.alignment);
+	vulkan_memory->size = memory_offset + memory_requirements.size;
 	m_assert(vulkan_memory->size <= vulkan_memory->capacity);
-	m_vk_assert(vkBindBufferMemory(vulkan_device->device, vulkan_buffer->buffer, vulkan_memory->memory, memory_offset));
-	vulkan_buffer->capacity = buffer_memory_requirements.size;
+	m_vk_assert(vkBindBufferMemory(vulkan_device->device, buffer.buffer, vulkan_memory->memory, memory_offset));
+	buffer.capacity = memory_requirements.size;
+	return buffer;
 }
 
 void vulkan_buffer_transfer(vulkan *vulkan, vulkan_buffer *vulkan_buffer, uint64 buffer_offset, const void *data, uint64 data_size) {
@@ -1330,19 +1317,19 @@ void initialize_vulkan_buffers(vulkan *vulkan) {
 	VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 	buffer_create_info.size = vulkan->memories.level_vertex_buffer_memory.capacity;
 	buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	vulkan_buffer_create(&vulkan->device, &vulkan->memories.level_vertex_buffer_memory, buffer_create_info, &vulkan->buffers.level_vertex_buffer);
+	vulkan->buffers.level_vertex_buffer = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.level_vertex_buffer_memory, buffer_create_info);
 	vulkan->buffers.level_vertex_buffer_offset = 0;
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
 		buffer_create_info.size = vulkan->memories.frame_vertex_buffer_memories[i].capacity;
 		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-		vulkan_buffer_create(&vulkan->device, &vulkan->memories.frame_vertex_buffer_memories[i], buffer_create_info, &vulkan->buffers.frame_vertex_buffers[i]);
+		vulkan->buffers.frame_vertex_buffers[i] = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.frame_vertex_buffer_memories[i], buffer_create_info);
 		vkMapMemory(vulkan->device.device, vulkan->memories.frame_vertex_buffer_memories[i].memory, 0, VK_WHOLE_SIZE, 0, (void **)&vulkan->buffers.frame_vertex_buffer_ptrs[i]);
 		vulkan->buffers.frame_vertex_buffer_offsets[i] = 0;
 	}
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
 		buffer_create_info.size = vulkan->memories.frame_uniform_buffer_memories[i].capacity;
 		buffer_create_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		vulkan_buffer_create(&vulkan->device, &vulkan->memories.frame_uniform_buffer_memories[i], buffer_create_info, &vulkan->buffers.frame_uniform_buffers[i]);
+		vulkan->buffers.frame_uniform_buffers[i] = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.frame_uniform_buffer_memories[i], buffer_create_info);
 		vkMapMemory(vulkan->device.device, vulkan->memories.frame_uniform_buffer_memories[i].memory, 0, VK_WHOLE_SIZE, 0, (void **)&vulkan->buffers.frame_uniform_buffer_ptrs[i]);
 		vulkan->buffers.frame_uniform_buffer_offsets[i] = 0;
 	}
@@ -1676,9 +1663,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 	auto shader_module_from_file = [vulkan](const char *file_path) {
 		VkShaderModule shader_module = {};
 		file_mapping file_mapping = {};
-		if (!open_file_mapping(file_path, &file_mapping)) {
-			fatal("cannot open shader file \"%s\"", file_path);
-		}
+		m_assert(open_file_mapping(file_path, &file_mapping));
 		VkShaderModuleCreateInfo info = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
 		info.codeSize = file_mapping.size;
 		info.pCode = (const uint32 *)file_mapping.ptr;

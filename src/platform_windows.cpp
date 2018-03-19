@@ -43,9 +43,12 @@ void fatal(const char* fmt, ...) {
 	}
 }
 
-void show_command_prompt() {
+void show_console() {
 	if (!GetConsoleWindow()) {
     AllocConsole();
+    freopen("CONIN$", "r", stdin);
+    freopen("CONOUT$", "w", stdout);
+    freopen("CONOUT$", "w", stderr); 
   }
 }
 

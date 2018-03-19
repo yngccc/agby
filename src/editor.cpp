@@ -316,13 +316,12 @@ bool ray_intersect_mesh(ray ray, model_mesh *mesh, mat4 transform, float *distan
 	}
 }
 
-int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd_line_str, int cmd_show) {
+int main(int argc, char **argv) {
 	set_exe_dir_as_current();
-	show_command_prompt();
 
 	memory_arena general_memory_arena = {};
 	general_memory_arena.name = "general";
-	general_memory_arena.capacity = m_megabytes(64);
+	general_memory_arena.capacity = m_megabytes(16);
 	general_memory_arena.memory = allocate_virtual_memory(general_memory_arena.capacity);
 	m_assert(general_memory_arena.memory);
 	
@@ -534,7 +533,7 @@ int WinMain(HINSTANCE instance_handle, HINSTANCE prev_instance_handle, LPSTR cmd
 							model *model = &level->models[render_component->model_index];
 							mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
 							float model_min_distance = ray.len;
-							traverse_model_scenes_track_global_transform(model, [&](model_node *node, mat4 global_transform_mat) {
+							traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
 								if (node->mesh_index < model->mesh_count) {
 									float distance = 0;
 									if (ray_intersect_mesh(ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {

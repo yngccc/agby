@@ -15,12 +15,14 @@
 int main(int argc, char **argv) {
 	set_exe_dir_as_current();
 	if (argc != 2) {
-		fatal("incorrect command line arguments");
+		printf("incorrect command line arguments");
+		return 1;
 	}
 	char *gpk_file = argv[1];
 	file_mapping gpk_file_mapping = {};
 	if (!open_file_mapping(gpk_file, &gpk_file_mapping)) {
-		fatal("cannot open file %s", gpk_file);
+		printf("cannot open file %s", gpk_file);
+		return 1;
 	}
 	m_scope_exit(close_file_mapping(gpk_file_mapping));
 	gpk_model *gpk_model = (struct gpk_model *)gpk_file_mapping.ptr;

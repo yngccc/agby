@@ -6,8 +6,8 @@ layout(location = 0) in vec3 position_in;
 layout(location = 1) in vec2 uv_in;
 layout(location = 2) in vec3 normal_in;
 layout(location = 3) in vec3 tangent_in;
-layout(location = 4) in uvec4 joint_indices_in;
-layout(location = 5) in vec4 joint_weights_in;
+layout(location = 4) in uvec4 joints_in;
+layout(location = 5) in vec4 weights_in;
 
 layout(location = 0) out vec3 position_out;
 layout(location = 1) out vec4 shadow_map_coord_out;
@@ -36,10 +36,8 @@ layout(set = 0, binding = 0) uniform common_uniform {
 
 layout(set = 0, binding = 1) uniform mesh_uniform {
   mat4 model_mat;
-  mat4 normal_mat;
-  vec2 uv_scale;
-  float roughness;
   float metallic;
+  float roughness;
   float height_map_scale;
 };
 
@@ -48,10 +46,14 @@ layout(set = 0, binding = 2) uniform mesh_uniform_2 {
 };
 
 void main() {
-  vec4 position = model_mat * vec4(position_in, 1);
-  vec3 normal = normalize(vec3(normal_mat * vec4(normal_in, 0)));
-  vec3 tangent = normalize(vec3(normal_mat * vec4(tangent_in, 0)));
-  vec3 bitangent = cross(normal, tangent);
+  mat4 joint_mat = joint_mats[joints_in[0]] * weights_in[0] + joint_mats[joints_in[1]] * weights_in[1] + joint_mats[joints_in[2]] * weights_in[2] + joint_mats[joints_in[3]] * weights_in[3];
+  mat4 transform_mat = model_mat * joint_mat;
+  mat3 normal_mat = mat3(transform_mat);
+
+  vec4 position = transform_mat * vec4(position_in, 1);
+  vec3 normal = normalize(normal_mat * normal_in);
+  vec3 tangent = normalize(normal_mat * tangent_in);
+  vec3 bitangent = normalize(cross(normal, tangent));
   mat3 inverse_tbn_mat = transpose(mat3(tangent, bitangent, normal));
 
   gl_Position = camera_view_proj_mat * position;
