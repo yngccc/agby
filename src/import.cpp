@@ -256,6 +256,21 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		}
 		current_offset = round_up(current_offset + gpk_model.skin_count * (uint32)sizeof(struct gpk_model_skin), 16u);
 	}
+	std::vector<gpk_model_animation> gpk_model_animations;
+	{
+		gpk_model.animation_offset = current_offset;
+		gpk_model.animation_count = (uint32)glb_model.animations.size();
+		gpk_model_animations.resize(gpk_model.animation_count);
+		for (uint32 i = 0; i < gpk_model.animation_count; i += 1) {
+			auto &src = glb_model.animations[i];
+			auto &dst = gpk_model_animations[i];
+			m_assert(src.name.length() < sizeof(dst.name));
+			strcpy(dst.name, src.name.c_str());
+			dst.channel_count = (uint32)src.channels.size();
+			dst.sampler_count = (uint32)src.samplers.size();
+		}
+		current_offset = round_up(current_offset + gpk_model.animation_count * (uint32)sizeof(struct gpk_model_animation), 16u);
+	}
 	struct image_remap {
 		uint32 index;
 		bool is_base_color;
@@ -524,6 +539,26 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		skin.joints_offset = current_offset;
 		current_offset = round_up(current_offset + skin.joint_count * (uint32)sizeof(struct gpk_model_joint), 16u);
 	}
+	for (uint32 i = 0; i < gpk_model.animation_count; i += 1) {
+		auto & animation = glb_model.animations[i];
+		auto & gpk_animation = gpk_model_animations[i];
+		gpk_animation.channel_offset = current_offset;
+		current_offset = round_up(current_offset + gpk_animation.channel_count * (uint32)sizeof(struct gpk_model_animation_channel), 16u);
+		gpk_animation.sampler_offset = current_offset;
+		current_offset = round_up(current_offset + gpk_animation.sampler_count * (uint32)sizeof(struct gpk_model_animation_sampler), 16u);
+		for (auto &sampler : animation.samplers) {
+			m_assert(sampler.input >= 0 && sampler.input < glb_model.accessors.size());
+			m_assert(sampler.output >= 0 && sampler.output < glb_model.accessors.size());
+			auto &input_accessor = glb_model.accessors[sampler.input];
+			auto &output_accessor = glb_model.accessors[sampler.output];
+			m_assert(input_accessor.count > 0 && input_accessor.count == output_accessor.count);
+			m_assert(input_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+			m_assert(input_accessor.type == TINYGLTF_TYPE_SCALAR);
+			m_assert(output_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+			m_assert(output_accessor.type == TINYGLTF_TYPE_VEC3 || output_accessor.type == TINYGLTF_TYPE_VEC4);
+			current_offset = round_up(current_offset + (uint32)input_accessor.count * (uint32)sizeof(struct gpk_model_animation_key_frame), 16u);
+		}
+	}
 	for (uint32 i = 0; i < gpk_model.image_count; i += 1) {
 		auto &image = gpk_model_images[i];
 		image.data_offset = current_offset;
@@ -537,6 +572,7 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 	memcpy(gpk_file_mapping.ptr + gpk_model.node_offset, &gpk_model_nodes[0], gpk_model_nodes.size() * sizeof(struct gpk_model_node));
 	memcpy(gpk_file_mapping.ptr + gpk_model.mesh_offset, &gpk_model_meshes[0], gpk_model_meshes.size() * sizeof(struct gpk_model_mesh));
 	memcpy(gpk_file_mapping.ptr + gpk_model.skin_offset, &gpk_model_skins[0], gpk_model_skins.size() * sizeof(struct gpk_model_skin));
+	memcpy(gpk_file_mapping.ptr + gpk_model.animation_offset, &gpk_model_animations[0], gpk_model_animations.size() * sizeof(struct gpk_model_animation));
 	memcpy(gpk_file_mapping.ptr + gpk_model.material_offset, &gpk_model_materials[0], gpk_model_materials.size() * sizeof(struct gpk_model_material));
 	memcpy(gpk_file_mapping.ptr + gpk_model.image_offset, &gpk_model_images[0], gpk_model_images.size() * sizeof(struct gpk_model_image));
 	for (uint32 i = 0; i < gpk_model.mesh_count; i += 1) {
@@ -673,6 +709,63 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 			m_assert(skin.joints[i] >= 0 && skin.joints[i] < glb_model.nodes.size());
 			gpk_joints[i].node_index = (uint32)skin.joints[i];
 			gpk_joints[i].inverse_bind_mat = inverse_bind_mats[i];
+		}
+	}
+	for (uint32 i = 0; i < gpk_model.animation_count; i += 1) {
+		auto &animation = glb_model.animations[i];
+		auto &gpk_animation = gpk_model_animations[i];
+		gpk_model_animation_channel *gpk_channels = (gpk_model_animation_channel *)(gpk_file_mapping.ptr + gpk_animation.channel_offset);
+		for (uint32 i = 0; i < gpk_animation.channel_count; i += 1) {
+			auto &channel = animation.channels[i];
+			auto &gpk_channel = gpk_channels[i];
+			m_assert(channel.target_node >= 0 && channel.target_node < glb_model.nodes.size());
+			gpk_channel.node_index = (uint32)channel.target_node;
+			gpk_channel.channel_type = (
+				channel.target_path == "translation" ? gpk_model_animation_translate_channel :
+				channel.target_path == "rotation" ? gpk_model_animation_rotate_channel :
+				channel.target_path == "scale" ? gpk_model_animation_scale_channel :
+				channel.target_path == "weights" ? gpk_model_animation_weights_channel : UINT32_MAX);
+			m_assert(gpk_channel.channel_type != UINT32_MAX);
+			m_assert(channel.sampler >= 0 && channel.sampler < animation.samplers.size());
+			gpk_channel.sampler_index = channel.sampler;
+		}
+		uint32 key_frame_offset = round_up(gpk_animation.sampler_offset + gpk_animation.sampler_count * (uint32)sizeof(struct gpk_model_animation_sampler), 16u);
+		gpk_model_animation_sampler *gpk_samplers = (gpk_model_animation_sampler *)(gpk_file_mapping.ptr + gpk_animation.sampler_offset);
+		for (uint32 i = 0; i < gpk_animation.sampler_count; i += 1) {
+			auto &sampler = animation.samplers[i];
+			auto &gpk_sampler = gpk_samplers[i];
+			gpk_sampler.interpolation_type = (
+				sampler.interpolation == "LINEAR" ? gpk_model_animation_linear_interpolation :
+				sampler.interpolation == "STEP" ? gpk_model_animation_step_interpolation :
+				sampler.interpolation == "CATMULLROMSPLINE" ? gpk_model_animation_catmullromspline_interpolation :
+				sampler.interpolation == "CUBICSPLINE" ? gpk_model_animation_cubicspline_interpolation : UINT32_MAX);
+			m_assert(gpk_sampler.interpolation_type != UINT32_MAX);
+
+			auto &input_accessor = glb_model.accessors[sampler.input];
+			auto &input_buffer_view = glb_model.bufferViews[input_accessor.bufferView];
+			auto &input_buffer = glb_model.buffers[input_buffer_view.buffer];
+			uint32 input_data_stride = input_buffer_view.byteStride == 0 ? 4 : (uint32)input_buffer_view.byteStride;
+			uint8 *input_data = &input_buffer.data[input_accessor.byteOffset + input_buffer_view.byteOffset];
+
+			auto &output_accessor = glb_model.accessors[sampler.output];
+			auto &output_buffer_view = glb_model.bufferViews[output_accessor.bufferView];
+			auto &output_buffer = glb_model.buffers[output_buffer_view.buffer];
+			uint32 output_data_stride = output_buffer_view.byteStride == 0 ? (output_accessor.type == TINYGLTF_TYPE_VEC3 ? 12 : 16) : (uint32)output_buffer_view.byteStride;
+			uint8 *output_data = &output_buffer.data[output_accessor.byteOffset + output_buffer_view.byteOffset];
+
+			gpk_sampler.key_frame_count = (uint32)input_accessor.count;
+			gpk_sampler.key_frame_offset = key_frame_offset;
+			gpk_model_animation_key_frame *gpk_key_frames = (gpk_model_animation_key_frame *)(gpk_file_mapping.ptr + key_frame_offset);
+			for (uint32 i = 0; i < gpk_sampler.key_frame_count; i += 1) {
+				auto &gpk_key_frame = gpk_key_frames[i];
+				gpk_key_frame.time = *(float *)(input_data + input_data_stride * i);
+				float *transform_data = (float * )(output_data + output_data_stride * i);
+				gpk_key_frame.transform_data = {transform_data[0], transform_data[1], transform_data[2], 0};
+				if (output_accessor.type == TINYGLTF_TYPE_VEC4) {
+					gpk_key_frame.transform_data[3] = transform_data[3];
+				}
+			}
+			key_frame_offset = round_up(key_frame_offset + gpk_sampler.key_frame_count * (uint32)sizeof(struct gpk_model_animation_key_frame), 16u);
 		}
 	}
 	uint32 image_index = 0;

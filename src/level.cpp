@@ -50,6 +50,31 @@ struct model_skin {
 	char name[sizeof(gpk_model_skin::name)];
 };
 
+struct model_animation_channel {
+	uint32 node_index;
+	uint32 channel_type;
+	uint32 sampler_index;
+};
+
+struct model_animation_key_frame {
+	float time;
+	vec4 transform_data;
+};
+
+struct model_animation_sampler {
+	uint32 interpolation_type;
+	model_animation_key_frame *key_frames;
+	uint32 key_frame_count;
+};
+
+struct model_animation {
+	model_animation_channel *channels;
+	uint32 channel_count;
+	model_animation_sampler *samplers;
+	uint32 sampler_count;
+	char name [sizeof(gpk_model_animation::name)];
+};
+
 struct model_material {
 	VkDescriptorSet textures_descriptor_set;
 	vec4 albedo_factor;
@@ -71,6 +96,8 @@ struct model {
 	uint32 mesh_count;
 	model_skin *skins;
 	uint32 skin_count;
+	model_animation *animations;
+	uint32 animation_count;
 	model_material *materials;
 	uint32 material_count;
 	model_image *images;
@@ -344,62 +371,6 @@ uint32 entity_component_get_entity_index(level *level, uint32 component_index, e
 	return UINT32_MAX;
 }
 
-#if 0
-void level_update_json(level *level) {
-	auto get_entity_json = [level](uint32 entity_index) {
-		const char *entity_name = level->entity_infos[entity_index].name;
-		auto &entities_json = level->json["entities"];
-		for (auto e = entities_json.begin(); e != entities_json.end(); e += 1) {
-			std::string name = (*e)["name"];
-			if (name == entity_name) {
-				return e;
-			}
-		}
-		m_assert(false);
-		return entities_json.end();
-	};
-
-	for (uint32 i = 0; i < level->entity_count; i += 1) {
-		entity_modification *modification = &level->entity_modifications[i];
-		if (modification->remove) {
-			level->json["entities"].erase(get_entity_json(i));
-		}
-		else {
-			if (modification->remove_render_component) {
-				auto entity_json = get_entity_json(i);
-				auto render_component = entity_json->find("render_component");
-				m_assert(render_component != entity_json->end());
-				entity_json->erase(render_component);
-			}
-			if (modification->remove_collision_component) {
-				auto entity_json = get_entity_json(i);
-				auto collision_component = entity_json->find("collision_component");
-				m_assert(collision_component != entity_json->end());
-				entity_json->erase(collision_component);
-			}
-			if (modification->remove_physics_component) {
-				auto entity_json = get_entity_json(i);
-				auto physics_component = entity_json->find("physics_component");
-				m_assert(physics_component != entity_json->end());
-				entity_json->erase(physics_component);
-			}
-			if (modification->remove_light_component) {
-				auto entity_json = get_entity_json(i);
-				auto light_component = entity_json->find("light_component");
-				m_assert(light_component != entity_json->end());
-				entity_json->erase(light_component);
-			}
-			if (modification->flags) {
-			}
-			if (modification->info) {
-			}
-			if (modification->transform) {
-			}
-		}
-	}
-}
-#endif
-
 void level_update_entity_components(level *level) {
 	uint32 new_entity_count = level->entity_count;
 	uint32 new_render_component_count = level->render_component_count;
@@ -582,6 +553,7 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 	model->node_count = gpk_model->node_count;
 	model->mesh_count = gpk_model->mesh_count;
 	model->skin_count = gpk_model->skin_count;
+	model->animation_count = gpk_model->animation_count;
 	model->material_count = gpk_model->material_count;
 	model->image_count = gpk_model->image_count;
 	model->scenes = allocate_memory<struct model_scene>(&level->assets_memory_arena, model->scene_count);
@@ -589,6 +561,9 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 	model->meshes = allocate_memory<struct model_mesh>(&level->assets_memory_arena, model->mesh_count);
 	if (model->skin_count > 0) {
 		model->skins = allocate_memory<struct model_skin>(&level->assets_memory_arena, model->skin_count);
+	}
+	if (model->animation_count > 0) {
+		model->animations = allocate_memory<struct model_animation>(&level->assets_memory_arena, model->animation_count);
 	}
 	if (model->material_count > 0) {
 		model->materials = allocate_memory<struct model_material>(&level->assets_memory_arena, model->material_count);
@@ -655,6 +630,34 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 		for (uint32 i = 0; i < model_skin->joint_count; i += 1) {
 			model_skin->joints[i].node_index = gpk_joints[i].node_index;
 			model_skin->joints[i].inverse_bind_mat = gpk_joints[i].inverse_bind_mat;
+		}
+	}
+	for (uint32 i = 0; i < model->animation_count; i += 1) {
+		gpk_model_animation *gpk_animation = ((struct gpk_model_animation*)(gpk_file_mapping.ptr + gpk_model->animation_offset)) + i;
+		model_animation *animation = &model->animations[i];
+		array_copy(animation->name, gpk_animation->name);
+		animation->channel_count = gpk_animation->channel_count;
+		animation->channels = allocate_memory<struct model_animation_channel>(&level->assets_memory_arena, animation->channel_count);
+		for (uint32 i = 0; i < animation->channel_count; i += 1) {
+			gpk_model_animation_channel *gpk_channel = ((struct gpk_model_animation_channel*)(gpk_file_mapping.ptr + gpk_animation->channel_offset)) + i;
+			model_animation_channel *channel = &animation->channels[i];
+			channel->node_index = gpk_channel->node_index;
+			channel->channel_type = gpk_channel->channel_type;
+			channel->sampler_index = gpk_channel->sampler_index;
+		}
+		animation->sampler_count = gpk_animation->sampler_count;
+		animation->samplers = allocate_memory<model_animation_sampler>(&level->assets_memory_arena, animation->sampler_count);
+		for (uint32 i = 0; i < animation->sampler_count; i += 1) {
+			gpk_model_animation_sampler *gpk_sampler = ((struct gpk_model_animation_sampler*)(gpk_file_mapping.ptr + gpk_animation->sampler_offset)) + i;
+			model_animation_sampler *sampler = &animation->samplers[i];
+			sampler->interpolation_type = gpk_sampler->interpolation_type;
+			sampler->key_frame_count = gpk_sampler->key_frame_count;
+			sampler->key_frames = allocate_memory<struct model_animation_key_frame>(&level->assets_memory_arena, sampler->key_frame_count);
+			for (uint32 i = 0; i < sampler->key_frame_count; i += 1) {
+				gpk_model_animation_key_frame *gpk_key_frame = ((struct gpk_model_animation_key_frame *)(gpk_file_mapping.ptr + gpk_sampler->key_frame_offset)) + i;
+				sampler->key_frames[i].time = gpk_key_frame->time;
+				sampler->key_frames[i].transform_data = gpk_key_frame->transform_data;
+			}
 		}
 	}
 	for (uint32 i = 0; i < model->image_count; i += 1) {

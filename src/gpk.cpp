@@ -14,6 +14,8 @@ struct gpk_model {
 	uint32 mesh_count;
 	uint32 skin_offset;
 	uint32 skin_count;
+	uint32 animation_offset;
+	uint32 animation_count;
 	uint32 material_offset;
 	uint32 material_count;
 	uint32 image_offset;
@@ -63,6 +65,41 @@ struct gpk_model_skin {
 struct gpk_model_joint {
 	uint32 node_index;
 	mat4 inverse_bind_mat;
+};
+
+struct gpk_model_animation {
+	char name[64];
+	uint32 channel_offset;
+	uint32 channel_count;
+	uint32 sampler_offset;
+	uint32 sampler_count;
+};
+
+const uint32 gpk_model_animation_translate_channel = 0;
+const uint32 gpk_model_animation_rotate_channel = 1;
+const uint32 gpk_model_animation_scale_channel = 2;
+const uint32 gpk_model_animation_weights_channel = 3;
+
+struct gpk_model_animation_channel {
+	uint32 node_index;
+	uint32 channel_type;
+	uint32 sampler_index;
+};
+
+const uint32 gpk_model_animation_linear_interpolation = 0;
+const uint32 gpk_model_animation_step_interpolation = 1;
+const uint32 gpk_model_animation_catmullromspline_interpolation = 2;
+const uint32 gpk_model_animation_cubicspline_interpolation = 3;
+
+struct gpk_model_animation_sampler {
+	uint32 interpolation_type;
+	uint32 key_frame_count;
+	uint32 key_frame_offset;
+};
+
+struct gpk_model_animation_key_frame {
+	float time;
+	vec4 transform_data;
 };
 
 struct gpk_model_material {
