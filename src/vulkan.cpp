@@ -1687,7 +1687,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 			{2, 0, VK_FORMAT_R16G16B16_SNORM, 20},
 			{3, 0, VK_FORMAT_R16G16B16_SNORM, 26},
 			{4, 0, VK_FORMAT_R8G8B8A8_UINT, 32},
-			{5, 0, VK_FORMAT_R16G16B16_UNORM, 36}
+			{5, 0, VK_FORMAT_R16G16B16A16_UNORM, 36}
 		};
 
 		VkPipelineVertexInputStateCreateInfo vertex_input_state = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};

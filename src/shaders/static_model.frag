@@ -25,14 +25,6 @@ layout(set = 0, binding = 0) uniform common_uniform {
   uint spot_light_count;
 };
 
-layout(set = 0, binding = 1) uniform mesh_uniform {
-  mat4 model_mat;
-  mat4 normal_mat;
-  float metallic;
-  float roughness;
-  float height_map_scale;
-};
-
 layout(set = 1, binding = 0) uniform sampler2D albedo_map;
 layout(set = 1, binding = 1) uniform sampler2D metallic_map;
 layout(set = 1, binding = 2) uniform sampler2D roughness_map;
@@ -57,6 +49,7 @@ vec2 parallax_mapping(vec2 uv, vec3 view) {
   float layer_count = 16;
   float layer_height = 1 / layer_count;
   float current_layer_height = 0;
+  float height_map_scale = 1;
   vec2 P = view.xy * height_map_scale;
   P.y = -P.y;
   vec2 delta_uv = P / layer_count;
@@ -115,7 +108,7 @@ vec3 cook_torrance_brdf(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color
 
 void main() {
   vec3 view = normalize(tbn_camera_position_in - tbn_position_in);
-  vec2 uv = parallax_mapping(uv_in,  view);
+  vec2 uv = uv_in; // parallax_mapping(uv_in,  view);
   vec2 normal_xy = texture(normal_map, uv).xy * 2 - 1;
   float normal_z = sqrt(1 - normal_xy.x * normal_xy.x - normal_xy.y * normal_xy.y);
   vec3 normal = vec3(normal_xy, normal_z);

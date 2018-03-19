@@ -48,7 +48,7 @@ layout(set = 0, binding = 2) uniform mesh_uniform_2 {
 void main() {
   mat4 joint_mat = joint_mats[joints_in[0]] * weights_in[0] + joint_mats[joints_in[1]] * weights_in[1] + joint_mats[joints_in[2]] * weights_in[2] + joint_mats[joints_in[3]] * weights_in[3];
   mat4 transform_mat = model_mat * joint_mat;
-  mat3 normal_mat = mat3(transform_mat);
+  mat3 normal_mat = mat3(transpose(inverse(transform_mat)));
 
   vec4 position = transform_mat * vec4(position_in, 1);
   vec3 normal = normalize(normal_mat * normal_in);
