@@ -152,6 +152,8 @@ enum entity_component_flag {
 struct entity_render_component {
 	uint32 model_index;
 	transform adjustment_transform;
+	uint32 animation_index;
+	double animation_time;
 	bool hide;
 };
 
@@ -1287,15 +1289,73 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 					if (!render_component->hide && render_component->model_index < level->model_count) {
 						model_render_data *model_render_data = &level->render_data.models[level->render_data.model_count++];
 						model_render_data->model_index = render_component->model_index;
-						model *model = &level->models[render_component->model_index];
+						model model = level->models[render_component->model_index];
+						if (render_component->animation_index < model.animation_count) {
+							model_animation *animation = &model.animations[render_component->animation_index];
+							model_node *animated_nodes = allocate_memory<struct model_node>(&level->render_thread_frame_memory_arena, model.node_count);
+							memcpy(animated_nodes, model.nodes, model.node_count * sizeof(struct model_node));
+							transform *animated_node_transforms = allocate_memory<struct transform>(&level->render_thread_frame_memory_arena, model.node_count);
+							for (uint32 i = 0; i < model.node_count; i += 1) {
+								animated_node_transforms[i] = mat4_get_transform(animated_nodes[i].local_transform_mat);
+							}
+							for (uint32 i = 0; i < animation->channel_count; i += 1) {
+								model_animation_channel *channel = &animation->channels[i];
+								model_animation_sampler *sampler = &animation->samplers[channel->sampler_index];
+								m_assert(sampler->interpolation_type == gpk_model_animation_linear_interpolation);
+								float time = (float)fmod(render_component->animation_time, (double)sampler->key_frames[sampler->key_frame_count - 1].time);
+								for (uint32 i = 0; i < sampler->key_frame_count; i += 1) {
+									model_animation_key_frame *key_frame = &sampler->key_frames[i];
+									if (time <= key_frame->time) {
+										if (channel->channel_type == gpk_model_animation_translate_channel) {
+											vec3 translate = {};
+											if (i == 0) {
+												translate = vec3_lerp({0, 0, 0}, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+											}
+											else {
+												model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+												translate = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+											}
+											animated_node_transforms[channel->node_index].translate = translate;
+										}
+										else if (channel->channel_type == gpk_model_animation_rotate_channel) {
+											quat rotate = {};
+											if (i == 0) {
+												rotate = quat_slerp({0, 0, 0, 1}, {m_unpack4(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+											}
+											else {
+												model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+												rotate = quat_slerp({m_unpack4(prev_key_frame->transform_data)}, {m_unpack4(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+											}
+											animated_node_transforms[channel->node_index].rotate = rotate;
+										}
+										else if (channel->channel_type == gpk_model_animation_scale_channel) {
+											vec3 scale = {};
+											if (i == 0) {
+												scale = vec3_lerp({1, 1, 1}, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+											}
+											else {
+												model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+												scale = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+											}
+											animated_node_transforms[channel->node_index].scale = scale;
+										}
+										break;
+									}
+								}
+							}
+							for (uint32 i = 0; i < model.node_count; i += 1) {
+								animated_nodes[i].local_transform_mat = transform_to_mat4(animated_node_transforms[i]);
+							}
+							model.nodes = animated_nodes;
+						}
 						uint32 joints_frame_uniform_buffer_offset = 0;
-						if (model->skin_count > 0) {
-							model_skin *skin = &model->skins[0];
+						if (model.skin_count > 0) {
+							model_skin *skin = &model.skins[0];
 							round_up(frame_uniform_buffer_offset, uniform_alignment);
 							joints_frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
 							mat4 *joint_mats = (mat4 *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
 							*frame_uniform_buffer_offset += skin->joint_count * sizeof(mat4);
-							traverse_model_scenes_track_global_transform(model, [skin, joint_mats](model_node *node, uint32 index, mat4 global_transform) {
+							traverse_model_scenes_track_global_transform(&model, [skin, joint_mats](model_node *node, uint32 index, mat4 global_transform) {
 								for (uint32 i = 0; i < skin->joint_count; i += 1) {
 									if (skin->joints[i].node_index == index) {
 										joint_mats[i] = global_transform * skin->joints[i].inverse_bind_mat;
@@ -1308,16 +1368,16 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 							}
 						}
 						model_render_data->mesh_count = 0;
-						traverse_model_scenes(model, [&](model_node *node, uint32 index) {
-							if (node->mesh_index < model->mesh_count) {
+						traverse_model_scenes(&model, [&](model_node *node, uint32 index) {
+							if (node->mesh_index < model.mesh_count) {
 								model_render_data->mesh_count += 1;
 							}
 						});
 						model_render_data->meshes = allocate_memory<struct mesh_render_data>(&level->render_thread_frame_memory_arena, model_render_data->mesh_count);
 						uint32 mesh_render_data_index = 0;
 						mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
-						traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform) {
-							if (node->mesh_index < model->mesh_count) {
+						traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
+							if (node->mesh_index < model.mesh_count) {
 								mesh_render_data *mesh = &model_render_data->meshes[mesh_render_data_index++];
 								mesh->mesh_index = node->mesh_index;
 								struct {
@@ -1336,7 +1396,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 								memcpy(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset, &uniforms, sizeof(uniforms));
 								*frame_uniform_buffer_offset += sizeof(uniforms);
 
-								if (model->skin_count > 0) {
+								if (model.skin_count > 0) {
 									mesh->joints_frame_uniform_buffer_offset = joints_frame_uniform_buffer_offset;
 								}
 								else {

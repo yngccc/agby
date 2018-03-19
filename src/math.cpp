@@ -245,7 +245,7 @@ union quat {
 	quat operator+(const quat &q) const { return quat{x + q.x, y + q.y, z + q.z, w + q.w}; }
 	quat operator-() const { return quat{-x, -y, -z, -w}; }
 	quat operator*(float d) const { return quat{x * d, y * d, z * d, w * d}; }
-	vec3 operator*(const vec3 &v) const { mat3 quat_to_mat3(quat); return quat_to_mat3(*this) * v; }
+	vec3 operator*(const vec3 &v) const { mat3 mat3_from_rotation(quat); return mat3_from_rotation(*this) * v; }
 	quat operator*(const quat &q) const {
 		quat result = {
 			w * q.x + x * q.w + y * q.z - z * q.y,
@@ -351,7 +351,8 @@ vec3 vec3_cross(vec3 v1, vec3 v2) {
 }
 
 vec3 vec3_lerp(vec3 v1, vec3 v2, float t) {
-	m_assert(t >= 0 && t <= 1);  return v1 + (v2 - v1) * t;
+	m_debug_assert(t >= 0 && t <= 1);  
+	return v1 + (v2 - v1) * t;
 }
 
 float vec4_len(vec4 v) {
@@ -440,6 +441,23 @@ mat3 mat3_from_scaling(vec3 scale) {
 	mat3 mat = {};
 	mat.c1.x = scale.x; mat.c2.y = scale.y; mat.c3.z = scale.z;
 	return mat;
+}
+
+mat3 mat3_from_rotation(quat q) {
+	float qxx = q.x * q.x;
+	float qyy = q.y * q.y;
+	float qzz = q.z * q.z;
+	float qxz = q.x * q.z;
+	float qxy = q.x * q.y;
+	float qyz = q.y * q.z;
+	float qwx = q.w * q.x;
+	float qwy = q.w * q.y;
+	float qwz = q.w * q.z;
+	mat3 m;
+	m.c1 = vec3{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy)};
+	m.c2 = vec3{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx)};
+	m.c3 = vec3{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy)};
+	return m;
 }
 
 mat3 mat3_from_rotation(vec3 axis, float angle) {
@@ -553,6 +571,24 @@ mat4 mat4_from_translation(vec3 translate) {
 	return mat;
 }
 
+mat4 mat4_from_rotation(quat q) {
+	float qxx = q.x * q.x;
+	float qyy = q.y * q.y;
+	float qzz = q.z * q.z;
+	float qxz = q.x * q.z;
+	float qxy = q.x * q.y;
+	float qyz = q.y * q.z;
+	float qwx = q.w * q.x;
+	float qwy = q.w * q.y;
+	float qwz = q.w * q.z;
+	mat4 m;
+	m.c1 = vec4{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy), 0};
+	m.c2 = vec4{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx), 0};
+	m.c3 = vec4{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy), 0};
+	m.c4 = vec4{0, 0, 0, 1};
+	return m;
+}
+
 mat4 mat4_from_rotation(vec3 axis, float angle) {
 	m_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2));
 	const float c = cosf(angle);
@@ -596,6 +632,14 @@ quat mat4_get_rotation(const mat4 &m) {
 vec3 mat4_get_translation(const mat4 &m) {
 	vec3 translation = {m.columns[3].x, m.columns[3].y, m.columns[3].z};
 	return translation;
+}
+
+transform mat4_get_transform(const mat4 &m) {
+	transform t = {};
+	t.scale = mat4_get_scaling(m);
+	t.rotate = mat4_get_rotation(m);
+	t.translate = mat4_get_translation(m);
+	return t;
 }
 
 mat4 mat4_orthographic_projection(float left, float right, float bottom, float top, float near, float far) {
@@ -674,41 +718,6 @@ quat quat_normalize(quat q) {
 
 quat quat_inverse(quat q) {
 	return quat{q.x, q.y, q.z, -q.w};
-}
-
-mat3 quat_to_mat3(quat q) {
-	float qxx = q.x * q.x;
-	float qyy = q.y * q.y;
-	float qzz = q.z * q.z;
-	float qxz = q.x * q.z;
-	float qxy = q.x * q.y;
-	float qyz = q.y * q.z;
-	float qwx = q.w * q.x;
-	float qwy = q.w * q.y;
-	float qwz = q.w * q.z;
-	mat3 m;
-	m.c1 = vec3{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy)};
-	m.c2 = vec3{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx)};
-	m.c3 = vec3{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy)};
-	return m;
-}
-
-mat4 quat_to_mat4(quat q) {
-	float qxx = q.x * q.x;
-	float qyy = q.y * q.y;
-	float qzz = q.z * q.z;
-	float qxz = q.x * q.z;
-	float qxy = q.x * q.y;
-	float qyz = q.y * q.z;
-	float qwx = q.w * q.x;
-	float qwy = q.w * q.y;
-	float qwz = q.w * q.z;
-	mat4 m;
-	m.c1 = vec4{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy), 0};
-	m.c2 = vec4{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx), 0};
-	m.c3 = vec4{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy), 0};
-	m.c4 = vec4{0, 0, 0, 1};
-	return m;
 }
 
 vec3 quat_to_euler_angles(quat q) {
@@ -792,7 +801,7 @@ transform transform_from_translation(const vec3 &t) {
 }
 
 mat4 transform_to_mat4(const transform &t) {
-	return mat4_from_translation(t.translate) * quat_to_mat4(t.rotate) * mat4_from_scaling(t.scale);
+	return mat4_from_translation(t.translate) * mat4_from_rotation(t.rotate) * mat4_from_scaling(t.scale);
 }
 
 mat4 camera_projection_mat4(const camera &camera) {
@@ -888,7 +897,7 @@ aa_bound aa_bound_scale(const aa_bound &bound, const vec3 &v) {
 }
 
 aa_bound aa_bound_rotate(const aa_bound &bound, const quat &quat) {
-	mat4 mat = quat_to_mat4(quat);
+	mat4 mat = mat4_from_rotation(quat);
 	aa_bound new_bound = {};
 	for (int i = 0; i < 3; i += 1) {
 		for (int j = 0; j < 3; j += 1) {

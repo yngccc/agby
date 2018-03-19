@@ -1274,7 +1274,7 @@ int main(int argc, char **argv) {
 						capsule.begin = transform.rotate * capsule.begin;
 						capsule.end = transform.rotate * capsule.end;
 						mat4 cylinder_scale_mat = mat4_from_scaling({capsule.radius, entity_collision_component->capsule.height, capsule.radius});
-						mat4 cylinder_rotate_mat = quat_to_mat4(quat_from_between({0, 1, 0}, vec3_normalize(capsule.end - (capsule.begin + capsule.end) / 2)));
+						mat4 cylinder_rotate_mat = mat4_from_rotation(quat_from_between({0, 1, 0}, vec3_normalize(capsule.end - (capsule.begin + capsule.end) / 2)));
 						mat4 cylinder_translate_mat = mat4_from_translation(transform.translate);
 						mat4 sphere_scale_mat = mat4_from_scaling(capsule.radius);
 						mat4 sphere_translate_mats[2] = {mat4_from_translation(transform.translate + capsule.begin), mat4_from_translation(transform.translate + capsule.end)};

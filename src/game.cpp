@@ -279,6 +279,20 @@ int main(int argc, char **argv) {
 				}
 			}
 		}
+		{ // animations
+			uint32 render_component_index = 0;
+			for (uint32 i = 0; i < level->entity_count; i += 1) {
+				if (level->entity_flags[i] & entity_component_flag_render) {
+					entity_render_component *render_component = &level->render_components[render_component_index++];
+					if (render_component->model_index < level->model_count &&  render_component->animation_index < level->models[render_component->model_index].animation_count) {
+						entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
+						*new_render_component = *render_component;
+						new_render_component->animation_time += last_frame_time_sec;
+						level->entity_modifications[i].render_component = new_render_component;
+					}
+				}
+			}
+		}
 		ImGui::EndFrame();
 
 		uint32 render_done_flag = 1;
