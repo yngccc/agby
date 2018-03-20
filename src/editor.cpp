@@ -443,12 +443,12 @@ int main(int argc, char **argv) {
 				float camera_rotation_speed = 2.0f;
 				float max_pitch = degree_to_radian(75.0f);
 				float yaw = -window.raw_mouse_dx * camera_rotation_speed * ImGui::GetIO().DeltaTime;
-				editor->camera.view = vec3_normalize(mat4_to_mat3(mat4_from_rotation(vec3{0, 1, 0}, yaw)) * editor->camera.view);
+				editor->camera.view = vec3_normalize(mat3_from_mat4(mat4_from_rotate(vec3{0, 1, 0}, yaw)) * editor->camera.view);
 				float pitch = -window.raw_mouse_dy * camera_rotation_speed * ImGui::GetIO().DeltaTime;
 				if (editor->camera_pitch + pitch > -max_pitch && editor->camera_pitch + pitch < max_pitch) {
 					vec3 view_cross_up = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
-					mat4 rotate_mat = mat4_from_rotation(view_cross_up, pitch);
-					editor->camera.view = vec3_normalize(mat4_to_mat3(rotate_mat) * editor->camera.view);
+					mat4 rotate_mat = mat4_from_rotate(view_cross_up, pitch);
+					editor->camera.view = vec3_normalize(mat3_from_mat4(rotate_mat) * editor->camera.view);
 					editor->camera_pitch += pitch;
 				}
 				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
@@ -535,7 +535,7 @@ int main(int argc, char **argv) {
 							entity_render_component *render_component = entity_get_render_component(level, i);
 							if (render_component->model_index < level->model_count) {
 								model *model = &level->models[render_component->model_index];
-								mat4 transform_mat = transform_to_mat4(level->entity_transforms[i]) * transform_to_mat4(render_component->adjustment_transform);
+								mat4 transform_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(render_component->adjustment_transform);
 								float model_min_distance = ray.len;
 								traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
 									if (node->mesh_index < model->mesh_count) {
@@ -1091,7 +1091,7 @@ int main(int argc, char **argv) {
 					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
 					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
 					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
-					mat4 transform_mat = transform_to_mat4(*entity_transform);
+					mat4 transform_mat = mat4_from_transform(*entity_transform);
 					ImGuizmo::BeginFrame();
 					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
 					entity_transform->translate = mat4_get_translation(transform_mat);
@@ -1103,7 +1103,7 @@ int main(int argc, char **argv) {
 					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
 					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
 					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
-					mat4 transform_mat = transform_to_mat4(*entity_transform);
+					mat4 transform_mat = mat4_from_transform(*entity_transform);
 					ImGuizmo::BeginFrame();
 					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::WORLD, (float *)transform_mat);
 					entity_transform->rotate = quat_normalize(mat4_get_rotation(transform_mat));
@@ -1115,7 +1115,7 @@ int main(int argc, char **argv) {
 					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
 					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
 					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
-					mat4 transform_mat = transform_to_mat4(*entity_transform);
+					mat4 transform_mat = mat4_from_transform(*entity_transform);
 					ImGuizmo::BeginFrame();
 					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
 					entity_transform->scale = mat4_get_scaling(transform_mat);
@@ -1130,7 +1130,7 @@ int main(int argc, char **argv) {
 						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
 						transform transform = transform_identity();
 						transform.translate = editor->camera.position + editor->camera.view * 16;
-						mat4 transform_mat = transform_to_mat4(transform);
+						mat4 transform_mat = mat4_from_transform(transform);
 						ImGuizmo::BeginFrame();
 						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::WORLD, (float *)transform_mat);
 						light_component->directional_light.direction = vec3_normalize(mat4_get_rotation(transform_mat) * light_component->directional_light.direction);
@@ -1164,7 +1164,7 @@ int main(int argc, char **argv) {
 						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
 						transform transform = transform_identity();
 						transform.translate = light_component->point_light.position;
-						mat4 transform_mat = transform_to_mat4(transform);
+						mat4 transform_mat = mat4_from_transform(transform);
 						ImGuizmo::BeginFrame();
 						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
 						light_component->point_light.position = mat4_get_translation(transform_mat);
@@ -1180,7 +1180,7 @@ int main(int argc, char **argv) {
 						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
 
 						auto *sphere = &collision_component->sphere;
-						mat4 transform_mat = mat4_from_translation(level->entity_transforms[editor->entity_index].translate);
+						mat4 transform_mat = mat4_from_translate(level->entity_transforms[editor->entity_index].translate);
 						ImGuizmo::BeginFrame();
 						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
 						static vec3 final_scale = {1, 1, 1};
@@ -1203,7 +1203,7 @@ int main(int argc, char **argv) {
 						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
 						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
 						auto *box = &collision_component->box;
-						mat4 transform_mat = mat4_from_translation(level->entity_transforms[editor->entity_index].translate);
+						mat4 transform_mat = mat4_from_translate(level->entity_transforms[editor->entity_index].translate);
 						ImGuizmo::BeginFrame();
 						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
 						static vec3 final_scale = {1, 1, 1};
@@ -1264,7 +1264,7 @@ int main(int argc, char **argv) {
 
 						auto sphere = entity_collision_component->sphere;
 						transform transform = level->entity_transforms[editor->entity_index];
-						editor->render_data.collision_spheres[0].transform = mat4_from_translation(transform.translate) * mat4_from_scaling(sphere.radius);
+						editor->render_data.collision_spheres[0].transform = mat4_from_translate(transform.translate) * mat4_from_scale({sphere.radius, sphere.radius, sphere.radius});
 						editor->render_data.collision_spheres[0].color = vec4{0, 1, 0, 0.25f};
 					}
 					if (entity_collision_component->shape == collision_shape_capsule) {
@@ -1278,11 +1278,11 @@ int main(int argc, char **argv) {
 						capsule.end = {0, entity_collision_component->capsule.height / 2, 0};
 						capsule.begin = transform.rotate * capsule.begin;
 						capsule.end = transform.rotate * capsule.end;
-						mat4 cylinder_scale_mat = mat4_from_scaling({capsule.radius, entity_collision_component->capsule.height, capsule.radius});
-						mat4 cylinder_rotate_mat = mat4_from_rotation(quat_from_between({0, 1, 0}, vec3_normalize(capsule.end - (capsule.begin + capsule.end) / 2)));
-						mat4 cylinder_translate_mat = mat4_from_translation(transform.translate);
-						mat4 sphere_scale_mat = mat4_from_scaling(capsule.radius);
-						mat4 sphere_translate_mats[2] = {mat4_from_translation(transform.translate + capsule.begin), mat4_from_translation(transform.translate + capsule.end)};
+						mat4 cylinder_scale_mat = mat4_from_scale({capsule.radius, entity_collision_component->capsule.height, capsule.radius});
+						mat4 cylinder_rotate_mat = mat4_from_rotate(quat_from_between({0, 1, 0}, vec3_normalize(capsule.end - (capsule.begin + capsule.end) / 2)));
+						mat4 cylinder_translate_mat = mat4_from_translate(transform.translate);
+						mat4 sphere_scale_mat = mat4_from_scale({capsule.radius, capsule.radius, capsule.radius});
+						mat4 sphere_translate_mats[2] = {mat4_from_translate(transform.translate + capsule.begin), mat4_from_translate(transform.translate + capsule.end)};
 						editor->render_data.collision_capsules[0].transform = cylinder_translate_mat * cylinder_rotate_mat * cylinder_scale_mat;
 						editor->render_data.collision_capsules[0].capsule_sphere_transforms[0] = sphere_translate_mats[0] * sphere_scale_mat;
 						editor->render_data.collision_capsules[0].capsule_sphere_transforms[1] = sphere_translate_mats[1] * sphere_scale_mat;
@@ -1294,7 +1294,7 @@ int main(int argc, char **argv) {
 
 						transform transform = level->entity_transforms[editor->entity_index];
 						auto box = entity_collision_component->box;
-						editor->render_data.collision_bounds[0].transform = mat4_from_translation(transform.translate) * mat4_from_scaling(box.size);
+						editor->render_data.collision_bounds[0].transform = mat4_from_translate(transform.translate) * mat4_from_scale(box.size);
 						editor->render_data.collision_bounds[0].color = vec4{0, 1, 0, 0.25f};
 					}
 				}

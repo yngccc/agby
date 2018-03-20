@@ -195,23 +195,24 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 				m_assert(node.children[i] >= 0 && node.children[i] < glb_model.nodes.size());
 				gpk_node.children[i] = node.children[i];
 			}
-			if (node.matrix.size() != 0) {
+			if (node.matrix.size() > 0) {
 				for (uint32 i = 0; i < 16; i += 1) {
 					gpk_node.local_transform_mat[i / 4][i % 4] = (float)node.matrix[i];
 				}
+				gpk_node.local_transform = mat4_get_transform(gpk_node.local_transform_mat);
 			}
 			else {
-				transform transform = transform_identity();
-				if (node.rotation.size() != 0) {
-					transform.rotate = {(float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2], (float)node.rotation[3]};
+				gpk_node.local_transform = transform_identity();
+				if (node.scale.size() > 0) {
+					gpk_node.local_transform.scale =  {(float)node.scale[0], (float)node.scale[1], (float)node.scale[2]};
 				}
-				if (node.scale.size() != 0) {
-					transform.scale =  {(float)node.scale[0], (float)node.scale[1], (float)node.scale[2]};
+				if (node.rotation.size() > 0) {
+					gpk_node.local_transform.rotate = {(float)node.rotation[0], (float)node.rotation[1], (float)node.rotation[2], (float)node.rotation[3]};
 				}
-				if (node.translation.size() != 0) {
-					transform.translate = {(float)node.translation[0], (float)node.translation[1], (float)node.translation[2]};
+				if (node.translation.size() > 0) {
+					gpk_node.local_transform.translate = {(float)node.translation[0], (float)node.translation[1], (float)node.translation[2]};
 				}
-				gpk_node.local_transform_mat = transform_to_mat4(transform);
+				gpk_node.local_transform_mat = mat4_from_transform(gpk_node.local_transform);
 			}
 		}
 		current_offset = round_up(current_offset + gpk_model.node_count * (uint32)sizeof(struct gpk_model_node), 16u);

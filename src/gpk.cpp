@@ -31,6 +31,7 @@ struct gpk_model_scene {
 struct gpk_model_node {
 	uint32 mesh_index;
 	uint32 skin_index;
+	transform local_transform;
 	mat4 local_transform_mat;
 	uint32 children[32];
 	uint32 child_count;

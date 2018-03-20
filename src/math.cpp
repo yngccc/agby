@@ -174,7 +174,9 @@ union mat3 {
 
 	bool operator==(const mat3 &m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3); }
 	bool operator!=(const mat3 &m) const { return !(*this == m); }
-	vec3 operator*(const vec3 &v) const {
+	mat3 operator+(const mat3 &m) const { return mat3{c1 + m.c1, c2 + m.c2, c3 + m.c3}; }
+	mat3 operator*(float f) const { return mat3{c1 * f, c2 * f, c3 * f}; }
+	vec3 operator*(vec3 v) const {
 		float v0 = c1.x * v.x;
 		float v1 = c1.y * v.x;
 		float v2 = c1.z * v.x;
@@ -185,6 +187,19 @@ union mat3 {
 		v1 += c3.y * v.z;
 		v2 += c3.z * v.z;
 		return vec3{v0, v1, v2};
+	}
+	mat3 operator*(const mat3 &m) const {
+		mat3 result;
+		result.c1.x = c1.x * m.c1.x + c2.x * m.c1.y + c3.x * m.c1.z;
+		result.c1.y = c1.y * m.c1.x + c2.y * m.c1.y + c3.y * m.c1.z;
+		result.c1.z = c1.z * m.c1.x + c2.z * m.c1.y + c3.z * m.c1.z;
+		result.c2.x = c1.x * m.c2.x + c2.x * m.c2.y + c3.x * m.c2.z;
+		result.c2.y = c1.y * m.c2.x + c2.y * m.c2.y + c3.y * m.c2.z;
+		result.c2.z = c1.z * m.c2.x + c2.z * m.c2.y + c3.z * m.c2.z;
+		result.c3.x = c1.x * m.c3.x + c2.x * m.c3.y + c3.x * m.c3.z;
+		result.c3.y = c1.y * m.c3.x + c2.y * m.c3.y + c3.y * m.c3.z;
+		result.c3.z = c1.z * m.c3.x + c2.z * m.c3.y + c3.z * m.c3.z;
+		return result;		
 	}
 	vec3& operator[](uint32 i) { return e[i]; }
 	const vec3& operator[](uint32 i) const { return e[i]; }
@@ -200,8 +215,8 @@ union mat4 {
 	bool operator==(const mat4 &m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3) && (c4 == m.c4); }
 	bool operator!=(const mat4 &m) const { return !(*this == m); }
 	mat4 operator+(const mat4 &m) const { return mat4{c1 + m.c1, c2 + m.c2, c3 + m.c3, c4 + m.c4}; }
-	mat4 operator*(float d) const { mat4 result = *this; result.c1 = result.c1 * d; result.c2 = result.c2 * d; result.c3 = result.c3 * d; result.c4 = result.c4 * d; return result; }
-	vec4 operator*(const vec4 &v) const {
+	mat4 operator*(float f) const { return mat4{c1 * f, c2 * f, c3 * f, c4 * f}; }
+	vec4 operator*(vec4 v) const {
 		float v0 = c1.x * v.x;
 		float v1 = c1.y * v.x;
 		float v2 = c1.z * v.x;
@@ -220,7 +235,7 @@ union mat4 {
 		v3 += c4.w * v.w;
 		return vec4{v0, v1, v2, v3};
 	}
-	vec3 operator*(const vec3 &v) const { vec4 v4 = *this * vec4{v.x, v.y, v.z, 1}; return vec3{v4.x, v4.y, v4.z}; }
+	vec3 operator*(vec3 v) const { vec4 v4 = *this * vec4{v.x, v.y, v.z, 1}; return vec3{v4.x, v4.y, v4.z}; }
 	mat4 operator*(const mat4 &m) const {
 		mat4 result;
 		result.c1 = c1 * m.c1.x + c2 * m.c1.y + c3 * m.c1.z + c4 * m.c1.w;
@@ -245,7 +260,7 @@ union quat {
 	quat operator+(const quat &q) const { return quat{x + q.x, y + q.y, z + q.z, w + q.w}; }
 	quat operator-() const { return quat{-x, -y, -z, -w}; }
 	quat operator*(float d) const { return quat{x * d, y * d, z * d, w * d}; }
-	vec3 operator*(const vec3 &v) const { mat3 mat3_from_rotation(quat); return mat3_from_rotation(*this) * v; }
+	vec3 operator*(const vec3 &v) const { mat3 mat3_from_rotate(quat); return mat3_from_rotate(*this) * v; }
 	quat operator*(const quat &q) const {
 		quat result = {
 			w * q.x + x * q.w + y * q.z - z * q.y,
@@ -307,7 +322,7 @@ struct capsule {
 	float radius;
 };
 
-struct aa_bound {
+struct aabb {
 	vec3 min;
 	vec3 max;
 };
@@ -363,10 +378,6 @@ vec4 vec4_normalize(vec4 v) {
 	float len = vec4_len(v);
 	m_debug_assert(len > 0);
 	return v / len;
-}
-
-void mat3_to_str(const mat3 &m, char *buf, int buf_size) {
-	snprintf(buf, buf_size, "| %.6f %.6f %.6f |\n| %.6f %.6f %.6f |\n| %.6f %.6f %.6f |\n", m.c1.x, m.c2.x, m.c3.x, m.c1.y, m.c2.y, m.c3.y, m.c1.z, m.c2.z, m.c3.z);
 }
 
 mat3 mat3_transpose(const mat3 &m) {
@@ -431,37 +442,14 @@ quat mat3_get_rotation(const mat3 &m) {
 	}
 }
 
-mat3 mat3_from_scaling(float scale) {
-	mat3 mat = {};
-	mat.c1.x = scale; mat.c2.y = scale; mat.c3.z = scale;
-	return mat;
-}
-
-mat3 mat3_from_scaling(vec3 scale) {
+mat3 mat3_from_scale(vec3 scale) {
 	mat3 mat = {};
 	mat.c1.x = scale.x; mat.c2.y = scale.y; mat.c3.z = scale.z;
 	return mat;
 }
 
-mat3 mat3_from_rotation(quat q) {
-	float qxx = q.x * q.x;
-	float qyy = q.y * q.y;
-	float qzz = q.z * q.z;
-	float qxz = q.x * q.z;
-	float qxy = q.x * q.y;
-	float qyz = q.y * q.z;
-	float qwx = q.w * q.x;
-	float qwy = q.w * q.y;
-	float qwz = q.w * q.z;
-	mat3 m;
-	m.c1 = vec3{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy)};
-	m.c2 = vec3{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx)};
-	m.c3 = vec3{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy)};
-	return m;
-}
-
-mat3 mat3_from_rotation(vec3 axis, float angle) {
-	m_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2));
+mat3 mat3_from_rotate(vec3 axis, float angle) {
+	m_debug_assert(fabsf(vec3_len(axis) - 1.0f) < 0.000001f);
 	const float c = cosf(angle);
 	const float c_1 = 1 - c;
 	const float s = sinf(angle);
@@ -478,14 +466,30 @@ mat3 mat3_from_rotation(vec3 axis, float angle) {
 	return mat;
 }
 
-mat3 mat4_to_mat3(const mat4 &m) {
+mat3 mat3_from_rotate(quat q) {
+	float qxx = q.x * q.x;
+	float qyy = q.y * q.y;
+	float qzz = q.z * q.z;
+	float qxz = q.x * q.z;
+	float qxy = q.x * q.y;
+	float qyz = q.y * q.z;
+	float qwx = q.w * q.x;
+	float qwy = q.w * q.y;
+	float qwz = q.w * q.z;
+	mat3 m;
+	m.c1 = vec3{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy)};
+	m.c2 = vec3{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx)};
+	m.c3 = vec3{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy)};
+	return m;
+}
+
+mat3 mat3_from_mat4(const mat4 &m) {
 	mat3 mat = {vec3{m.c1.x, m.c1.y, m.c1.z}, vec3{m.c2.x, m.c2.y, m.c2.z}, vec3{m.c3.x, m.c3.y, m.c3.z}};
 	return mat;
 }
 
-void mat4_to_str(const mat4 &m, char *buf, int buf_size) {
-	snprintf(buf, buf_size, "| %.6f %.6f %.6f %.6f |\n| %.6f %.6f %.6f %.6f |\n| %.6f %.6f %.6f %.6f |\n| %.6f %.6f %.6f %.6f |\n",
-		m.c1.x, m.c2.x, m.c3.x, m.c4.x, m.c1.y, m.c2.y, m.c3.y, m.c4.y, m.c1.z, m.c2.z, m.c3.z, m.c4.z, m.c1.w, m.c2.w, m.c3.w, m.c4.w);
+mat4 mat4_identity() {
+	return mat4{vec4{1, 0, 0, 0}, vec4{0, 1, 0, 0}, vec4{0, 0, 1, 0}, vec4{0, 0, 0, 1}};
 }
 
 mat4 mat4_transpose(const mat4 &m) {
@@ -541,20 +545,7 @@ mat4 mat4_inverse(const mat4 &m) {
 	return inverse * one_over_determinant;
 }
 
-mat4 mat4_identity() {
-	return mat4{vec4{1, 0, 0, 0}, vec4{0, 1, 0, 0}, vec4{0, 0, 1, 0}, vec4{0, 0, 0, 1}};
-}
-
-mat4 mat4_from_scaling(float scale) {
-	mat4 mat = {};
-	mat.c1.x = scale; 
-	mat.c2.y = scale; 
-	mat.c3.z = scale; 
-	mat.c4.w = 1;
-	return mat;
-}
-
-mat4 mat4_from_scaling(vec3 scale) {
+mat4 mat4_from_scale(vec3 scale) {
 	mat4 mat = {};
 	mat.c1.x = scale.x; 
 	mat.c2.y = scale.y; 
@@ -563,7 +554,7 @@ mat4 mat4_from_scaling(vec3 scale) {
 	return mat;
 }
 
-mat4 mat4_from_translation(vec3 translate) {
+mat4 mat4_from_translate(vec3 translate) {
 	mat4 mat = mat4_identity();
 	mat.c4.x = translate.x; 
 	mat.c4.y = translate.y; 
@@ -571,25 +562,7 @@ mat4 mat4_from_translation(vec3 translate) {
 	return mat;
 }
 
-mat4 mat4_from_rotation(quat q) {
-	float qxx = q.x * q.x;
-	float qyy = q.y * q.y;
-	float qzz = q.z * q.z;
-	float qxz = q.x * q.z;
-	float qxy = q.x * q.y;
-	float qyz = q.y * q.z;
-	float qwx = q.w * q.x;
-	float qwy = q.w * q.y;
-	float qwz = q.w * q.z;
-	mat4 m;
-	m.c1 = vec4{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy), 0};
-	m.c2 = vec4{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx), 0};
-	m.c3 = vec4{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy), 0};
-	m.c4 = vec4{0, 0, 0, 1};
-	return m;
-}
-
-mat4 mat4_from_rotation(vec3 axis, float angle) {
+mat4 mat4_from_rotate(vec3 axis, float angle) {
 	m_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2));
 	const float c = cosf(angle);
 	const float c_1 = 1 - c;
@@ -608,6 +581,28 @@ mat4 mat4_from_rotation(vec3 axis, float angle) {
 	return mat;
 }
 
+mat4 mat4_from_rotate(quat q) {
+	float qxx = q.x * q.x;
+	float qyy = q.y * q.y;
+	float qzz = q.z * q.z;
+	float qxz = q.x * q.z;
+	float qxy = q.x * q.y;
+	float qyz = q.y * q.z;
+	float qwx = q.w * q.x;
+	float qwy = q.w * q.y;
+	float qwz = q.w * q.z;
+	mat4 m;
+	m.c1 = vec4{1 - 2 * (qyy + qzz), 2 * (qxy + qwz), 2 * (qxz - qwy), 0};
+	m.c2 = vec4{2 * (qxy - qwz), 1 - 2 * (qxx + qzz), 2 * (qyz + qwx), 0};
+	m.c3 = vec4{2 * (qxz + qwy), 2 * (qyz - qwx), 1 - 2 * (qxx + qyy), 0};
+	m.c4 = vec4{0, 0, 0, 1};
+	return m;
+}
+
+mat4 mat4_from_transform(const transform &t) {
+	return mat4_from_translate(t.translate) * mat4_from_rotate(t.rotate) * mat4_from_scale(t.scale);
+}
+
 vec3 mat4_get_scaling(const mat4 &m) {
 	vec3 scaling = {
 		vec3_len(vec3{m.columns[0].x, m.columns[0].y, m.columns[0].z}),
@@ -619,7 +614,7 @@ vec3 mat4_get_scaling(const mat4 &m) {
 
 quat mat4_get_rotation(const mat4 &m) {
 	vec3 scaling = mat4_get_scaling(m);
-	mat3 m3 = mat4_to_mat3(m);
+	mat3 m3 = mat3_from_mat4(m);
 	m3[0] /= scaling.x;
 	m3[1] /= scaling.y;
 	m3[2] /= scaling.z;
@@ -796,12 +791,8 @@ transform transform_identity() {
 	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, vec3{0, 0, 0}};
 }
 
-transform transform_from_translation(const vec3 &t) {
+transform transform_from_translation(vec3 t) {
 	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, t};
-}
-
-mat4 transform_to_mat4(const transform &t) {
-	return mat4_from_translation(t.translate) * mat4_from_rotation(t.rotate) * mat4_from_scaling(t.scale);
 }
 
 mat4 camera_projection_mat4(const camera &camera) {
@@ -817,7 +808,7 @@ mat4 camera_view_projection_mat4(const camera &camera) {
 }
 
 mat4 camera_billboard_mat4(const camera &camera) {
-	mat3 mat = mat3_transpose(mat4_to_mat3(camera_view_mat4(camera)));
+	mat3 mat = mat3_transpose(mat3_from_mat4(camera_view_mat4(camera)));
 	return mat4{
 		vec4{mat.columns[0].x, mat.columns[0].y, mat.columns[0].z, 0},
 		vec4{mat.columns[1].x, mat.columns[1].y, mat.columns[1].z, 0},
@@ -872,33 +863,33 @@ mat4 camera_shadow_map_projection_mat4(const camera &camera, vec3 directional_li
 	return mat4_orthographic_projection(-50, 50, -50, 50, 0, 100) * light_view_mat4;
 }
 
-float aa_bound_volume(const aa_bound &bound) {
+float aabb_volume(const aabb &bound) {
 	return fabsf(bound.min.x - bound.max.x) * fabsf(bound.min.y - bound.max.y) * fabsf(bound.min.z - bound.max.z);
 }
 
-vec3 aa_bound_size(const aa_bound &bound) {
+vec3 aabb_size(const aabb &bound) {
 	return vec3{bound.max.x - bound.min.x, bound.max.y - bound.min.y, bound.max.z - bound.min.z};
 }
 
-vec3 aa_bound_center(const aa_bound &bound) {
+vec3 aabb_center(const aabb &bound) {
 	return (bound.min + bound.max) * 0.5f;
 }
 
-vec3 aa_bound_bottom_center(const aa_bound &bound) {
+vec3 aabb_bottom_center(const aabb &bound) {
 	return vec3{bound.min.x + (bound.max.x - bound.min.x) / 2, bound.min.y, bound.min.z + (bound.max.z - bound.min.z) / 2};
 }
 
-aa_bound aa_bound_translate(const aa_bound &bound, const vec3 &v) {
-	return aa_bound{bound.min + v, bound.max + v};
+aabb aabb_translate(const aabb &bound, vec3 v) {
+	return aabb{bound.min + v, bound.max + v};
 }
 
-aa_bound aa_bound_scale(const aa_bound &bound, const vec3 &v) {
-	return aa_bound{bound.min * v, bound.max * v};
+aabb aabb_scale(const aabb &bound, vec3 v) {
+	return aabb{bound.min * v, bound.max * v};
 }
 
-aa_bound aa_bound_rotate(const aa_bound &bound, const quat &quat) {
-	mat4 mat = mat4_from_rotation(quat);
-	aa_bound new_bound = {};
+aabb aabb_rotate(const aabb &bound, quat quat) {
+	mat4 mat = mat4_from_rotate(quat);
+	aabb new_bound = {};
 	for (int i = 0; i < 3; i += 1) {
 		for (int j = 0; j < 3; j += 1) {
 			float e = mat.columns[j].e[i] * bound.min.e[j];
@@ -916,7 +907,7 @@ aa_bound aa_bound_rotate(const aa_bound &bound, const quat &quat) {
 	return new_bound;
 }
 
-bool aa_bound_intersect(const aa_bound &bound1, const aa_bound &bound2) {
+bool aabb_intersect(const aabb &bound1, const aabb &bound2) {
 	if (bound1.max.x < bound2.min.x || bound1.min.x > bound2.max.x) {
 		return false;
 	}
@@ -929,8 +920,8 @@ bool aa_bound_intersect(const aa_bound &bound1, const aa_bound &bound2) {
 	return true;
 }
 
-aa_bound aa_bound_expand(const aa_bound &bound1, const aa_bound &bound2) {
-	aa_bound bound = bound1;
+aabb aabb_expand(const aabb &bound1, const aabb &bound2) {
+	aabb bound = bound1;
 	if (bound2.min.x < bound1.min.x || bound2.min.y < bound1.min.y || bound2.min.z < bound1.min.z) {
 		bound.min = bound2.min;
 	}
@@ -1037,7 +1028,7 @@ bool ray_intersect_capsule(const ray &ray, const capsule &capsule, float *inters
 	return true;
 }
 
-bool ray_intersect_bound(const ray &ray, const aa_bound &bound, vec2 *intersection = nullptr) {
+bool ray_intersect_bound(const ray &ray, const aabb &bound, vec2 *intersection = nullptr) {
 	float t0 = 0;
 	float t1 = ray.len;
 	for (uint32 i = 0; i < 3; i += 1) {
@@ -1065,7 +1056,7 @@ bool ray_intersect_bound(const ray &ray, const aa_bound &bound, vec2 *intersecti
 	return true;
 }
 
-uint32 ray_intersect_bounds_nearest(const ray &ray, const aa_bound *bounds, uint32 bound_count) {
+uint32 ray_intersect_bounds_nearest(const ray &ray, const aabb *bounds, uint32 bound_count) {
 	float nearest = INFINITY;
 	uint32 bound_index = UINT32_MAX;
 	for (uint32 i = 0; i < bound_count; i += 1) {

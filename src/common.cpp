@@ -117,6 +117,19 @@ uint64 next_pow_2(uint64 n) {
 	return n;
 }
 
+template <typename T>
+struct range {
+	range(T *first, T *last) : begin_{first}, end_{last} {}
+	range(T *first, uint64 size) : begin_{first}, end_{first + size} {}
+	T* begin() const noexcept { return begin_; }
+	T* end() const noexcept { return end_; }
+	T* begin_;
+	T* end_;
+};
+
+template <typename T>
+range<T> make_range(T *first, uint64 size) noexcept { return range<T>{first, size}; }
+
 template <typename T, uint32 N>
 void array_set(T (&array)[N], const T &value) {
 	for (uint32 i = 0; i < N; i += 1) {

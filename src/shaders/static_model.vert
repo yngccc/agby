@@ -36,9 +36,10 @@ layout(set = 0, binding = 0) uniform common_uniform {
 
 layout(set = 0, binding = 1) uniform mesh_uniform {
   mat4 model_mat;
-  float metallic;
-  float roughness;
-  float height_map_scale;
+  vec4 albedo_factor;
+  float metallic_factor;
+  float roughness_factor;
+  float height_map_factor;
 };
 
 layout(set = 0, binding = 2) uniform mesh_uniform_2 {

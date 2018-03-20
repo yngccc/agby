@@ -25,6 +25,14 @@ layout(set = 0, binding = 0) uniform common_uniform {
   uint spot_light_count;
 };
 
+layout(set = 0, binding = 1) uniform mesh_uniform {
+  mat4 model_mat;
+  vec4 albedo_factor;
+  float metallic_factor;
+  float roughness_factor;
+  float height_map_factor;
+};
+
 layout(set = 1, binding = 0) uniform sampler2D albedo_map;
 layout(set = 1, binding = 1) uniform sampler2D metallic_map;
 layout(set = 1, binding = 2) uniform sampler2D roughness_map;
