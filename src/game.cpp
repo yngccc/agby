@@ -108,13 +108,11 @@ int main(int argc, char **argv) {
 		for (uint32 i = 0; i < level->collision_component_count; i += 1) {
 			if (level->collision_components[i].bt_collision_object) {
 				bt_world->addCollisionObject(level->collision_components[i].bt_collision_object);
-				printf("friction %f\n", level->collision_components[i].bt_collision_object->getFriction());
 			}
 		}
 		for (uint32 i = 0; i < level->physics_component_count; i += 1) {
 			if (level->physics_components[i].bt_rigid_body) {
 				bt_world->addRigidBody(level->physics_components[i].bt_rigid_body);
-				printf("damping %f\n", level->physics_components[i].bt_rigid_body->getLinearDamping());
 			}
 		}
 

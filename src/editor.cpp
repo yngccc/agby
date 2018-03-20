@@ -1315,7 +1315,7 @@ int main(int argc, char **argv) {
 		};
    	auto extra_main_render_pass_render_commands = [&] {
 			VkDeviceSize vertices_offset = 0;
-			uint32 uniform_buffer_offsets[3] = {level->render_data.common_data_frame_uniform_buffer_offset, 0, 0};
+			uint32 uniform_buffer_offsets[4] = {level->render_data.frame_uniform_buffer_offset, 0, 0, 0};
 
 			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
 			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.pipeline);

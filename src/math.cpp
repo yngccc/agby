@@ -167,6 +167,16 @@ union u16vec4 {
 	const uint16& operator[](uint32 i) const { return e[i]; }
 };
 
+union uvec4 {
+	struct { uint32 x, y, z, w; };
+	uint32 e[4];
+
+	bool operator==(const uvec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(const uvec4 &v) const { return !(*this == v); }
+	uint32& operator[](uint32 i) { return e[i]; }
+	const uint32& operator[](uint32 i) const { return e[i]; }
+};
+
 union mat3 {
 	struct { vec3 c1, c2, c3; };
 	vec3 columns[3];

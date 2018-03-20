@@ -1,6 +1,6 @@
 #version 450
 
-#include "common.glsl"
+#include "../shader_type.cpp"
 
 layout(location = 0) in vec3 position_in;
 layout(location = 1) in vec2 uv_in;
@@ -14,59 +14,63 @@ layout(location = 1) out vec4 shadow_map_coord_out;
 layout(location = 2) out vec2 uv_out;
 layout(location = 3) out vec3 tbn_position_out;
 layout(location = 4) out vec3 tbn_camera_position_out;
-layout(location = 5) out vec3 tbn_directional_lights_out[max_directional_light_count];
-layout(location = 6) out vec3 tbn_point_lights_out[max_point_light_count];
+layout(location = 5) out vec3 tbn_directional_light_out;
+layout(location = 6) out vec3 tbn_point_light_out;
 
 out gl_PerVertex {
   vec4 gl_Position;
 };
 
-layout(set = 0, binding = 0) uniform common_uniform {
-  mat4 camera_view_proj_mat;
-  vec4 camera_position;
-  mat4 shadow_map_proj_mat;
-  ambient_light_t ambient_light;
-  directional_light_t directional_lights[max_directional_light_count];
-  point_light_t point_lights[max_point_light_count];
-  spot_light_t spot_lights[max_spot_light_count];
-  uint directional_light_count;
-  uint point_light_count;
-  uint spot_light_count;
+layout(set = 0, binding = 0) uniform level_info {
+  shader_level_info level;
 };
 
-layout(set = 0, binding = 1) uniform mesh_uniform {
-  mat4 model_mat;
-  vec4 albedo_factor;
-  float metallic_factor;
-  float roughness_factor;
-  float height_map_factor;
+layout(set = 0, binding = 1) uniform model_info {
+  shader_model_info model;
 };
 
-layout(set = 0, binding = 2) uniform mesh_uniform_2 {
-  mat4 joint_mats[256];
+layout(set = 0, binding = 2) uniform mesh_info {
+  shader_mesh_info mesh;
 };
+
+layout(set = 0, binding = 3) uniform primitive_info {
+  shader_primitive_info primitive;
+};
+
+layout(push_constant) uniform push_constant {
+  uint level_info_offset;
+  uint model_info_offset;
+  uint mesh_info_offset;
+  uint primitive_info_offset;
+  uint albedo_map_index;
+  uint metallic_map_index;
+  uint roughness_map_index;
+  uint normal_map_index;
+  uint height_map_index;
+  uint shadow_map_index;
+} pc;
 
 void main() {
-  mat4 joint_mat = joint_mats[joints_in[0]] * weights_in[0] + joint_mats[joints_in[1]] * weights_in[1] + joint_mats[joints_in[2]] * weights_in[2] + joint_mats[joints_in[3]] * weights_in[3];
-  mat4 transform_mat = model_mat * joint_mat;
-  mat3 normal_mat = mat3(transpose(inverse(transform_mat)));
+  mat4 joint_mat = mesh.joint_mats[joints_in[0]] * weights_in[0] + 
+                   mesh.joint_mats[joints_in[1]] * weights_in[1] + 
+                   mesh.joint_mats[joints_in[2]] * weights_in[2] + 
+                   mesh.joint_mats[joints_in[3]] * weights_in[3];
 
-  vec4 position = transform_mat * vec4(position_in, 1);
+  mat4 model_mat = model.model_mat * joint_mat;
+  mat3 normal_mat = mat3(model_mat);
+
+  vec4 position = model_mat * vec4(position_in, 1);
   vec3 normal = normalize(normal_mat * normal_in);
   vec3 tangent = normalize(normal_mat * tangent_in);
   vec3 bitangent = normalize(cross(normal, tangent));
   mat3 inverse_tbn_mat = transpose(mat3(tangent, bitangent, normal));
 
-  gl_Position = camera_view_proj_mat * position;
+  gl_Position = level.view_proj_mat * position;
   position_out = position.xyz;
-  shadow_map_coord_out = shadow_map_proj_mat * position;
+  shadow_map_coord_out = level.shadow_map_proj_mat * position;
   uv_out = uv_in;
   tbn_position_out = inverse_tbn_mat * position.xyz;
-  tbn_camera_position_out = inverse_tbn_mat * camera_position.xyz;
-  for (uint i = 0; i < directional_light_count; i += 1) {
-    tbn_directional_lights_out[i] = inverse_tbn_mat * directional_lights[i].direction.xyz;
-  }
-  for (uint i = 0; i < point_light_count; i += 1) {
-    tbn_point_lights_out[i] = inverse_tbn_mat * point_lights[i].position.xyz;
-  }
+  tbn_camera_position_out = inverse_tbn_mat * level.camera_position.xyz;
+  tbn_directional_light_out = inverse_tbn_mat * level.directional_light_dir.xyz;
+  tbn_point_light_out = inverse_tbn_mat * level.point_light_position.xyz;
 } 

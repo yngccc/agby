@@ -1,36 +1,23 @@
 #version 450
 
-#include "common.glsl"
+#include "../shader_type.cpp"
 
 layout(location = 0) in vec3 position_in;
 layout(location = 1) in vec4 shadow_map_coord_in;
 layout(location = 2) in vec2 uv_in;
 layout(location = 3) in vec3 tbn_position_in;
 layout(location = 4) in vec3 tbn_camera_position_in;
-layout(location = 5) in vec3 tbn_directional_lights_in[max_directional_light_count];
-layout(location = 6) in vec3 tbn_point_lights_in[max_point_light_count];
+layout(location = 5) in vec3 tbn_directional_light_in;
+layout(location = 6) in vec3 tbn_point_light_in;
 
 layout(location = 0) out vec4 color_out;
 
-layout(set = 0, binding = 0) uniform common_uniform {
-  mat4 camera_view_proj_mat;
-  vec4 camera_position;
-  mat4 shadow_map_proj_mat;
-  ambient_light_t ambient_light;
-  directional_light_t directional_lights[max_directional_light_count];
-  point_light_t point_lights[max_point_light_count];
-  spot_light_t spot_lights[max_spot_light_count];
-  uint directional_light_count;
-  uint point_light_count;
-  uint spot_light_count;
+layout(set = 0, binding = 0) uniform level_info {
+  shader_level_info level;
 };
 
-layout(set = 0, binding = 1) uniform mesh_uniform {
-  mat4 model_mat;
-  vec4 albedo_factor;
-  float metallic_factor;
-  float roughness_factor;
-  float height_map_factor;
+layout(set = 0, binding = 3) uniform primitive_info {
+  shader_primitive_info primitive;
 };
 
 layout(set = 1, binding = 0) uniform sampler2D albedo_map;
@@ -40,6 +27,19 @@ layout(set = 1, binding = 3) uniform sampler2D normal_map;
 layout(set = 1, binding = 4) uniform sampler2D height_map;
 
 layout(set = 2, binding = 0) uniform sampler2D shadow_map;
+
+layout(push_constant) uniform push_constant {
+  uint level_info_offset;
+  uint model_info_offset;
+  uint mesh_info_offset;
+  uint primitive_info_offset;
+  uint albedo_map_index;
+  uint metallic_map_index;
+  uint roughness_map_index;
+  uint normal_map_index;
+  uint height_map_index;
+  uint shadow_map_index;
+} pc;
 
 float shadow_mapping() {
   vec3 shadow_map_coord = shadow_map_coord_in.xyz / shadow_map_coord_in.w;
@@ -120,21 +120,19 @@ void main() {
   vec2 normal_xy = texture(normal_map, uv).xy * 2 - 1;
   float normal_z = sqrt(1 - normal_xy.x * normal_xy.x - normal_xy.y * normal_xy.y);
   vec3 normal = vec3(normal_xy, normal_z);
-  vec3 albedo = texture(albedo_map, uv).rgb;
-  float metallic = texture(metallic_map, uv).r;
-  float roughness = texture(roughness_map, uv).r;
 
-  color_out = vec4(ambient_light.color.rgb * albedo, 1);
-  for (uint i = 0; i < directional_light_count; i += 1) {
-    vec3 brdf = cook_torrance_brdf(normal, view, tbn_directional_lights_in[i], directional_lights[i].color.rgb, albedo, metallic, roughness);
-    // brdf = brdf * shadow_mapping();
-    color_out.rgb += brdf;
-  }
-  for (uint i = 0; i < point_light_count; i += 1) {
-    float attenuation = point_lights[i].position.w;
-    vec3 direction = tbn_point_lights_in[i] - tbn_position_in;
-    vec3 light_color = point_lights[i].color.rgb / pow(length(direction), attenuation);
-    vec3 brdf = cook_torrance_brdf(normal, view, normalize(direction), light_color, albedo, metallic, roughness);
-    color_out.rgb += brdf;
-  }
+  vec3 albedo = texture(albedo_map, uv).xyz * primitive.albedo_factor.xyz;
+  float metallic = texture(metallic_map, uv).x;   // * primitive.metallic_factor;  
+  float roughness = texture(roughness_map, uv).x; // * primitive.roughness_factor;
+
+  vec3 brdf = level.ambient_light_color.xyz * albedo;
+  brdf += cook_torrance_brdf(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, albedo, metallic, roughness);
+  // brdf *= shadow_mapping();
+
+  float attenuation = level.point_light_position.w;
+  vec3 direction = tbn_point_light_in - tbn_position_in;
+  vec3 light_color = level.point_light_color.xyz / pow(length(direction), attenuation);
+  brdf += cook_torrance_brdf(normal, view, normalize(direction), light_color, albedo, metallic, roughness);
+
+  color_out = vec4(brdf, 1);
 }

@@ -1564,33 +1564,22 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 			VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
 			descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
 			descriptor_set_allocate_info.descriptorSetCount = 1;
-			descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2];
+			descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[3];
 			m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.frame_uniform_buffer_offsets[i]));
 
-			VkDescriptorBufferInfo descriptor_buffer_infos[3] = {};
-			descriptor_buffer_infos[0] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 256 * sizeof(mat4)};
-			descriptor_buffer_infos[1] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 256 * sizeof(mat4)};
-			descriptor_buffer_infos[2] = {vulkan->buffers.frame_uniform_buffers[i].buffer, 0, 256 * sizeof(mat4)};
-			VkWriteDescriptorSet write_descriptor_sets[3] = {};
-			write_descriptor_sets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			write_descriptor_sets[0].dstSet = vulkan->descriptors.frame_uniform_buffer_offsets[i];
-			write_descriptor_sets[0].dstBinding = 0;
-			write_descriptor_sets[0].descriptorCount = 1;
-			write_descriptor_sets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-			write_descriptor_sets[0].pBufferInfo = &descriptor_buffer_infos[0];
-			write_descriptor_sets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			write_descriptor_sets[1].dstSet = vulkan->descriptors.frame_uniform_buffer_offsets[i];
-			write_descriptor_sets[1].dstBinding = 1;
-			write_descriptor_sets[1].descriptorCount = 1;
-			write_descriptor_sets[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-			write_descriptor_sets[1].pBufferInfo = &descriptor_buffer_infos[1];
-			write_descriptor_sets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			write_descriptor_sets[2].dstSet = vulkan->descriptors.frame_uniform_buffer_offsets[i];
-			write_descriptor_sets[2].dstBinding = 2;
-			write_descriptor_sets[2].descriptorCount = 1;
-			write_descriptor_sets[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-			write_descriptor_sets[2].pBufferInfo = &descriptor_buffer_infos[2];
-			vkUpdateDescriptorSets(vulkan->device.device, m_countof(write_descriptor_sets), write_descriptor_sets, 0, nullptr);
+			VkBuffer buffer = vulkan->buffers.frame_uniform_buffers[i].buffer;
+			VkDescriptorSet descriptor_set = vulkan->descriptors.frame_uniform_buffer_offsets[i];
+
+			for (uint32 i = 0; i < 4; i += 1) {
+				VkDescriptorBufferInfo descriptor_buffer_info = {buffer, 0, 256 * sizeof(mat4)};
+				VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+				write_descriptor_set.dstSet = descriptor_set;
+				write_descriptor_set.dstBinding = i;
+				write_descriptor_set.descriptorCount = 1;
+				write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+				write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
+				vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
+			}
 		}
 	}
 	{ // main framebuffer images
@@ -1733,15 +1722,16 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.pDynamicStates = dynamic_states;
 
 		VkDescriptorSetLayout set_layouts[] = {
-			vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2], 
+			vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[3], 
 			vulkan->descriptors.textures_descriptor_set_layouts[4], 
 			vulkan->descriptors.textures_descriptor_set_layouts[0]
 		};
+		VkPushConstantRange push_constant_range = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
-		layout_info.pushConstantRangeCount = 0;
-		layout_info.pPushConstantRanges = nullptr;
+		layout_info.pushConstantRangeCount = 1;
+		layout_info.pPushConstantRanges = &push_constant_range;
 		VkPipelineLayout layout = {};
 		m_vk_assert(vkCreatePipelineLayout(vulkan->device.device, &layout_info, nullptr, &layout));
 
@@ -1821,12 +1811,13 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[3]};
+		VkPushConstantRange push_constant_range = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
-		layout_info.pushConstantRangeCount = 0;
-		layout_info.pPushConstantRanges = nullptr;
+		layout_info.pushConstantRangeCount = 1;
+		layout_info.pPushConstantRanges = &push_constant_range;
 		VkPipelineLayout layout = {};
 		m_vk_assert(vkCreatePipelineLayout(vulkan->device.device, &layout_info, nullptr, &layout));
 
@@ -1904,13 +1895,13 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
-		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[3]};
+		VkPushConstantRange push_constant_range = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
-		layout_info.pushConstantRangeCount = m_countof(push_constant_ranges);
-		layout_info.pPushConstantRanges = push_constant_ranges;
+		layout_info.pushConstantRangeCount = 1;
+		layout_info.pPushConstantRanges = &push_constant_range;
 		VkPipelineLayout layout = {};
 		m_vk_assert(vkCreatePipelineLayout(vulkan->device.device, &layout_info, nullptr, &layout));
 
@@ -1983,12 +1974,12 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.pDynamicStates = dynamic_states;
 
 		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.textures_descriptor_set_layouts[0]};
-		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128}};
+		VkPushConstantRange push_constant_range = {VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
-		layout_info.pushConstantRangeCount = m_countof(push_constant_ranges);
-		layout_info.pPushConstantRanges = push_constant_ranges;
+		layout_info.pushConstantRangeCount = 1;
+		layout_info.pPushConstantRanges = &push_constant_range;
 		VkPipelineLayout layout = {};
 		m_vk_assert(vkCreatePipelineLayout(vulkan->device.device, &layout_info, nullptr, &layout));
 
@@ -2254,7 +2245,10 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2], vulkan->descriptors.textures_descriptor_set_layouts[0]};
+		VkDescriptorSetLayout set_layouts[] = {
+			vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[3], 
+			vulkan->descriptors.textures_descriptor_set_layouts[0]
+		};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
 		layout_info.pSetLayouts = set_layouts;
@@ -2343,7 +2337,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[3]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
@@ -2427,7 +2421,7 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		dynamic_state.dynamicStateCount = m_countof(dynamic_states);
 		dynamic_state.pDynamicStates = dynamic_states;
 
-		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[2]};
+		VkDescriptorSetLayout set_layouts[] = {vulkan->descriptors.uniform_buffer_offsets_descriptor_set_layouts[3]};
 		VkPushConstantRange push_constant_ranges[] = {{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
 		VkPipelineLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layout_info.setLayoutCount = m_countof(set_layouts);
