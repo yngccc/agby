@@ -22,7 +22,7 @@ struct shader_mesh_info {
 };
 
 struct shader_primitive_info {
-  vec4 albedo_factor;
+  vec4 diffuse_factor;
   float metallic_factor;
   float roughness_factor;
   float height_map_factor;

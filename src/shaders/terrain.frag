@@ -35,6 +35,6 @@ void main() {
     shadow = texture(shadow_map, shadow_map_coord.xyz);
   }
   vec3 light_color = ambient_light_color.xyz + directional_light_color.xyz * shadow * max(0, dot(normal, -directional_light_direction.xyz));
-  vec3 albedo = texture(diffuse_map, uv_in * diffuse_map_image_scales).rgb;
-  color_out = vec4(albedo * light_color, 1.0);
+  vec3 diffuse = texture(diffuse_map, uv_in * diffuse_map_image_scales).rgb;
+  color_out = vec4(diffuse * light_color, 1.0);
 }

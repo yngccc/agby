@@ -20,7 +20,7 @@ layout(set = 0, binding = 3) uniform primitive_info {
   shader_primitive_info primitive;
 };
 
-layout(set = 1, binding = 0) uniform sampler2D albedo_map;
+layout(set = 1, binding = 0) uniform sampler2D diffuse_map;
 layout(set = 1, binding = 1) uniform sampler2D metallic_map;
 layout(set = 1, binding = 2) uniform sampler2D roughness_map;
 layout(set = 1, binding = 3) uniform sampler2D normal_map;
@@ -33,7 +33,7 @@ layout(push_constant) uniform push_constant {
   uint model_info_offset;
   uint mesh_info_offset;
   uint primitive_info_offset;
-  uint albedo_map_index;
+  uint diffuse_map_index;
   uint metallic_map_index;
   uint roughness_map_index;
   uint normal_map_index;
@@ -76,7 +76,7 @@ vec2 parallax_mapping(vec2 uv, vec3 view) {
   return final_uv;  
 } 
 
-vec3 cook_torrance_brdf(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color, vec3 albedo, float metallic, float roughness) {
+vec3 cook_torrance_brdf(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color, vec3 diffuse, float metallic, float roughness) {
   const float PI = 3.14159265359;
   vec3 half_way = normalize(view + light_dir);
   float distribution_ggx = 0;
@@ -102,7 +102,7 @@ vec3 cook_torrance_brdf(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color
   }
   vec3 fresnel_schlick = vec3(0, 0, 0); 
   {
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F0 = mix(vec3(0.04), diffuse, metallic);
     float cos_theta = max(dot(half_way, view), 0);
     fresnel_schlick = F0 + (1 - F0) * pow(1 - cos_theta, 5);
   }
@@ -111,7 +111,7 @@ vec3 cook_torrance_brdf(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color
   vec3 nom = distribution_ggx * geometry_smith * fresnel_schlick;
   float denom = 4 * max(dot(normal, view), 0) * max(dot(normal, light_dir), 0) + 0.001;
   vec3 specular = nom / denom;
-  return (kd * albedo / PI + specular) * light_color * max(dot(normal, light_dir), 0);
+  return (kd * diffuse / PI + specular) * light_color * max(dot(normal, light_dir), 0);
 }
 
 void main() {
@@ -121,18 +121,18 @@ void main() {
   float normal_z = sqrt(1 - normal_xy.x * normal_xy.x - normal_xy.y * normal_xy.y);
   vec3 normal = vec3(normal_xy, normal_z);
 
-  vec3 albedo = texture(albedo_map, uv).xyz * primitive.albedo_factor.xyz;
+  vec3 diffuse = texture(diffuse_map, uv).xyz * primitive.diffuse_factor.xyz;
   float metallic = texture(metallic_map, uv).x;   // * primitive.metallic_factor;  
   float roughness = texture(roughness_map, uv).x; // * primitive.roughness_factor;
 
-  vec3 brdf = level.ambient_light_color.xyz * albedo;
-  brdf += cook_torrance_brdf(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, albedo, metallic, roughness);
+  vec3 brdf = level.ambient_light_color.xyz * diffuse;
+  brdf += cook_torrance_brdf(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness);
   // brdf *= shadow_mapping();
 
   float attenuation = level.point_light_position.w;
   vec3 direction = tbn_point_light_in - tbn_position_in;
   vec3 light_color = level.point_light_color.xyz / pow(length(direction), attenuation);
-  brdf += cook_torrance_brdf(normal, view, normalize(direction), light_color, albedo, metallic, roughness);
+  brdf += cook_torrance_brdf(normal, view, normalize(direction), light_color, diffuse, metallic, roughness);
 
   color_out = vec4(brdf, 1);
 }

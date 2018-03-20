@@ -329,8 +329,8 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 		gpk_model.material_count = (uint32)glb_model.materials.size();
 		gpk_model_materials.resize(gpk_model.material_count);
 		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
-			gpk_model_materials[i].albedo_image_index = UINT32_MAX;
-			gpk_model_materials[i].albedo_factor = {0.8f, 0.8f, 0.8f, 1.0f};
+			gpk_model_materials[i].diffuse_image_index = UINT32_MAX;
+			gpk_model_materials[i].diffuse_factor = {0.8f, 0.8f, 0.8f, 1.0f};
 			gpk_model_materials[i].metallic_image_index = UINT32_MAX;
 			gpk_model_materials[i].roughness_image_index = UINT32_MAX;
 			gpk_model_materials[i].metallic_factor = 0.5f;
@@ -354,20 +354,20 @@ void glb_to_gpk(std::string glb_file, std::string gpk_file) {
 				auto &texture = glb_model.textures[index];
 				m_assert(texture.source >= 0 && texture.source < glb_model.images.size());
 				m_assert(image_remaps[texture.source].is_base_color);
-				gpk_material.albedo_image_index = image_remaps[texture.source].index;
+				gpk_material.diffuse_image_index = image_remaps[texture.source].index;
 				if (texture.sampler >= 0 && texture.sampler < glb_model.samplers.size()) {
-					gpk_material.albedo_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
-					gpk_material.albedo_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
+					gpk_material.diffuse_image_wrap_s = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapS);
+					gpk_material.diffuse_image_wrap_t = tinygltf_wrap_to_vk_wrap(glb_model.samplers[texture.sampler].wrapT);
 				}
 				else {
-					gpk_material.albedo_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					gpk_material.albedo_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.diffuse_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.diffuse_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 				}
 			}
 			else if (base_color_factor != material.values.end()) {
 				auto &color = base_color_factor->second.number_array;
 				m_assert(color.size() == 4);
-				gpk_material.albedo_factor = {(float)color[0], (float)color[1], (float)color[2], (float)color[3]};
+				gpk_material.diffuse_factor = {(float)color[0], (float)color[1], (float)color[2], (float)color[3]};
 			}
 			if (metallic_roughness_texture != material.values.end()) {
 				int32 index = metallic_roughness_texture->second.TextureIndex();
@@ -993,11 +993,11 @@ struct mesh {
 };
 
 struct material {
-	uint8 *albedo_map_data;
-	int32 albedo_map_width;
-	int32 albedo_map_height;
-	uint32 albedo_map_mipmap_count;
-	uint32 albedo_map_size;
+	uint8 *diffuse_map_data;
+	int32 diffuse_map_width;
+	int32 diffuse_map_height;
+	uint32 diffuse_map_mipmap_count;
+	uint32 diffuse_map_size;
 	uint8 *normal_map_data;
 	int32 normal_map_width;
 	int32 normal_map_height;
@@ -1027,7 +1027,7 @@ struct material {
 };
 
 enum image_type {
-	image_type_albedo_map,
+	image_type_diffuse_map,
 	image_type_normal_map,
 	image_type_metallic_map,
 	image_type_roughness_map,
@@ -1189,14 +1189,14 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 						int32 channel;
 						string_cat(&dir_str, find_file_data.cFileName, (uint32)strlen(find_file_data.cFileName));
 
-						string_cat(&dir_str, "\\albedo.png", (uint32)strlen("\\albedo.png"));
-						uint8 *albedo_map_data = stbi_load(dir_str.buf, &material->albedo_map_width, &material->albedo_map_height, &channel, 4);
-						if (albedo_map_data) {
-							rgba_to_bgra(albedo_map_data, material->albedo_map_width, material->albedo_map_height);
-							compress_image(image_type_albedo_map, albedo_map_data, material->albedo_map_width, material->albedo_map_height, &material->albedo_map_data, &material->albedo_map_mipmap_count, &material->albedo_map_size);
-							stbi_image_free(albedo_map_data);
+						string_cat(&dir_str, "\\diffuse.png", (uint32)strlen("\\diffuse.png"));
+						uint8 *diffuse_map_data = stbi_load(dir_str.buf, &material->diffuse_map_width, &material->diffuse_map_height, &channel, 4);
+						if (diffuse_map_data) {
+							rgba_to_bgra(diffuse_map_data, material->diffuse_map_width, material->diffuse_map_height);
+							compress_image(image_type_diffuse_map, diffuse_map_data, material->diffuse_map_width, material->diffuse_map_height, &material->diffuse_map_data, &material->diffuse_map_mipmap_count, &material->diffuse_map_size);
+							stbi_image_free(diffuse_map_data);
 						}
-						string_pop_back_n(&dir_str, (uint32)strlen("\\albedo.png"));
+						string_pop_back_n(&dir_str, (uint32)strlen("\\diffuse.png"));
 
 						string_cat(&dir_str, "\\normal.png", (uint32)strlen("\\normal.png"));
 						uint8 *normal_map_data = stbi_load(dir_str.buf, &material->normal_map_width, &material->normal_map_height, &channel, 4);
@@ -1415,13 +1415,13 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 			model_header.material_offsets[i] = model_total_size;
 			snprintf(material_headers[i].name, sizeof(material_headers[i].name), "%s", materials[i].name);
 			uint32 material_size = round_up((uint32)sizeof(struct gpk_model_material_header), 16u);
-			if (materials[i].albedo_map_data) {
-				material_headers[i].albedo_map_offset = round_up(material_size, 16u);
-				material_headers[i].albedo_map_width = materials[i].albedo_map_width;
-				material_headers[i].albedo_map_height = materials[i].albedo_map_height;
-				material_headers[i].albedo_map_mipmap_count = materials[i].albedo_map_mipmap_count;
-				material_headers[i].albedo_map_size = materials[i].albedo_map_size;
-				material_size = material_headers[i].albedo_map_offset + material_headers[i].albedo_map_size;
+			if (materials[i].diffuse_map_data) {
+				material_headers[i].diffuse_map_offset = round_up(material_size, 16u);
+				material_headers[i].diffuse_map_width = materials[i].diffuse_map_width;
+				material_headers[i].diffuse_map_height = materials[i].diffuse_map_height;
+				material_headers[i].diffuse_map_mipmap_count = materials[i].diffuse_map_mipmap_count;
+				material_headers[i].diffuse_map_size = materials[i].diffuse_map_size;
+				material_size = material_headers[i].diffuse_map_offset + material_headers[i].diffuse_map_size;
 			}
 			if (materials[i].normal_map_data) {
 				material_headers[i].normal_map_offset = round_up(material_size, 16u);
@@ -1477,9 +1477,9 @@ void fbx_model_to_gpk(gpk_import_cmd_line cmdl) {
 	for (uint32 i = 0; i < model_header.material_count; i += 1) {
 		uint8 *header_ptr = import_file_mapping.ptr + model_header.material_offsets[i];
 		*(gpk_model_material_header *)header_ptr = material_headers[i];
-		if (materials[i].albedo_map_data) {
-			uint8 *albedo_map_ptr = import_file_mapping.ptr + model_header.material_offsets[i] + material_headers[i].albedo_map_offset;
-			memcpy(albedo_map_ptr, materials[i].albedo_map_data, materials[i].albedo_map_size);
+		if (materials[i].diffuse_map_data) {
+			uint8 *diffuse_map_ptr = import_file_mapping.ptr + model_header.material_offsets[i] + material_headers[i].diffuse_map_offset;
+			memcpy(diffuse_map_ptr, materials[i].diffuse_map_data, materials[i].diffuse_map_size);
 		}
 		if (materials[i].normal_map_data) {
 			uint8 *normal_map_ptr = import_file_mapping.ptr + model_header.material_offsets[i] + material_headers[i].normal_map_offset;

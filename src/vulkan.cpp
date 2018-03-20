@@ -224,7 +224,7 @@ struct vulkan_image {
 };
 
 struct vulkan_images {
-	vulkan_image default_albedo_map_image;
+	vulkan_image default_diffuse_map_image;
 	vulkan_image default_metallic_map_image;
 	vulkan_image default_roughness_map_image;
 	vulkan_image default_normal_map_image;
@@ -1436,7 +1436,7 @@ void vulkan_image_transfer(vulkan_device *vulkan_device, vulkan_cmd_buffers *vul
 
 void initialize_vulkan_images(vulkan *vulkan) {
 	{
-		uint8 default_albedo_map_data[] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+		uint8 default_diffuse_map_data[] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
 		uint8 default_metallic_map_data[] = {255, 255, 255, 255};
 		uint8 default_roughness_map_data[] = {255, 255, 255, 255};
 		uint8 default_normal_map_data[] = {128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0};
@@ -1457,8 +1457,8 @@ void initialize_vulkan_images(vulkan *vulkan) {
 		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_view_create_info.subresourceRange.levelCount = 1;
 		image_view_create_info.subresourceRange.layerCount = 1;
-		vulkan->images.default_albedo_map_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 4);
-		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.default_albedo_map_image, default_albedo_map_data, sizeof(default_albedo_map_data));
+		vulkan->images.default_diffuse_map_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.common_images_memory, image_create_info, image_view_create_info, 1, 4);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &vulkan->images.default_diffuse_map_image, default_diffuse_map_data, sizeof(default_diffuse_map_data));
 
 		image_create_info.format = VK_FORMAT_R8_UNORM;
 		image_view_create_info.format = image_create_info.format;
@@ -1630,7 +1630,7 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[4];
 		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.model_default_material_textures));
 		VkDescriptorImageInfo descriptor_image_infos[5] = {};
-		descriptor_image_infos[0] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_albedo_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+		descriptor_image_infos[0] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_diffuse_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		descriptor_image_infos[1] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_metallic_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		descriptor_image_infos[2] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_roughness_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		descriptor_image_infos[3] = {vulkan->samplers.mipmap_samplers[0], vulkan->images.default_normal_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};

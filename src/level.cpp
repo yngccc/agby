@@ -85,7 +85,7 @@ struct model_animation {
 
 struct model_material {
 	VkDescriptorSet textures_descriptor_set;
-	vec4 albedo_factor;
+	vec4 diffuse_factor;
 	float metallic_factor;
 	float roughness_factor;
 	char name[sizeof(gpk_model_material::name)];
@@ -708,7 +708,7 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 		gpk_model_material *gpk_model_material = ((struct gpk_model_material*)(gpk_file_mapping.ptr + gpk_model->material_offset)) + i;
 		model_material *model_material = &model->materials[i];
 		array_copy(model_material->name, gpk_model_material->name);
-		model_material->albedo_factor = gpk_model_material->albedo_factor;
+		model_material->diffuse_factor = gpk_model_material->diffuse_factor;
 		model_material->metallic_factor = gpk_model_material->metallic_factor;
 		model_material->roughness_factor = gpk_model_material->roughness_factor;
 
@@ -718,12 +718,12 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 		descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[4];
 		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &model_material->textures_descriptor_set));
 		VkDescriptorImageInfo descriptor_image_infos[5] = {};
-		if (gpk_model_material->albedo_image_index < model->image_count) {
-			vulkan_image *image = &model->images[gpk_model_material->albedo_image_index].image;
+		if (gpk_model_material->diffuse_image_index < model->image_count) {
+			vulkan_image *image = &model->images[gpk_model_material->diffuse_image_index].image;
 			descriptor_image_infos[0] = {vulkan->samplers.mipmap_samplers[image->mipmap_count], image->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		}
 		else {
-			descriptor_image_infos[0] = {vulkan->samplers.mipmap_samplers[1], vulkan->images.default_albedo_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+			descriptor_image_infos[0] = {vulkan->samplers.mipmap_samplers[1], vulkan->images.default_diffuse_map_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 		}
 		if (gpk_model_material->metallic_image_index < model->image_count) {
 			vulkan_image *image = &model->images[gpk_model_material->metallic_image_index].image;
@@ -1400,7 +1400,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 									round_up(frame_uniform_buffer_offset, uniform_alignment);
 									primitive_render_data->frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
 									shader_primitive_info *primitive_info = (shader_primitive_info *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
-									primitive_info->albedo_factor = material->albedo_factor;
+									primitive_info->diffuse_factor = material->diffuse_factor;
 									primitive_info->metallic_factor = material->metallic_factor;
 									primitive_info->roughness_factor = material->roughness_factor;
 									*frame_uniform_buffer_offset += sizeof(struct shader_primitive_info);

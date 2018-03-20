@@ -42,7 +42,7 @@ layout(push_constant) uniform push_constant {
   uint model_info_offset;
   uint mesh_info_offset;
   uint primitive_info_offset;
-  uint albedo_map_index;
+  uint diffuse_map_index;
   uint metallic_map_index;
   uint roughness_map_index;
   uint normal_map_index;

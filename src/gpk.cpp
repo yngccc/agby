@@ -111,10 +111,10 @@ struct gpk_model_animation_key_frame {
 struct gpk_model_material {
  	char name[64];
 
-	uint32 albedo_image_index;
-	uint32 albedo_image_wrap_s;
-	uint32 albedo_image_wrap_t;
-	vec4 albedo_factor;
+	uint32 diffuse_image_index;
+	uint32 diffuse_image_wrap_s;
+	uint32 diffuse_image_wrap_t;
+	vec4 diffuse_factor;
 
 	uint32 metallic_image_index;
 	uint32 roughness_image_index;
