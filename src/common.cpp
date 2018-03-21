@@ -30,9 +30,9 @@ typedef unsigned long long ullong;
 
 #define m_countof(x) (sizeof(x) / sizeof(x[0]))
 
-#define m_kilobytes(n) (n * 1024)
-#define m_megabytes(n) (n * 1024 * 1024)
-#define m_gigabytes(n) (n * 1024 * 1024 * 1024)
+#define m_kilobytes(n) (n * 1024ull)
+#define m_megabytes(n) (n * 1024ull * 1024ull)
+#define m_gigabytes(n) (n * 1024ull * 1024ull * 1024ull)
 
 #define m_unpack3(array) (array)[0], (array)[1], (array)[2]
 #define m_unpack4(array) (array)[0], (array)[1], (array)[2], (array)[3]

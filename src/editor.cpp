@@ -20,6 +20,11 @@ enum selection_mode {
 	selection_mode_mesh
 };
 
+enum transform_mode {
+	transform_mode_entity,
+	transform_mode_render_adjustment
+};
+
 enum gizmo_mode {
 	gizmo_mode_transform_translate,
 	gizmo_mode_transform_rotate,
@@ -84,10 +89,11 @@ struct editor {
 	float skybox_window_height;
 
 	selection_mode selection_mode;
+	transform_mode transform_mode;
 	gizmo_mode gizmo_mode;
 	
 	uint32 entity_index;
-	bool entity_show_collision_shape;
+	bool show_entity_collision_shape;
 
 	undoable undoables[256];
 	uint32 undoable_count;
@@ -242,7 +248,7 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		editor->camera_move_speed = 10;
 
 		editor->entity_index = UINT32_MAX;
-		editor->entity_show_collision_shape = true;
+		editor->show_entity_collision_shape = false;
 
 		char new_level_file[] = "agby_assets\\levels\\level_new.json";
 		char load_level_file[] = "agby_assets\\levels\\level_load.json";
@@ -290,6 +296,7 @@ struct write_editor_settings {
 
 void editor_select_new_entity(editor* editor, uint32 entity_index) {
 	editor->entity_index = entity_index;
+	editor->transform_mode = transform_mode_entity;
 	editor->gizmo_mode = gizmo_mode_transform_translate;
 }
 
@@ -454,7 +461,7 @@ int main(int argc, char **argv) {
 				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
 			}
 		}
-		{ // selection modes, gizmo modes
+		{ // selection modes, transform mode, gizmo modes
 			ImGui::PushID("selection_gizmo_mode_popup");
 			if ((ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
 				ImGui::OpenPopup("##popup");
@@ -469,10 +476,21 @@ int main(int argc, char **argv) {
 					editor->selection_mode = selection_mode_mesh;
 				}
 				ImGui::Dummy(ImVec2{0, 10});
-				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "gizmo mode");
+				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "transform mode");
 				ImGui::Separator();
 				if (editor->entity_index < level->entity_count) {
 					uint32 entity_flags = level->entity_flags[editor->entity_index];
+					if (ImGui::MenuItem("entity##transform_mode_entity", nullptr, editor->transform_mode == transform_mode_entity)) {
+						editor->transform_mode = transform_mode_entity;
+					}
+					if (entity_flags & entity_component_flag_render) {
+						if (ImGui::MenuItem("render adjustment##transform_mode_render_adjustment", nullptr, editor->transform_mode == transform_mode_render_adjustment)) {
+							editor->transform_mode = transform_mode_render_adjustment;
+						}
+					}
+					ImGui::Dummy(ImVec2{0, 10});
+					ImGui::TextColored(ImVec4{1, 1, 0, 1}, "gizmo mode");
+					ImGui::Separator();					
 					if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor->gizmo_mode == gizmo_mode_transform_translate)) {
 						editor->gizmo_mode = gizmo_mode_transform_translate;
 					}
@@ -616,7 +634,7 @@ int main(int argc, char **argv) {
 					ImGui::PushID("view");
 					ImGui::Text("collision component");
 					ImGui::Separator();
-					ImGui::MenuItem("entity collision shape##show_entity_collision_shape", nullptr, &editor->entity_show_collision_shape);
+					ImGui::MenuItem("entity collision shape##show_entity_collision_shape", nullptr, &editor->show_entity_collision_shape);
 					ImGui::PopID();
 					ImGui::EndMenu();
 				}
@@ -746,6 +764,9 @@ int main(int argc, char **argv) {
 						ImGui::InputFloat3("translate##transform_translate_field", transform->translate.e, 3);
 						ImGui::InputFloat4("rotate##transform_rotate_field", transform->rotate.e, 3);
 						ImGui::InputFloat3("scale##transform_scale_field", transform->scale.e, 3);
+						if (ImGui::Button("reset##transform_reset_button")) {
+							*transform = transform_identity();
+						}
 						if (memcmp(transform, old_transform, sizeof(struct transform))) {
 							transform->rotate = quat_normalize(transform->rotate);
 							level->entity_modifications[editor->entity_index].transform = transform;
@@ -775,7 +796,10 @@ int main(int argc, char **argv) {
 							render_component->adjustment_transform.rotate = quat_normalize(render_component->adjustment_transform.rotate);
 						}
 						ImGui::InputFloat3("scale##transform_scale_field", render_component->adjustment_transform.scale.e, 3);
-						ImGui::Separator();
+						if (ImGui::Button("reset##transform_reset_button")) {
+							render_component->adjustment_transform = transform_identity();
+						}
+						ImGui::SameLine();
 						ImGui::Checkbox("hide##hide_checkbox", &render_component->hide);
 						if (memcmp(render_component, old_render_component, sizeof(struct entity_render_component))) {
 							level->entity_modifications[editor->entity_index].render_component = render_component;
@@ -1087,41 +1111,68 @@ int main(int argc, char **argv) {
 				uint32 entity_flags = level->entity_flags[editor->entity_index];
 				mat4 camera_view_mat = camera_view_mat4(editor->camera);
 				mat4 camera_proj_mat = camera_projection_mat4(editor->camera);
-				if (editor->gizmo_mode == gizmo_mode_transform_translate) {
-					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
-					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
-					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
-					mat4 transform_mat = mat4_from_transform(*entity_transform);
-					ImGuizmo::BeginFrame();
-					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
-					entity_transform->translate = mat4_get_translation(transform_mat);
-					if (!level->entity_modifications[editor->entity_index].transform) {
-						level->entity_modifications[editor->entity_index].transform = entity_transform;
+				auto transform_gizmo = [&](ImGuizmo::OPERATION imguizmo_op) {
+					transform entity_transform = level->entity_transforms[editor->entity_index];
+					transform adjustment_transform = transform_identity();
+					entity_render_component *render_component = nullptr;
+					if (entity_flags & entity_component_flag_render) {
+						render_component = entity_get_render_component(level, editor->entity_index);
+						adjustment_transform = render_component->adjustment_transform;
 					}
+					mat4 transform_mat = mat4_from_translate(entity_transform.translate + adjustment_transform.translate);
+					if (editor->transform_mode == transform_mode_entity) {
+						transform *new_entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
+						*new_entity_transform = entity_transform;
+						ImGuizmo::BeginFrame();
+						if (imguizmo_op == ImGuizmo::TRANSLATE) {
+							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
+							new_entity_transform->translate = mat4_get_translate(transform_mat) - adjustment_transform.translate;
+						}
+						else if (imguizmo_op == ImGuizmo::ROTATE) {
+ 							transform_mat = transform_mat * mat4_from_rotate(new_entity_transform->rotate);
+							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float *)transform_mat);
+							new_entity_transform->rotate = mat4_get_rotate(transform_mat);
+						}
+						else if (imguizmo_op == ImGuizmo::SCALE) {
+ 							transform_mat = transform_mat * mat4_from_scale(new_entity_transform->scale);
+							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::LOCAL, (float *)transform_mat);
+							new_entity_transform->scale = mat4_get_scale(transform_mat);
+						}
+						if (!level->entity_modifications[editor->entity_index].transform) {
+							level->entity_modifications[editor->entity_index].transform = new_entity_transform;
+						}
+					}
+					else if (editor->transform_mode == transform_mode_render_adjustment && render_component) {
+						entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
+						*new_render_component = *render_component;
+						ImGuizmo::BeginFrame();
+						if (imguizmo_op == ImGuizmo::TRANSLATE) {
+							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
+							new_render_component->adjustment_transform.translate = mat4_get_translate(transform_mat) - entity_transform.translate;
+						}
+						if (imguizmo_op == ImGuizmo::ROTATE) {
+ 							transform_mat = transform_mat * mat4_from_rotate(adjustment_transform.rotate);
+							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float *)transform_mat);
+							new_render_component->adjustment_transform.rotate = mat4_get_rotate(transform_mat);
+						}
+						else if (imguizmo_op == ImGuizmo::SCALE) {
+ 							transform_mat = transform_mat * mat4_from_scale(adjustment_transform.scale);
+							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::LOCAL, (float *)transform_mat);
+							new_render_component->adjustment_transform.scale = mat4_get_scale(transform_mat);
+						}
+						if (!level->entity_modifications[editor->entity_index].render_component) {
+							level->entity_modifications[editor->entity_index].render_component = new_render_component;
+						}
+					}
+				};
+				if (editor->gizmo_mode == gizmo_mode_transform_translate) {
+					transform_gizmo(ImGuizmo::TRANSLATE);
 				}
 				else if (editor->gizmo_mode == gizmo_mode_transform_rotate) {
-					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
-					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
-					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
-					mat4 transform_mat = mat4_from_transform(*entity_transform);
-					ImGuizmo::BeginFrame();
-					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::WORLD, (float *)transform_mat);
-					entity_transform->rotate = quat_normalize(mat4_get_rotation(transform_mat));
-					if (!level->entity_modifications[editor->entity_index].transform) {
-						level->entity_modifications[editor->entity_index].transform = entity_transform;
-					}
+					transform_gizmo(ImGuizmo::ROTATE);
 				}
 				else if (editor->gizmo_mode == gizmo_mode_transform_scale) {
-					transform *old_entity_transform = &level->entity_transforms[editor->entity_index];
-					transform *entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
-					memcpy(entity_transform, old_entity_transform, sizeof(struct transform));
-					mat4 transform_mat = mat4_from_transform(*entity_transform);
-					ImGuizmo::BeginFrame();
-					ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
-					entity_transform->scale = mat4_get_scaling(transform_mat);
-					if (!level->entity_modifications[editor->entity_index].transform) {
-						level->entity_modifications[editor->entity_index].transform = entity_transform;
-					}
+					transform_gizmo(ImGuizmo::SCALE);
 				}
 				else if (editor->gizmo_mode == gizmo_mode_directional_light_rotate && entity_flags & entity_component_flag_light) {
 					entity_light_component *old_light_component = entity_get_light_component(level, editor->entity_index);
@@ -1132,8 +1183,8 @@ int main(int argc, char **argv) {
 						transform.translate = editor->camera.position + editor->camera.view * 16;
 						mat4 transform_mat = mat4_from_transform(transform);
 						ImGuizmo::BeginFrame();
-						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::WORLD, (float *)transform_mat);
-						light_component->directional_light.direction = vec3_normalize(mat4_get_rotation(transform_mat) * light_component->directional_light.direction);
+						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float *)transform_mat);
+						light_component->directional_light.direction = vec3_normalize(mat4_get_rotate(transform_mat) * light_component->directional_light.direction);
 						if (!level->entity_modifications[editor->entity_index].light_component) {
 							level->entity_modifications[editor->entity_index].light_component = light_component;
 						}
@@ -1167,7 +1218,7 @@ int main(int argc, char **argv) {
 						mat4 transform_mat = mat4_from_transform(transform);
 						ImGuizmo::BeginFrame();
 						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
-						light_component->point_light.position = mat4_get_translation(transform_mat);
+						light_component->point_light.position = mat4_get_translate(transform_mat);
 						if (!level->entity_modifications[editor->entity_index].light_component) {
 							level->entity_modifications[editor->entity_index].light_component = light_component;
 						}
@@ -1182,9 +1233,9 @@ int main(int argc, char **argv) {
 						auto *sphere = &collision_component->sphere;
 						mat4 transform_mat = mat4_from_translate(level->entity_transforms[editor->entity_index].translate);
 						ImGuizmo::BeginFrame();
-						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
+						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::LOCAL, (float *)transform_mat);
 						static vec3 final_scale = {1, 1, 1};
-						vec3 scale = mat4_get_scaling(transform_mat);
+						vec3 scale = mat4_get_scale(transform_mat);
 						if (scale == vec3{1, 1, 1}) {
 							sphere->radius *= max(max(final_scale.x, final_scale.y), final_scale.z);
 							final_scale = {1, 1, 1};
@@ -1205,9 +1256,9 @@ int main(int argc, char **argv) {
 						auto *box = &collision_component->box;
 						mat4 transform_mat = mat4_from_translate(level->entity_transforms[editor->entity_index].translate);
 						ImGuizmo::BeginFrame();
-						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::WORLD, (float *)transform_mat);
+						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::LOCAL, (float *)transform_mat);
 						static vec3 final_scale = {1, 1, 1};
-						vec3 scale = mat4_get_scaling(transform_mat);
+						vec3 scale = mat4_get_scale(transform_mat);
 						if (scale == vec3{1, 1, 1}) {
 							box->size *= scale;
 							final_scale = {1, 1, 1};
@@ -1256,7 +1307,7 @@ int main(int argc, char **argv) {
 				vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(horizontal_points) + sizeof(vertical_points);
 			}
 			{ // collision objects
-				if (editor->entity_show_collision_shape && editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
+				if (editor->show_entity_collision_shape && editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
 					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (entity_collision_component->shape == collision_shape_sphere) {
 						editor->render_data.collision_sphere_count = 1;

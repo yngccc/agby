@@ -417,12 +417,12 @@ mat3 mat3_inverse(const mat3 &m) {
 	return inverse;
 }
 
-vec3 mat3_get_scaling(const mat3 &m) {
+vec3 mat3_get_scale(const mat3 &m) {
 	vec3 scaling = {vec3_len(m.columns[0]), vec3_len(m.columns[1]), vec3_len(m.columns[2])};
 	return scaling;
 }
 
-quat mat3_get_rotation(const mat3 &m) {
+quat mat3_get_rotate(const mat3 &m) {
 	float four_x_squared_minus_1 = m[0][0] - m[1][1] - m[2][2];
 	float four_y_squared_minus_1 = m[1][1] - m[0][0] - m[2][2];
 	float four_z_squared_minus_1 = m[2][2] - m[0][0] - m[1][1];
@@ -613,7 +613,7 @@ mat4 mat4_from_transform(const transform &t) {
 	return mat4_from_translate(t.translate) * mat4_from_rotate(t.rotate) * mat4_from_scale(t.scale);
 }
 
-vec3 mat4_get_scaling(const mat4 &m) {
+vec3 mat4_get_scale(const mat4 &m) {
 	vec3 scaling = {
 		vec3_len(vec3{m.columns[0].x, m.columns[0].y, m.columns[0].z}),
 		vec3_len(vec3{m.columns[1].x, m.columns[1].y, m.columns[1].z}),
@@ -622,28 +622,28 @@ vec3 mat4_get_scaling(const mat4 &m) {
 	return scaling;
 }
 
-quat mat4_get_rotation(const mat4 &m) {
-	vec3 scaling = mat4_get_scaling(m);
+quat mat4_get_rotate(const mat4 &m) {
+	vec3 scaling = mat4_get_scale(m);
 	mat3 m3 = mat3_from_mat4(m);
 	m3[0] /= scaling.x;
 	m3[1] /= scaling.y;
 	m3[2] /= scaling.z;
-	quat q = mat3_get_rotation(m3);
+	quat q = mat3_get_rotate(m3);
 	float q_len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
 	m_debug_assert(q_len > 0);
 	return q / q_len;
 }
 
-vec3 mat4_get_translation(const mat4 &m) {
+vec3 mat4_get_translate(const mat4 &m) {
 	vec3 translation = {m.columns[3].x, m.columns[3].y, m.columns[3].z};
 	return translation;
 }
 
 transform mat4_get_transform(const mat4 &m) {
 	transform t = {};
-	t.scale = mat4_get_scaling(m);
-	t.rotate = mat4_get_rotation(m);
-	t.translate = mat4_get_translation(m);
+	t.scale = mat4_get_scale(m);
+	t.rotate = mat4_get_rotate(m);
+	t.translate = mat4_get_translate(m);
 	return t;
 }
 

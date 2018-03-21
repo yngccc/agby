@@ -43,6 +43,7 @@ struct gpk_model_mesh_primitive {
 	uint32 index_count;
 	uint32 vertices_offset;
 	uint32 vertex_count;
+	uint32 has_joints;
 };
 
 struct gpk_model_mesh {

@@ -125,7 +125,7 @@ void main() {
   float metallic = texture(metallic_map, uv).x;   // * primitive.metallic_factor;  
   float roughness = texture(roughness_map, uv).x; // * primitive.roughness_factor;
 
-  vec3 brdf = level.ambient_light_color.xyz * diffuse;
+  vec3 brdf = diffuse * level.ambient_light_color.xyz;
   brdf += cook_torrance_brdf(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness);
   // brdf *= shadow_mapping();
 

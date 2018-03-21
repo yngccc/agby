@@ -36,6 +36,7 @@ struct model_mesh_primitive {
 	uint32 index_buffer_offset;
 	uint32 vertex_count;
 	uint32 vertex_buffer_offset;
+	bool has_joints;
 	uint8 *vertices_data;
 	uint8 *indices_data;
 };
@@ -311,7 +312,7 @@ void initialize_level(level *level, vulkan *vulkan) {
 	}
 
 	level->assets_memory_arena.name = "assets";
-	level->assets_memory_arena.capacity = m_megabytes(8);
+	level->assets_memory_arena.capacity = m_megabytes(64);
 	level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
 	m_assert(level->assets_memory_arena.memory);
 
@@ -615,6 +616,7 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 			model_mesh_primitive *primitive = &model_mesh->primitives[i];
 
 			primitive->material_index = gpk_primitive->material_index;
+			primitive->has_joints = gpk_primitive->has_joints;
 
 			uint32 indices_size = gpk_primitive->index_count * sizeof(uint16);
 			uint32 vertices_size = gpk_primitive->vertex_count * sizeof(struct gpk_model_vertex);
@@ -1077,7 +1079,7 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 				entity_render_component *render_component = entity_get_render_component(level, i);
 				transform &tfm = render_component->adjustment_transform;
 				entity_json["render_component"] = {
-					{"gpk_file", level->models[render_component->model_index].gpk_file},
+					{"gpk_file", render_component->model_index < level->model_count ? level->models[render_component->model_index].gpk_file : ""},
 					{"adjustment_transform", {
 						{"scale", {m_unpack3(tfm.scale)}}, 
 						{"rotate", {m_unpack4(tfm.rotate)}},
@@ -1185,11 +1187,11 @@ camera level_get_player_camera(level *level, vulkan *vulkan, float r, float thet
 }
 
 template <typename F>
-void traverse_model_node_hierarchy(model_node *nodes, uint32 index, F f) {
+void traverse_model_node_hierarchy(model_node *nodes, uint32 index, uint32 level, F f) {
 	model_node *node = &nodes[index];
 	f(node, index);
 	for (uint32 i = 0; i < node->child_count; i += 1) {
-		traverse_model_node_hierarchy(nodes, node->children[i], f);
+		traverse_model_node_hierarchy(nodes, node->children[i], level + 1, f);
 	}
 }
 
@@ -1198,7 +1200,7 @@ void traverse_model_scenes(model *model, F f) {
 	for (uint32 i = 0; i < model->scene_count; i += 1) {
 		model_scene *scene = &model->scenes[i];
 		for (uint32 i = 0; i < scene->node_index_count; i += 1) {
-			traverse_model_node_hierarchy(model->nodes, scene->node_indices[i], f);
+			traverse_model_node_hierarchy(model->nodes, scene->node_indices[i], 0, f);
 		}
 	}
 }
@@ -1354,7 +1356,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 							joints_frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
 							mat4 *joint_mats = (mat4 *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
 							*frame_uniform_buffer_offset += skin->joint_count * sizeof(mat4);
-							traverse_model_scenes_track_global_transform(&model, [skin, joint_mats](model_node *node, uint32 index, mat4 global_transform) {
+							traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
 								for (uint32 i = 0; i < skin->joint_count; i += 1) {
 									if (skin->joints[i].node_index == index) {
 										joint_mats[i] = global_transform * skin->joints[i].inverse_bind_mat;
