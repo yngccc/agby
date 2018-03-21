@@ -33,7 +33,7 @@ struct gpk_model_node {
 	uint32 skin_index;
 	transform local_transform;
 	mat4 local_transform_mat;
-	uint32 children[32];
+	uint32 children[128];
 	uint32 child_count;
 };
 
@@ -48,6 +48,7 @@ struct gpk_model_mesh_primitive {
 
 struct gpk_model_mesh {
 	char name[64];
+	uint32 skin_index;
 	uint32 primitive_offset;
 	uint32 primitive_count;
 };
@@ -64,7 +65,6 @@ static_assert(sizeof(gpk_model_vertex) == 44, "12 + 8 + 6 + 6 + 4 + 8");
 
 struct gpk_model_skin {
 	char name[64];
-	uint32 root_node_index;
 	uint32 joint_count;
 	uint32 joints_offset;
 };

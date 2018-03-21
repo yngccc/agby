@@ -240,6 +240,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			auto &gpk_mesh = gpk_model_meshes[i];
 			m_assert(mesh.name.length() < sizeof(gpk_mesh.name));
 			strcpy(gpk_mesh.name, mesh.name.c_str());
+			gpk_mesh.skin_index = UINT32_MAX;
 			m_assert(mesh.primitives.size() > 0);
 			gpk_mesh.primitive_count = (uint32)mesh.primitives.size();
 			for (auto &p : mesh.primitives) {
@@ -249,6 +250,14 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				m_assert(p.attributes.find("NORMAL") != p.attributes.end());
 			}
 		}
+		for (uint32 i = 0; i < gpk_model.node_count; i += 1) {
+			auto &node = gltf_model.nodes[i];
+			if (node.skin >= 0 && node.skin < gltf_model.skins.size()) {
+				m_assert(node.mesh >= 0 && node.mesh < gltf_model.meshes.size());
+				m_assert(gpk_model_meshes[node.mesh].skin_index == UINT32_MAX);
+				gpk_model_meshes[node.mesh].skin_index = node.skin;
+			}
+		}
 		current_offset = round_up(current_offset + gpk_model.mesh_count * (uint32)sizeof(struct gpk_model_mesh), 16u);
 	}
 	std::vector<gpk_model_skin> gpk_model_skins;
@@ -256,14 +265,12 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 		gpk_model.skin_offset = current_offset;
 		gpk_model.skin_count = (uint32)gltf_model.skins.size();
 		gpk_model_skins.resize(gpk_model.skin_count);
-		m_assert(gpk_model.skin_count <= 1);
 		for (uint32 i = 0; i < gpk_model.skin_count; i += 1) {
 			auto &skin = gltf_model.skins[i];
 			auto &gpk_skin = gpk_model_skins[i];
 			m_assert(skin.name.length() < sizeof(gpk_skin.name));
 			strcpy(gpk_skin.name, skin.name.c_str());
 			m_assert(skin.skeleton >= 0 && skin.skeleton < gltf_model.nodes.size());
-			gpk_skin.root_node_index = (uint32)skin.skeleton;
 			m_assert(skin.joints.size() > 0 && skin.joints.size() < gltf_model.nodes.size());
 			m_assert(skin.joints.size() < 256);
 			gpk_skin.joint_count = (uint32)skin.joints.size();
@@ -659,6 +666,10 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			uint32 weight_stride = 0;
 			uint32 skin_joint_count = 0;
 			if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
+				m_assert(gpk_mesh.skin_index < (uint32)gltf_model.skins.size());
+				skin_joint_count = (uint32)gltf_model.skins[gpk_mesh.skin_index].joints.size();
+				m_assert(skin_joint_count < 256);
+
 				auto &joint_accessor = gltf_model.accessors[primitive.attributes["JOINTS_0"]];
 				auto &joint_buffer_view = gltf_model.bufferViews[joint_accessor.bufferView];
 				auto &joint_buffer = gltf_model.buffers[joint_buffer_view.buffer];
@@ -670,9 +681,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				auto &weight_buffer = gltf_model.buffers[weight_buffer_view.buffer];
 				weight_stride = weight_buffer_view.byteStride == 0 ? 16 : (uint32)weight_buffer_view.byteStride;
 				weight_data = &weight_buffer.data[weight_buffer_view.byteOffset + weight_accessor.byteOffset];
-
-				skin_joint_count = (uint32)gltf_model.skins[0].joints.size();
-				m_assert(skin_joint_count < 256);
 			}
 
 			gpk_primitive.material_index = (primitive.material >= 0 && primitive.material < gltf_model.materials.size()) ? (uint32)primitive.material : UINT32_MAX;
@@ -872,9 +880,17 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				auto &gpk_roughness_image = gpk_model_images[image_index++];
 				uint8 *gpk_metallic_ptr = gpk_file_mapping.ptr + gpk_metallic_image.data_offset;
 				uint8 *gpk_roughness_ptr = gpk_file_mapping.ptr + gpk_roughness_image.data_offset;
-				m_assert(image.component == 2 || image.component == 3 || image.component == 4);
-				uint32 metallic_component_index = image.component == 2 ? 1 : 2;
-				uint32 roughness_component_index = image.component == 2 ? 0 : 1;
+				m_assert(image.component <= 4);
+				uint32 metallic_component_index = 2;
+				uint32 roughness_component_index = 1;
+				if (image.component == 1) {
+					metallic_component_index = 0;
+					roughness_component_index = 0;
+				}
+				else if (image.component == 2) {
+					metallic_component_index = 0;
+					roughness_component_index = 1;
+				}
 				for (uint32 i = 0; i < gpk_metallic_image.width * gpk_metallic_image.height; i += 1) {
 					gpk_metallic_ptr[i] = image.image[i * image.component + metallic_component_index];
 				}

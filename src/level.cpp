@@ -26,7 +26,7 @@ struct model_node {
 	uint32 mesh_index;
 	transform local_transform;
 	mat4 local_transform_mat;
-	uint32 children[32];
+	uint32 children[m_countof(gpk_model_node::children)];
 	uint32 child_count;
 };
 
@@ -53,7 +53,6 @@ struct model_joint {
 };
 
 struct model_skin {
-	uint32 root_node_index;
 	model_joint *joints;
 	uint32 joint_count;
 	char name[sizeof(gpk_model_skin::name)];
@@ -647,7 +646,6 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 		gpk_model_skin *gpk_model_skin = ((struct gpk_model_skin*)(gpk_file_mapping.ptr + gpk_model->skin_offset)) + i;
 		model_skin *model_skin = &model->skins[i];
 		array_copy(model_skin->name, gpk_model_skin->name);
-		model_skin->root_node_index = gpk_model_skin->root_node_index;
 		model_skin->joint_count = gpk_model_skin->joint_count;
 		m_assert(model_skin->joint_count > 0);
 		model_skin->joints = allocate_memory<struct model_joint>(&level->assets_memory_arena, model_skin->joint_count);

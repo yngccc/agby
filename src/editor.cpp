@@ -424,11 +424,11 @@ int main(int argc, char **argv) {
 			}
 		}
 		{ // move camera
-			if (ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse) {
+			if (ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse) {
 				pin_cursor(true);
 				editor->camera_moving = true;
 			}
-			if (ImGui::IsMouseReleased(1)) {
+			if (ImGui::IsMouseReleased(2)) {
 				pin_cursor(false);
 				editor->camera_moving = false;
 			}
@@ -462,8 +462,8 @@ int main(int argc, char **argv) {
 			}
 		}
 		{ // selection modes, transform mode, gizmo modes
-			ImGui::PushID("selection_gizmo_mode_popup");
-			if ((ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
+			ImGui::PushID("selection_transform_gizmo_mode_popup");
+			if ((ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
 				ImGui::OpenPopup("##popup");
 			}
 			if (ImGui::BeginPopup("##popup")) {
