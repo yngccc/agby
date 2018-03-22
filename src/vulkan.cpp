@@ -1,5 +1,5 @@
 /***************************************************************************************************/
-/*          Copyright (C) 2015-2017 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
+/*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
 #pragma once
@@ -112,7 +112,7 @@ m_vulkan_device_procs
 #undef m_x
 
 const uint32 vulkan_swap_chain_image_count = 3;
-const uint32 vulkan_buffering_count = 1;
+const uint32 vulkan_buffering_count = 2;
 
 struct vulkan_device {
 	VkDevice device;
@@ -412,7 +412,7 @@ bool vulkan_allocate_image(vulkan_device *vulkan_device, VkImageCreateInfo image
 
 void initialize_vulkan_device(vulkan_device *vulkan_device) {
 	bool enable_validation_layer = true;
-	bool enable_renderdoc_layer = true;
+	bool enable_renderdoc_layer = false;
 	bool enable_nsight_layer = false;
 
 	struct memory_arena memory_arena = {};
@@ -1222,7 +1222,7 @@ void initialize_vulkan_memories(vulkan *vulkan) {
 		vkDestroyImage(vulkan->device.device, vulkan_image, nullptr);
 		uint32 memory_type_index = 0;
 		m_assert(find_memory_type_index(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memory_type_index));
-		m_assert(allocate_memory_type(memory_type_index, m_megabytes(1500), &vulkan->memories.level_images_memory));
+		m_assert(allocate_memory_type(memory_type_index, m_megabytes(1024), &vulkan->memories.level_images_memory));
 	}
 	{ // level vertices 
 		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};

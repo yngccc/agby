@@ -1,5 +1,5 @@
 /***************************************************************************************************/
-/*          Copyright (C) 2015-2017 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
+/*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"

@@ -1,5 +1,5 @@
 /***************************************************************************************************/
-/*          Copyright (C) 2015-2017 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
+/*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"
@@ -66,7 +66,7 @@ void initialize_game(game *game, vulkan *vulkan) {
 		ImGui::GetIO().Fonts->ClearTexData();
 	}
 	{ // player
-		game->player_camera_r = 10;
+		game->player_camera_r = 8;
 		game->player_camera_theta = 0.5f;
 		game->player_camera_phi = 0;
 	}
@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
 	
 	window window = {};
 	m_assert(initialize_window(&window));
-	// set_window_fullscreen(&window, true);
+	set_window_fullscreen(&window, true);
 
 	vulkan *vulkan = allocate_memory<struct vulkan>(&general_memory_arena, 1);
 	initialize_vulkan(vulkan, window);
@@ -218,6 +218,13 @@ int main(int argc, char **argv) {
 		if (ImGui::GetIO().KeyAlt && ImGui::IsKeyDown(keycode_f4)) {
 			program_running = false;
 		}
+		{ // camera movement
+			float x_sensitivity = 0.005f;
+			float y_sensitivity = 0.005f;
+			game->player_camera_theta = clamp(game->player_camera_theta + window.raw_mouse_dy * y_sensitivity, -(float)M_PI / 3, (float)M_PI / 3);
+			game->player_camera_phi = wrap_angle(game->player_camera_phi - window.raw_mouse_dx * x_sensitivity);
+			game->player_camera_r = clamp(game->player_camera_r - ImGui::GetIO().MouseWheel, 4.0f, 30.0f);
+		}
 		{ // player movement
 			entity_physics_component *physics_component = entity_get_physics_component(level, level->player_entity_index);
 			btVector3 linear_velocity = physics_component->bt_rigid_body->getLinearVelocity();
@@ -242,7 +249,7 @@ int main(int argc, char **argv) {
 				btVector3 translate = physics_component->bt_rigid_body->getCenterOfMassTransform().getOrigin();
 				physics_component->bt_rigid_body->setCenterOfMassTransform(btTransform(btQuaternion(rotate.x, rotate.y, rotate.z, rotate.w), translate));
 				if (!falling) {
-					float move_speed = 3;
+					float move_speed = 2;
 					vec3 velocity = vec3_normalize(move_vec) * move_speed;
 					physics_component->bt_rigid_body->setLinearVelocity(btVector3(velocity.x, velocity.y, velocity.z));
 				}
@@ -302,10 +309,6 @@ int main(int argc, char **argv) {
 		level->main_thread_frame_memory_arena.size = 0;
 		level->render_thread_frame_memory_arena.size = 0;
 
-		float x_sensitivity = 0.005f;
-		float y_sensitivity = 0.005f;
-		game->player_camera_theta = clamp(game->player_camera_theta + window.raw_mouse_dy * y_sensitivity, -(float)M_PI / 3, (float)M_PI / 3);
-		game->player_camera_phi = wrap_angle(game->player_camera_phi - window.raw_mouse_dx * x_sensitivity);
 		game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
 		
 		game->frame_done_flag.store(1);

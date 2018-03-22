@@ -122,8 +122,8 @@ void main() {
   vec3 normal = vec3(normal_xy, normal_z);
 
   vec3 diffuse = texture(diffuse_map, uv).xyz * primitive.diffuse_factor.xyz;
-  float metallic = texture(metallic_map, uv).x;   // * primitive.metallic_factor;  
-  float roughness = texture(roughness_map, uv).x; // * primitive.roughness_factor;
+  float metallic = texture(metallic_map, uv).x * primitive.metallic_factor;  
+  float roughness = texture(roughness_map, uv).x * primitive.roughness_factor;
 
   vec3 brdf = diffuse * level.ambient_light_color.xyz;
   brdf += cook_torrance_brdf(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness);

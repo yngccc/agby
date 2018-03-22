@@ -1,9 +1,11 @@
-# Vulkan PBR Renderer
-![alt text](misc/1.jpg "") ![alt text](misc/2.jpg "")
+# C++/Vulkan Game Engine
 
-# Build
-* Visual Studio 2017 Sln
-* vcvarsall.bat x64 && build.bat
+<img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_0.png" width="400"> <img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_1.png" width="400">
+<img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_2.png" width="400"> <img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_3.png" width="400">
+
+# Ways to Build on Windows
+* Use the Visual Studio 2017 Solution
+* Run build.bat
 
 # Dependencies
 * Vulkan SDK

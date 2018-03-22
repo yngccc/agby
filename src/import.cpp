@@ -1,5 +1,5 @@
 /***************************************************************************************************/
-/*          Copyright (C) 2015-2017 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
+/*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"
@@ -14,6 +14,8 @@
 #include "math.cpp"
 #include "gpk.cpp"
 #include <vulkan/vulkan.h>
+
+#include <stack>
 
 uint32 tinygltf_wrap_to_vk_wrap(int32 wrap) {
 	if (wrap == TINYGLTF_TEXTURE_WRAP_REPEAT) {
@@ -143,6 +145,34 @@ void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
 	printf("done importing skybox: \"%s\"\n", gpk_file.c_str());
 }
 
+bool gltf_model_node_has_cycle(const tinygltf::Model &gltf_model) {
+	bool has_cycle = false;
+	for (auto &scene : gltf_model.scenes) {
+		for (auto &node :scene.nodes) {
+			std::vector<int> node_stack;
+			node_stack.push_back(node);
+			uint64 node_stack_max_size = 1;
+			while (!node_stack.empty()) {
+				node_stack_max_size = max(node_stack.size(), node_stack_max_size);
+				int index = node_stack.back();
+				auto &node = gltf_model.nodes[index];
+				for (auto &child : node.children) {
+					for (auto &node : node_stack) {
+						if (child == node) {
+							has_cycle = true;
+						}
+					}
+				}
+				node_stack.pop_back();
+				for (auto &child : node.children) {
+					node_stack.push_back(child);
+				}
+			}
+		}
+	}
+	return has_cycle;
+}
+
 void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 	printf("begin importing gltf: \"%s\" \n", gltf_file.c_str());
 
@@ -191,6 +221,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 	}
 	std::vector<gpk_model_node> gpk_model_nodes;
 	{
+		m_assert(!gltf_model_node_has_cycle(gltf_model));
 		gpk_model.node_offset = current_offset;
 		gpk_model.node_count = (uint32)gltf_model.nodes.size();
 		m_assert(gpk_model.node_count > 0);

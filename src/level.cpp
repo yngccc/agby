@@ -1,5 +1,5 @@
 /***************************************************************************************************/
-/*          Copyright (C) 2015-2017 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
+/*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
 #pragma once
@@ -151,10 +151,10 @@ struct entity_info {
 };
 
 enum entity_component_flag {
-	entity_component_flag_render    = 1 << 0,
-	entity_component_flag_collision = 1 << 1,
-	entity_component_flag_physics   = 1 << 2,
-	entity_component_flag_light     = 1 << 3
+	entity_component_flag_render    = 1,
+	entity_component_flag_collision = 2,
+	entity_component_flag_physics   = 4,
+	entity_component_flag_light     = 8
 };
 
 struct entity_render_component {
@@ -203,7 +203,6 @@ struct entity_modification {
 	bool remove_collision_component;
 	bool remove_physics_component;
 	bool remove_light_component;
-	uint32 *flags;
 	entity_info *info;
 	transform *transform;
 	entity_render_component *render_component;
@@ -393,9 +392,9 @@ void level_update_entity_components(level *level) {
 	uint32 new_physics_component_count = level->physics_component_count;
 	uint32 new_light_component_count = level->light_component_count;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
+		entity_modification *mod = &level->entity_modifications[i];
 		uint32 entity_flag = level->entity_flags[i];
-		entity_modification *em = &level->entity_modifications[i];
-		if (em->remove) {
+		if (mod->remove) {
 			new_entity_count -= 1;
 			if (entity_flag & entity_component_flag_render) {
 				new_render_component_count -= 1;
@@ -411,48 +410,48 @@ void level_update_entity_components(level *level) {
 			}
 		}
 		else {
-			if (em->remove_render_component) {
+			if (mod->remove_render_component) {
 				new_render_component_count -= 1;
 			}
-			else if (em->render_component && !(entity_flag & entity_component_flag_render)) {
+			else if (mod->render_component && !(entity_flag & entity_component_flag_render)) {
 				new_render_component_count += 1;
 			}
-			if (em->remove_collision_component) {
+			if (mod->remove_collision_component) {
 				new_collision_component_count -= 1;
 			}
-			else if (em->collision_component && !(entity_flag & entity_component_flag_collision)) {
+			else if (mod->collision_component && !(entity_flag & entity_component_flag_collision)) {
 				new_collision_component_count += 1;
 			}
-			if (em->remove_physics_component) {
+			if (mod->remove_physics_component) {
 				new_physics_component_count -= 1;
 			}
-			else if (em->physics_component && !(entity_flag & entity_component_flag_physics)) {
+			else if (mod->physics_component && !(entity_flag & entity_component_flag_physics)) {
 				new_physics_component_count += 1;
 			}
-			if (em->remove_light_component) {
+			if (mod->remove_light_component) {
 				new_light_component_count -= 1;
 			}
-			else if (em->light_component && !(entity_flag & entity_component_flag_light)) {
+			else if (mod->light_component && !(entity_flag & entity_component_flag_light)) {
 				new_light_component_count += 1;
 			}
 		}
 	}
-	entity_addition *ea = level->entity_addition;
-	while (ea) {
+	entity_addition *addition = level->entity_addition;
+	while (addition) {
 		new_entity_count += 1;
-		if (ea->render_component) {
+		if (addition->render_component) {
 			new_render_component_count += 1;
 		}
-		if (ea->collision_component) {
+		if (addition->collision_component) {
 			new_collision_component_count += 1;
 		}
-		if (ea->physics_component) {
+		if (addition->physics_component) {
 			new_physics_component_count += 1;
 		}
-		if (ea->light_component) {
+		if (addition->light_component) {
 			new_light_component_count += 1;
 		}
-		ea = ea->next;
+		addition = addition->next;
 	}
 
 	level->entity_components_memory_arena_index = (level->entity_components_memory_arena_index + 1) % 2;
@@ -474,53 +473,62 @@ void level_update_entity_components(level *level) {
 	uint32 physics_component_index = 0;
 	uint32 light_component_index = 0;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
-		entity_modification *em = &level->entity_modifications[i];
-		if (!em->remove) {
-			new_entity_flags[entity_index] = em->flags ? *em->flags : level->entity_flags[i];
-			new_entity_infos[entity_index] = em->info ? *em->info : level->entity_infos[i];
-			new_entity_transforms[entity_index] = em->transform ? *em->transform : level->entity_transforms[i];
-			if (!em->remove_render_component) {
-				if (level->entity_flags[i] & entity_component_flag_render || em->render_component) {
-					new_render_components[render_component_index++] = em->render_component ? *em->render_component : *entity_get_render_component(level, i);
-				}
+		entity_modification *mod = &level->entity_modifications[i];
+		if (!mod->remove) {
+			uint32 entity_flags = level->entity_flags[i];
+			if (mod->remove_render_component) {
+				entity_flags &= ~entity_component_flag_render;
 			}
-			if (!em->remove_collision_component) {
-				if (level->entity_flags[i] & entity_component_flag_collision || em->collision_component) {
-					new_collision_components[collision_component_index++] = em->collision_component ? *em->collision_component : *entity_get_collision_component(level, i);
-				}
+			else if (entity_flags & entity_component_flag_render || mod->render_component) {
+				entity_flags |= entity_component_flag_render;
+				new_render_components[render_component_index++] = mod->render_component ? *mod->render_component : *entity_get_render_component(level, i);
 			}
-			if (!em->remove_physics_component) {
-				if (level->entity_flags[i] & entity_component_flag_physics || em->physics_component) {
-					new_physics_components[physics_component_index++] = em->physics_component ? *em->physics_component : *entity_get_physics_component(level, i);
-				}
+			if (mod->remove_collision_component) {
+				entity_flags &= ~entity_component_flag_collision;
 			}
-			if (!em->remove_light_component) {
-				if (level->entity_flags[i] & entity_component_flag_light || em->light_component) {
-					new_light_components[light_component_index++] = em->light_component ? *em->light_component : *entity_get_light_component(level, i);
-				}
+			else if (entity_flags & entity_component_flag_collision || mod->collision_component) {
+				entity_flags |= entity_component_flag_collision;
+				new_collision_components[collision_component_index++] = mod->collision_component ? *mod->collision_component : *entity_get_collision_component(level, i);
 			}
+			if (mod->remove_physics_component) {
+				entity_flags &= ~entity_component_flag_physics;
+			}
+			else if (entity_flags & entity_component_flag_physics || mod->physics_component) {
+				entity_flags |= entity_component_flag_physics;
+				new_physics_components[physics_component_index++] = mod->physics_component ? *mod->physics_component : *entity_get_physics_component(level, i);
+			}
+			if (mod->remove_light_component) {
+				entity_flags &= ~entity_component_flag_light;
+			}
+			else if (entity_flags & entity_component_flag_light || mod->light_component) {
+				entity_flags |= entity_component_flag_light;
+				new_light_components[light_component_index++] = mod->light_component ? *mod->light_component : *entity_get_light_component(level, i);
+			}
+			new_entity_flags[entity_index] = entity_flags;
+			new_entity_infos[entity_index] = mod->info ? *mod->info : level->entity_infos[i];
+			new_entity_transforms[entity_index] = mod->transform ? *mod->transform : level->entity_transforms[i];
 			entity_index += 1;
 		}
 	}
-	ea = level->entity_addition;
-	while (ea) {
-		new_entity_flags[entity_index] = ea->flag;
-		new_entity_infos[entity_index] = ea->info;
-		new_entity_transforms[entity_index] = ea->transform;
-		if (ea->render_component) {
-			new_render_components[render_component_index++] = *ea->render_component;
+	addition = level->entity_addition;
+	while (addition) {
+		new_entity_flags[entity_index] = addition->flag;
+		new_entity_infos[entity_index] = addition->info;
+		new_entity_transforms[entity_index] = addition->transform;
+		if (addition->render_component) {
+			new_render_components[render_component_index++] = *addition->render_component;
 		}
-		if (ea->collision_component) {
-			new_collision_components[collision_component_index++] = *ea->collision_component;
+		if (addition->collision_component) {
+			new_collision_components[collision_component_index++] = *addition->collision_component;
 		}
-		if (ea->physics_component) {
-			new_physics_components[physics_component_index++] = *ea->physics_component;
+		if (addition->physics_component) {
+			new_physics_components[physics_component_index++] = *addition->physics_component;
 		}
-		if (ea->light_component) {
-			new_light_components[light_component_index++] = *ea->light_component;
+		if (addition->light_component) {
+			new_light_components[light_component_index++] = *addition->light_component;
 		}
 		entity_index += 1;
-		ea = ea->next;
+		addition = addition->next;
 	}
 
 	level->entity_flags = new_entity_flags;

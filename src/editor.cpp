@@ -1,5 +1,5 @@
 /***************************************************************************************************/
-/*          Copyright (C) 2015-2017 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
+/*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"
@@ -88,12 +88,13 @@ struct editor {
 	float entity_window_height;
 	float skybox_window_height;
 
+	bool show_entity_collision_shape;
+
 	selection_mode selection_mode;
 	transform_mode transform_mode;
 	gizmo_mode gizmo_mode;
 	
 	uint32 entity_index;
-	bool show_entity_collision_shape;
 
 	undoable undoables[256];
 	uint32 undoable_count;
@@ -247,12 +248,13 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		editor->camera_pitch = asinf(editor->camera.view.y);
 		editor->camera_move_speed = 10;
 
-		editor->entity_index = UINT32_MAX;
 		editor->show_entity_collision_shape = false;
 
-		char new_level_file[] = "agby_assets\\levels\\level_new.json";
-		char load_level_file[] = "agby_assets\\levels\\level_load.json";
-		char save_level_file[] = "agby_assets\\levels\\level_save.json";
+		editor->entity_index = UINT32_MAX;
+
+		char new_level_file[128] = "agby_assets\\levels\\level_new.json";
+		char load_level_file[128] = "agby_assets\\levels\\level_load.json";
+		char save_level_file[128] = "agby_assets\\levels\\level_save.json";
 		array_copy(editor->new_level_file, new_level_file);
 		array_copy(editor->load_level_file, load_level_file);
 		array_copy(editor->save_level_file, save_level_file);
@@ -294,12 +296,6 @@ struct write_editor_settings {
 	}
 };
 
-void editor_select_new_entity(editor* editor, uint32 entity_index) {
-	editor->entity_index = entity_index;
-	editor->transform_mode = transform_mode_entity;
-	editor->gizmo_mode = gizmo_mode_transform_translate;
-}
-
 bool ray_intersect_mesh(ray ray, model_mesh *mesh, mat4 transform, float *distance) {
 	float min_distance = ray.len;
 	for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
@@ -337,7 +333,7 @@ int main(int argc, char **argv) {
 	
 	window window = {};
 	m_assert(initialize_window(&window));
-	// set_window_fullscreen(&window, true);
+	set_window_fullscreen(&window, true);
 
 	vulkan *vulkan = allocate_memory<struct vulkan>(&general_memory_arena, 1);
 	initialize_vulkan(vulkan, window);
@@ -460,6 +456,22 @@ int main(int argc, char **argv) {
 				}
 				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
 			}
+			{
+				static bool camera_move_speed_popup = false;
+				if (!ImGui::GetIO().WantCaptureMouse && editor->camera_moving) {
+					if (ImGui::GetIO().MouseWheel != 0 && ImGui::GetIO().KeyShift) {
+						ImGui::OpenPopup("##camera_speed_popup");
+						camera_move_speed_popup = true;
+					}
+				}
+				if (ImGui::BeginPopupModal("##camera_speed_popup", &camera_move_speed_popup, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+					float min_speed = 0.1f;
+					float max_speed = 100;
+					editor->camera_move_speed += ImGui::GetIO().MouseWheel;
+					ImGui::SliderFloat("camera speed##camera_speed_slider", &editor->camera_move_speed, min_speed, max_speed);
+					ImGui::EndPopup();
+				}
+			}
 		}
 		{ // selection modes, transform mode, gizmo modes
 			ImGui::PushID("selection_transform_gizmo_mode_popup");
@@ -540,7 +552,7 @@ int main(int argc, char **argv) {
 			ImGui::PopID();
 		}
 		{ // selection
-			if (ImGui::IsMouseClicked(0) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
+			if (ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyShift && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
 				vec3 window_pos = vec3{ImGui::GetMousePos().x, ImGui::GetIO().DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
 				vec4 viewport = vec4{0, 0, ImGui::GetIO().DisplaySize.x , ImGui::GetIO().DisplaySize.y};
 				vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
@@ -571,7 +583,7 @@ int main(int argc, char **argv) {
 						}
 					}
 					if (editor->entity_index != entity_index) {
-						editor_select_new_entity(editor, entity_index);
+						editor->entity_index = entity_index;
 					}
 				}
 				else if (editor->selection_mode == selection_mode_mesh) {
@@ -699,18 +711,18 @@ int main(int argc, char **argv) {
 			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f});
 			ImGui::PushID("entitiy_window");
-			if (ImGui::Begin("Entity##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+			if (ImGui::Begin("Entity##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->entity_window_height = ImGui::GetWindowHeight();
 				{ // entity list
 					const char *entity_combo_name = editor->entity_index < level->entity_count ? level->entity_infos[editor->entity_index].name : nullptr;
 					if (ImGui::BeginCombo("##entities_combo", entity_combo_name)) {
 						if (ImGui::Selectable("", editor->entity_index >= level->entity_count)) {
-							editor_select_new_entity(editor, UINT32_MAX);
+							editor->entity_index = UINT32_MAX;
 						}
 						for (uint32 i = 0; i < level->entity_count; i += 1) {
 							if (ImGui::Selectable(level->entity_infos[i].name, editor->entity_index == i)) {
 								if (editor->entity_index != i) {
-									editor_select_new_entity(editor, i);
+									editor->entity_index = i;
 								}
 							}
 						}
@@ -757,7 +769,7 @@ int main(int argc, char **argv) {
 				if (editor->entity_index >= level->entity_count) goto entity_window_skip_components_label;
 				{ // basic properties
 					ImGui::PushID("basic_properties");
-					if (ImGui::CollapsingHeader("Basic Properties##collapsing_header")) {
+					if (ImGui::CollapsingHeader("Basic Properties"), ImGuiTreeNodeFlags_DefaultOpen) {
 						transform *old_transform = &level->entity_transforms[editor->entity_index];
 						transform *transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
 						memcpy(transform, old_transform, sizeof(struct transform));
@@ -777,7 +789,7 @@ int main(int argc, char **argv) {
 				uint32 entity_flags = level->entity_flags[editor->entity_index];
 				if (entity_flags & entity_component_flag_render) {
 					ImGui::PushID("render_component");
-					if (ImGui::CollapsingHeader("Render Component##collapsing_header")) {
+					if (ImGui::CollapsingHeader("Render Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_render_component *old_render_component = entity_get_render_component(level, editor->entity_index);
 						entity_render_component *render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
 						memcpy(render_component, old_render_component, sizeof(struct entity_render_component));
@@ -804,12 +816,15 @@ int main(int argc, char **argv) {
 						if (memcmp(render_component, old_render_component, sizeof(struct entity_render_component))) {
 							level->entity_modifications[editor->entity_index].render_component = render_component;
 						}
+						if (ImGui::Button("delete##delete_button")) {
+							level->entity_modifications[editor->entity_index].remove_render_component = true;
+						}
 					}
 					ImGui::PopID();
 				}
 				if (entity_flags & entity_component_flag_collision) {
 					ImGui::PushID("collision_component");
-					if (ImGui::CollapsingHeader("Collision Component##collapsing_header")) {
+					if (ImGui::CollapsingHeader("Collision Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
 						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
 						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
@@ -861,12 +876,15 @@ int main(int argc, char **argv) {
 						if (memcmp(collision_component, old_collision_component, sizeof(struct entity_collision_component))) {
 							level->entity_modifications[editor->entity_index].collision_component = collision_component;
 						}
+						if (ImGui::Button("delete##delete_button")) {
+							level->entity_modifications[editor->entity_index].remove_collision_component = true;
+						}
 					}
 					ImGui::PopID();
 				}
 				if (entity_flags & entity_component_flag_physics) {
 					ImGui::PushID("physics_component");
-					if (ImGui::CollapsingHeader("Physics Component##collapsing_header")) {
+					if (ImGui::CollapsingHeader("Physics Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_physics_component *old_physics_component = entity_get_physics_component(level, editor->entity_index);
 						entity_physics_component *physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
 						memcpy(physics_component, old_physics_component, sizeof(struct entity_physics_component));
@@ -876,12 +894,15 @@ int main(int argc, char **argv) {
 						if (memcmp(physics_component, old_physics_component, sizeof(struct entity_physics_component))) {
 							level->entity_modifications[editor->entity_index].physics_component = physics_component;
 						}
+						if (ImGui::Button("delete##delete_button")) {
+							level->entity_modifications[editor->entity_index].remove_physics_component = true;
+						}
 					}
 					ImGui::PopID();
 				}
 				if (entity_flags & entity_component_flag_light) {
 					ImGui::PushID("light_component");
-					if (ImGui::CollapsingHeader("Light Component##collapsing_header")) {
+					if (ImGui::CollapsingHeader("Light Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_light_component *old_light_component = entity_get_light_component(level, editor->entity_index);
 						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
 						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
@@ -901,6 +922,9 @@ int main(int argc, char **argv) {
 						}
 						if (memcmp(light_component, old_light_component, sizeof(struct entity_light_component))) {
 							level->entity_modifications[editor->entity_index].light_component = light_component;
+						}
+						if (ImGui::Button("delete##delete_button")) {
+							level->entity_modifications[editor->entity_index].remove_light_component = true;
 						}
 					}
 					ImGui::PopID();
@@ -948,31 +972,20 @@ int main(int argc, char **argv) {
 						else {
 							show_duplicate_component_error = false;
 							if (component_type_index == 0) {
-								uint32 *new_entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
-								*new_entity_flag = entity_flags | entity_component_flag_render;
 								entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
 								new_render_component->model_index = UINT32_MAX;
 								new_render_component->adjustment_transform = transform_identity();
-								level->entity_modifications[editor->entity_index].flags = new_entity_flag;
 								level->entity_modifications[editor->entity_index].render_component = new_render_component;
 							}
 							else if (component_type_index == 1) {
-								uint32 *new_entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
-								*new_entity_flag = entity_flags | entity_component_flag_collision;
 								entity_collision_component *new_collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
-								level->entity_modifications[editor->entity_index].flags = new_entity_flag;
 								level->entity_modifications[editor->entity_index].collision_component = new_collision_component;
 							}
 							else if (component_type_index == 2) {
-								uint32 *new_entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
-								*new_entity_flag = entity_flags | entity_component_flag_physics;
 								entity_physics_component *new_physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
-								level->entity_modifications[editor->entity_index].flags = new_entity_flag;
 								level->entity_modifications[editor->entity_index].physics_component = new_physics_component;
 							}
 							else if (component_type_index == 3) {
-								uint32 *new_entity_flag = allocate_memory<uint32>(&level->main_thread_frame_memory_arena, 1);
-								*new_entity_flag = entity_flags | entity_component_flag_light;
 								entity_light_component *new_light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
 								if (light_type_index == 0) {
 									new_light_component->light_type = {light_type_ambient};
@@ -986,7 +999,6 @@ int main(int argc, char **argv) {
 									new_light_component->light_type = {light_type_point};
 									new_light_component->point_light = point_light{{0.1f, 0.1f, 0.1f}, {0, 0, 0}, 2};
 								}
-								level->entity_modifications[editor->entity_index].flags = new_entity_flag;
 								level->entity_modifications[editor->entity_index].light_component = new_light_component;
 							}
 							ImGui::CloseCurrentPopup();
@@ -1044,7 +1056,7 @@ int main(int argc, char **argv) {
 			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height + editor->entity_window_height});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.2f});
 			ImGui::PushID("skyboxes_window");
-			if (ImGui::Begin("Skyboxes##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+			if (ImGui::Begin("Skyboxes##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->skybox_window_height = ImGui::GetWindowHeight();
 				const char *skybox_combo_name = (level->skybox_index < level->skybox_count) ? level->skyboxes[level->skybox_index].gpk_file : nullptr;
 				if (ImGui::BeginCombo("skyboxes##skyboxes_combo", skybox_combo_name)) {
@@ -1063,7 +1075,7 @@ int main(int argc, char **argv) {
 			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height + editor->entity_window_height + editor->skybox_window_height});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.8f});
 			ImGui::PushID("memory_usage_window");
-			if (ImGui::Begin("Memory Usage##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+			if (ImGui::Begin("Memory Usage##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				auto imgui_render_memory = [](uint64 memory_size, uint64 memory_capacity, const char *memory_name) {
 					char overlay[32] = {};
 					if (memory_size < m_kilobytes(100)) {
@@ -1089,22 +1101,6 @@ int main(int argc, char **argv) {
 			}
 			ImGui::End();
 			ImGui::PopID();
-		}
-		{ // popups
-			static bool camera_move_speed_popup = false;
-			if (!ImGui::GetIO().WantCaptureMouse && editor->camera_moving) {
-				if (ImGui::GetIO().MouseWheel != 0) {
-					ImGui::OpenPopup("##camera_speed_popup");
-					camera_move_speed_popup = true;
-				}
-			}
-			if (ImGui::BeginPopupModal("##camera_speed_popup", &camera_move_speed_popup, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-				float min_speed = 0.1f;
-				float max_speed = 100;
-				editor->camera_move_speed += ImGui::GetIO().MouseWheel;
-    		ImGui::SliderFloat("camera speed##camera_speed_slider", &editor->camera_move_speed, min_speed, max_speed);
-				ImGui::EndPopup();
-			}
 		}
 		{ // gizmo
 			if (editor->entity_index < level->entity_count) {
@@ -1224,7 +1220,7 @@ int main(int argc, char **argv) {
 						}
 					}
 				}
-				else if (editor->gizmo_mode == gizmo_mode_collision_sphere_scale) {
+				else if (editor->gizmo_mode == gizmo_mode_collision_sphere_scale && entity_flags & entity_component_flag_collision) {
 					entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (old_collision_component->shape == collision_shape_sphere) {
 						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
@@ -1234,21 +1230,20 @@ int main(int argc, char **argv) {
 						mat4 transform_mat = mat4_from_translate(level->entity_transforms[editor->entity_index].translate);
 						ImGuizmo::BeginFrame();
 						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::LOCAL, (float *)transform_mat);
-						static vec3 final_scale = {1, 1, 1};
+						static float radius = 0;
 						vec3 scale = mat4_get_scale(transform_mat);
 						if (scale == vec3{1, 1, 1}) {
-							sphere->radius *= max(max(final_scale.x, final_scale.y), final_scale.z);
-							final_scale = {1, 1, 1};
+							radius = sphere->radius;
 						}
 						else {
-							final_scale = scale;
+							sphere->radius = radius * max(max(scale.x, scale.y), scale.z);
 						}
 						if (!level->entity_modifications[editor->entity_index].collision_component) {
 							level->entity_modifications[editor->entity_index].collision_component = collision_component;
 						}
 					}					
 				}
-				else if (editor->gizmo_mode == gizmo_mode_collision_box_scale) {
+				else if (editor->gizmo_mode == gizmo_mode_collision_box_scale && entity_flags & entity_component_flag_collision) {
 					entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (old_collision_component->shape == collision_shape_box) {
 						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
@@ -1257,14 +1252,13 @@ int main(int argc, char **argv) {
 						mat4 transform_mat = mat4_from_translate(level->entity_transforms[editor->entity_index].translate);
 						ImGuizmo::BeginFrame();
 						ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::LOCAL, (float *)transform_mat);
-						static vec3 final_scale = {1, 1, 1};
+						static vec3 size = {};
 						vec3 scale = mat4_get_scale(transform_mat);
 						if (scale == vec3{1, 1, 1}) {
-							box->size *= scale;
-							final_scale = {1, 1, 1};
+							size = box->size;
 						}
 						else {
-							final_scale = scale;
+							box->size = size * scale;
 						}
 						if (!level->entity_modifications[editor->entity_index].collision_component) {
 							level->entity_modifications[editor->entity_index].collision_component = collision_component;
@@ -1445,7 +1439,7 @@ int main(int argc, char **argv) {
 				addition = addition->next;
 			}
 			if (addition_count > 0) {
-				editor_select_new_entity(editor, level->entity_count + addition_count - 1);
+				editor->entity_index = level->entity_count + addition_count - 1;
 			}
 		}
 
