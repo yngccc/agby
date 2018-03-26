@@ -98,10 +98,8 @@ struct editor {
 
 	undoable undoables[256];
 	uint32 undoable_count;
-	
-	char new_level_file[128];
-	char load_level_file[128];
-	char save_level_file[128];
+
+	char file_name[256];
 };
 
 void initialize_editor(editor *editor, vulkan *vulkan) {
@@ -251,13 +249,6 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		editor->show_entity_collision_shape = false;
 
 		editor->entity_index = UINT32_MAX;
-
-		char new_level_file[128] = "agby_assets\\levels\\level_new.json";
-		char load_level_file[128] = "agby_assets\\levels\\level_load.json";
-		char save_level_file[128] = "agby_assets\\levels\\level_save.json";
-		array_copy(editor->new_level_file, new_level_file);
-		array_copy(editor->load_level_file, load_level_file);
-		array_copy(editor->save_level_file, save_level_file);
 	}
 }
 
@@ -343,7 +334,7 @@ int main(int argc, char **argv) {
 
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
-	level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", read_editor_settings{editor}, true);
+	// level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", read_editor_settings{editor}, true);
 
 	LARGE_INTEGER performance_frequency = {};
 	QueryPerformanceFrequency(&performance_frequency);
@@ -414,229 +405,25 @@ int main(int argc, char **argv) {
 		}
 
 		ImGui::NewFrame();
-		{ // miscs
-			if (ImGui::GetIO().KeyAlt && ImGui::IsKeyPressed(keycode_f4)) {
-				program_running = false;
-			}
-		}
-		{ // move camera
-			if (ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse) {
-				pin_cursor(true);
-				editor->camera_moving = true;
-			}
-			if (ImGui::IsMouseReleased(2)) {
-				pin_cursor(false);
-				editor->camera_moving = false;
-			}
-			if (editor->camera_moving) {
-				if (ImGui::IsKeyDown('W')) {
-					editor->camera.position = editor->camera.position + editor->camera.view * (float)last_frame_time_sec * editor->camera_move_speed;
-				}
-				if (ImGui::IsKeyDown('S')) {
-					editor->camera.position = editor->camera.position - editor->camera.view * (float)last_frame_time_sec * editor->camera_move_speed;
-				}
-				if (ImGui::IsKeyDown('A')) {
-					vec3 move_direction = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
-					editor->camera.position = editor->camera.position - move_direction * (float)last_frame_time_sec * editor->camera_move_speed;
-				}
-				if (ImGui::IsKeyDown('D')) {
-					vec3 move_direction = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
-					editor->camera.position = editor->camera.position + move_direction * (float)last_frame_time_sec * editor->camera_move_speed;
-				}
-				float camera_rotation_speed = 2.0f;
-				float max_pitch = degree_to_radian(75.0f);
-				float yaw = -window.raw_mouse_dx * camera_rotation_speed * ImGui::GetIO().DeltaTime;
-				editor->camera.view = vec3_normalize(mat3_from_mat4(mat4_from_rotate(vec3{0, 1, 0}, yaw)) * editor->camera.view);
-				float pitch = -window.raw_mouse_dy * camera_rotation_speed * ImGui::GetIO().DeltaTime;
-				if (editor->camera_pitch + pitch > -max_pitch && editor->camera_pitch + pitch < max_pitch) {
-					vec3 view_cross_up = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
-					mat4 rotate_mat = mat4_from_rotate(view_cross_up, pitch);
-					editor->camera.view = vec3_normalize(mat3_from_mat4(rotate_mat) * editor->camera.view);
-					editor->camera_pitch += pitch;
-				}
-				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
-			}
-			{
-				static bool camera_move_speed_popup = false;
-				if (!ImGui::GetIO().WantCaptureMouse && editor->camera_moving) {
-					if (ImGui::GetIO().MouseWheel != 0 && ImGui::GetIO().KeyShift) {
-						ImGui::OpenPopup("##camera_speed_popup");
-						camera_move_speed_popup = true;
-					}
-				}
-				if (ImGui::BeginPopupModal("##camera_speed_popup", &camera_move_speed_popup, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-					float min_speed = 0.1f;
-					float max_speed = 100;
-					editor->camera_move_speed += ImGui::GetIO().MouseWheel;
-					ImGui::SliderFloat("camera speed##camera_speed_slider", &editor->camera_move_speed, min_speed, max_speed);
-					ImGui::EndPopup();
-				}
-			}
-		}
-		{ // selection modes, transform mode, gizmo modes
-			ImGui::PushID("selection_transform_gizmo_mode_popup");
-			if ((ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
-				ImGui::OpenPopup("##popup");
-			}
-			if (ImGui::BeginPopup("##popup")) {
-				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "selection mode");
-				ImGui::Separator();
-				if (ImGui::MenuItem("entity##selection_mode_entity", nullptr, editor->selection_mode == selection_mode_entity)) {
-					editor->selection_mode = selection_mode_entity;
-				}
-				if (ImGui::MenuItem("mesh##selection_mode_mesh", nullptr, editor->selection_mode == selection_mode_mesh)) {
-					editor->selection_mode = selection_mode_mesh;
-				}
-				ImGui::Dummy(ImVec2{0, 10});
-				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "transform mode");
-				ImGui::Separator();
-				if (editor->entity_index < level->entity_count) {
-					uint32 entity_flags = level->entity_flags[editor->entity_index];
-					if (ImGui::MenuItem("entity##transform_mode_entity", nullptr, editor->transform_mode == transform_mode_entity)) {
-						editor->transform_mode = transform_mode_entity;
-					}
-					if (entity_flags & entity_component_flag_render) {
-						if (ImGui::MenuItem("render adjustment##transform_mode_render_adjustment", nullptr, editor->transform_mode == transform_mode_render_adjustment)) {
-							editor->transform_mode = transform_mode_render_adjustment;
-						}
-					}
-					ImGui::Dummy(ImVec2{0, 10});
-					ImGui::TextColored(ImVec4{1, 1, 0, 1}, "gizmo mode");
-					ImGui::Separator();					
-					if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor->gizmo_mode == gizmo_mode_transform_translate)) {
-						editor->gizmo_mode = gizmo_mode_transform_translate;
-					}
-					if (ImGui::MenuItem("transform rotate##gizmo_mode_transform_rotate", nullptr, editor->gizmo_mode == gizmo_mode_transform_rotate)) {
-						editor->gizmo_mode = gizmo_mode_transform_rotate;
-					}
-					if (ImGui::MenuItem("transform scale##gizmo_mode_transform_scale", nullptr, editor->gizmo_mode == gizmo_mode_transform_scale)) {
-						editor->gizmo_mode = gizmo_mode_transform_scale;
-					}
-					if (entity_flags & entity_component_flag_light) {
-						entity_light_component *light_component = entity_get_light_component(level, editor->entity_index);
-						if (light_component->light_type == light_type_directional) {
-							if (ImGui::MenuItem("dir light rotate##gizmo_mode_dir_light_rotate", nullptr, editor->gizmo_mode == gizmo_mode_directional_light_rotate)) {
-								editor->gizmo_mode = gizmo_mode_directional_light_rotate;
-							}
-						}
-						else if (light_component->light_type == light_type_point) {
-							if (ImGui::MenuItem("point light translate##gizmo_mode_point_light_translate", nullptr, editor->gizmo_mode == gizmo_mode_point_light_translate)) {
-								editor->gizmo_mode = gizmo_mode_point_light_translate;
-							}
-						}
-					}
-					else if (entity_flags & entity_component_flag_collision) {
-						entity_collision_component *collision_component = entity_get_collision_component(level, editor->entity_index);
-						if (collision_component->shape == collision_shape_sphere) {
-							if (ImGui::MenuItem("sphere scale##gizmo_mode_collision_sphere_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_scale)) {
-								editor->gizmo_mode = gizmo_mode_collision_sphere_scale;
-							}
-						}
-						else if (collision_component->shape == collision_shape_capsule) {
-							if (ImGui::MenuItem("capsule scale##gizmo_mode_collision_capsule_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_scale)) {
-								editor->gizmo_mode = gizmo_mode_collision_capsule_scale;
-							}
-							if (ImGui::MenuItem("capsule translate##gizmo_mode_collision_capsule_translate", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_translate)) {
-								editor->gizmo_mode = gizmo_mode_collision_capsule_translate;
-							}
-						}
-						else if (collision_component->shape == collision_shape_box) {
-							if (ImGui::MenuItem("box scale##gizmo_mode_collision_box_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_box_scale)) {
-								editor->gizmo_mode = gizmo_mode_collision_box_scale;
-							}
-						}
-					}
-				}
-				ImGui::EndPopup();
-			}
-			ImGui::PopID();
-		}
-		{ // selection
-			if (ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyShift && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
-				vec3 window_pos = vec3{ImGui::GetMousePos().x, ImGui::GetIO().DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
-				vec4 viewport = vec4{0, 0, ImGui::GetIO().DisplaySize.x , ImGui::GetIO().DisplaySize.y};
-				vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
-				ray ray = {editor->camera.position, vec3_normalize(mouse_world_position - editor->camera.position), editor->camera.zfar};
-				if (editor->selection_mode == selection_mode_entity) {
-					float entity_min_distance = ray.len;
-					uint32 entity_index = UINT32_MAX;
-					for (uint32 i = 0; i < level->entity_count; i += 1) {
-						if (level->entity_flags[i] & entity_component_flag_render) {
-							entity_render_component *render_component = entity_get_render_component(level, i);
-							if (render_component->model_index < level->model_count) {
-								model *model = &level->models[render_component->model_index];
-								mat4 transform_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(render_component->adjustment_transform);
-								float model_min_distance = ray.len;
-								traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
-									if (node->mesh_index < model->mesh_count) {
-										float distance = 0;
-										if (ray_intersect_mesh(ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {
-											model_min_distance = distance;
-										}
-									}
-								});
-								if (model_min_distance < entity_min_distance) {
-									entity_min_distance = model_min_distance;
-									entity_index = i;
-								}
-							}
-						}
-					}
-					if (editor->entity_index != entity_index) {
-						editor->entity_index = entity_index;
-					}
-				}
-				else if (editor->selection_mode == selection_mode_mesh) {
-				}
-			}
-		}
-		{ // undos
-			if (ImGui::IsKeyReleased('Z') && ImGui::GetIO().KeyCtrl && editor->undoable_count > 0) {
-				undoable *undoable = &editor->undoables[editor->undoable_count--];
-				// switch (undoable->type) {
-				// 	case undoable_type_delete_collision_object: {
-				// 		auto *deleted_object = &undoable->delete_collision_object;
-				// 		for (uint32 i = 0; i < level->entity_count; i += 1) {
-				// 			if (!strcmp(level->entity_infos[i].name, deleted_object->entity_name)) {
-				// 				entity_collision_component *collision_component = entity_get_collision_component(level, i);
-				// 				entity_collision_component *new_cc = memory_arena_allocate<struct entity_collision_component>(&level->frame_memory_arena, 1);
-				// 				if (deleted_object->type == collision_object_type_sphere) {
-				// 					*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena, &deleted_object->sphere, 1);
-				// 				}
-				// 				else if (deleted_object->type == collision_object_type_capsule) {
-				// 					*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena, nullptr, 0, &deleted_object->capsule, 1);
-				// 				}
-				// 				else if (deleted_object->type == collision_object_type_bound) {
-				// 					*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena, nullptr, 0, nullptr, 0, &deleted_object->bound, 1);
-				// 				}
-				// 				else if (deleted_object->type == collision_object_type_triangle) {
-				// 					*new_cc = deep_copy_collision_component(collision_component, &level->frame_memory_arena, nullptr, 0, nullptr, 0, nullptr, 0, &deleted_object->triangle, 1);
-				// 				}
-				// 				level->entity_modifications[i].entity_collision_component = new_cc;
-				// 				break;
-				// 			}
-				// 		}
-				// 	} break;
-				// }
-			}
-		}
 		{ // main menu
-			bool new_level_popup = false;
-			bool load_level_popup = false;
-			bool save_level_popup = false;
 			ImGui::PushID("main_menu_bar");
 			if (ImGui::BeginMainMenuBar()) {
 				editor->menu_bar_height = ImGui::GetWindowHeight();
 				if (ImGui::BeginMenu("File##file")) {
 					ImGui::PushID("file");
 					if (ImGui::MenuItem("New Level##new_level")) {
-						new_level_popup = true;
 					}
-					if (ImGui::MenuItem("Load Level##load_level")) {
-						load_level_popup = true;
+					if (ImGui::MenuItem("Open Level##open_level")) {
+						if (open_file_dialog(editor->file_name, sizeof(editor->file_name))) {
+							set_exe_dir_as_current();
+							level_read_json(level, vulkan, editor->file_name, read_editor_settings{editor}, true);
+						}
 					}
 					if (ImGui::MenuItem("Save Level##save_level")) {
-						save_level_popup = true;
+						if (save_file_dialog(editor->file_name, sizeof(editor->file_name))) {
+							set_exe_dir_as_current();
+							level_write_json(level, editor->file_name, write_editor_settings{editor});
+						}
 					}
 					ImGui::Separator();
 					ImGui::PopID();
@@ -653,59 +440,6 @@ int main(int argc, char **argv) {
 				ImGui::EndMainMenuBar();
 			}
 			ImGui::PopID();
-			if (load_level_popup) {
-				ImGui::OpenPopup("##load_level_popup");
-			}
-			if (ImGui::BeginPopupModal("##load_level_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-				ImGui::InputText("file##load_level_popup_file", editor->load_level_file, sizeof(editor->load_level_file));
-				if (ImGui::Button("load##load_level_popup_load")) {
-					level_read_json(level, vulkan, editor->load_level_file, read_editor_settings{editor}, true);
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("cancel##load_level_popup_cancel")) {
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::EndPopup();
-			}
-			if (save_level_popup) {
-				ImGui::OpenPopup("##save_level_popup");
-			}
-			if (ImGui::BeginPopupModal("##save_level_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-				ImGui::InputText("file##save_level_popup_file", editor->save_level_file, sizeof(editor->save_level_file));
-				if (ImGui::Button("save##save_level_popup_save")) {
-					if (file_exists(editor->save_level_file)) {
-						ImGui::OpenPopup("##save_level_popup_file_exists_popup");
-					}
-					else {
-						level_write_json(level, editor->save_level_file, write_editor_settings{editor});
-						ImGui::CloseCurrentPopup();
-					}
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("cancel##save_level_popup_cancel")) {
-					ImGui::CloseCurrentPopup();
-				}
-				bool close_popup = false;
-				if (ImGui::BeginPopupModal("##save_level_popup_file_exists_popup")) {
-					ImGui::Text("file \"%s\" already exists, replace?", editor->save_level_file);
-					ImGui::Separator();
-					if (ImGui::Button("yes##save_level_popup_file_exists_popup_yes")) {
-						level_write_json(level, editor->save_level_file, write_editor_settings{editor});
-						ImGui::CloseCurrentPopup();
-						close_popup = true;
-					}
-					ImGui::SameLine();
-					if (ImGui::Button("no##save_level_popup_file_exists_popup_no")) {
-						ImGui::CloseCurrentPopup();
-					}
-					ImGui::EndPopup();
-				}
-				if (close_popup) {
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::EndPopup();
-			}
 		}
 		{ // entity window
 			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height});
@@ -1268,7 +1002,184 @@ int main(int argc, char **argv) {
 				}
 			}
 		}
+		{ // miscs
+			if (ImGui::GetIO().KeyAlt && ImGui::IsKeyPressed(keycode_f4)) {
+				program_running = false;
+			}
+		}
+		{ // move camera
+			if (ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse) {
+				pin_cursor(true);
+				editor->camera_moving = true;
+			}
+			if (ImGui::IsMouseReleased(2)) {
+				pin_cursor(false);
+				editor->camera_moving = false;
+			}
+			if (editor->camera_moving) {
+				if (ImGui::IsKeyDown('W')) {
+					editor->camera.position = editor->camera.position + editor->camera.view * (float)last_frame_time_sec * editor->camera_move_speed;
+				}
+				if (ImGui::IsKeyDown('S')) {
+					editor->camera.position = editor->camera.position - editor->camera.view * (float)last_frame_time_sec * editor->camera_move_speed;
+				}
+				if (ImGui::IsKeyDown('A')) {
+					vec3 move_direction = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
+					editor->camera.position = editor->camera.position - move_direction * (float)last_frame_time_sec * editor->camera_move_speed;
+				}
+				if (ImGui::IsKeyDown('D')) {
+					vec3 move_direction = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
+					editor->camera.position = editor->camera.position + move_direction * (float)last_frame_time_sec * editor->camera_move_speed;
+				}
+				float camera_rotation_speed = 2.0f;
+				float max_pitch = degree_to_radian(75.0f);
+				float yaw = -window.raw_mouse_dx * camera_rotation_speed * ImGui::GetIO().DeltaTime;
+				editor->camera.view = vec3_normalize(mat3_from_mat4(mat4_from_rotate(vec3{0, 1, 0}, yaw)) * editor->camera.view);
+				float pitch = -window.raw_mouse_dy * camera_rotation_speed * ImGui::GetIO().DeltaTime;
+				if (editor->camera_pitch + pitch > -max_pitch && editor->camera_pitch + pitch < max_pitch) {
+					vec3 view_cross_up = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
+					mat4 rotate_mat = mat4_from_rotate(view_cross_up, pitch);
+					editor->camera.view = vec3_normalize(mat3_from_mat4(rotate_mat) * editor->camera.view);
+					editor->camera_pitch += pitch;
+				}
+				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
+			}
+			{
+				static bool camera_move_speed_popup = false;
+				if (!ImGui::GetIO().WantCaptureMouse && editor->camera_moving) {
+					if (ImGui::GetIO().MouseWheel != 0 && ImGui::GetIO().KeyShift) {
+						ImGui::OpenPopup("##camera_speed_popup");
+						camera_move_speed_popup = true;
+					}
+				}
+				if (ImGui::BeginPopupModal("##camera_speed_popup", &camera_move_speed_popup, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+					float min_speed = 0.1f;
+					float max_speed = 100;
+					editor->camera_move_speed += ImGui::GetIO().MouseWheel;
+					ImGui::SliderFloat("camera speed##camera_speed_slider", &editor->camera_move_speed, min_speed, max_speed);
+					ImGui::EndPopup();
+				}
+			}
+		}
+		{ // selection modes, transform mode, gizmo modes
+			ImGui::PushID("selection_transform_gizmo_mode_popup");
+			if ((ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
+				ImGui::OpenPopup("##popup");
+			}
+			if (ImGui::BeginPopup("##popup")) {
+				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "selection mode");
+				ImGui::Separator();
+				if (ImGui::MenuItem("entity##selection_mode_entity", nullptr, editor->selection_mode == selection_mode_entity)) {
+					editor->selection_mode = selection_mode_entity;
+				}
+				if (ImGui::MenuItem("mesh##selection_mode_mesh", nullptr, editor->selection_mode == selection_mode_mesh)) {
+					editor->selection_mode = selection_mode_mesh;
+				}
+				ImGui::Dummy(ImVec2{0, 10});
+				ImGui::TextColored(ImVec4{1, 1, 0, 1}, "transform mode");
+				ImGui::Separator();
+				if (editor->entity_index < level->entity_count) {
+					uint32 entity_flags = level->entity_flags[editor->entity_index];
+					if (ImGui::MenuItem("entity##transform_mode_entity", nullptr, editor->transform_mode == transform_mode_entity)) {
+						editor->transform_mode = transform_mode_entity;
+					}
+					if (entity_flags & entity_component_flag_render) {
+						if (ImGui::MenuItem("render adjustment##transform_mode_render_adjustment", nullptr, editor->transform_mode == transform_mode_render_adjustment)) {
+							editor->transform_mode = transform_mode_render_adjustment;
+						}
+					}
+					ImGui::Dummy(ImVec2{0, 10});
+					ImGui::TextColored(ImVec4{1, 1, 0, 1}, "gizmo mode");
+					ImGui::Separator();					
+					if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor->gizmo_mode == gizmo_mode_transform_translate)) {
+						editor->gizmo_mode = gizmo_mode_transform_translate;
+					}
+					if (ImGui::MenuItem("transform rotate##gizmo_mode_transform_rotate", nullptr, editor->gizmo_mode == gizmo_mode_transform_rotate)) {
+						editor->gizmo_mode = gizmo_mode_transform_rotate;
+					}
+					if (ImGui::MenuItem("transform scale##gizmo_mode_transform_scale", nullptr, editor->gizmo_mode == gizmo_mode_transform_scale)) {
+						editor->gizmo_mode = gizmo_mode_transform_scale;
+					}
+					if (entity_flags & entity_component_flag_light) {
+						entity_light_component *light_component = entity_get_light_component(level, editor->entity_index);
+						if (light_component->light_type == light_type_directional) {
+							if (ImGui::MenuItem("dir light rotate##gizmo_mode_dir_light_rotate", nullptr, editor->gizmo_mode == gizmo_mode_directional_light_rotate)) {
+								editor->gizmo_mode = gizmo_mode_directional_light_rotate;
+							}
+						}
+						else if (light_component->light_type == light_type_point) {
+							if (ImGui::MenuItem("point light translate##gizmo_mode_point_light_translate", nullptr, editor->gizmo_mode == gizmo_mode_point_light_translate)) {
+								editor->gizmo_mode = gizmo_mode_point_light_translate;
+							}
+						}
+					}
+					else if (entity_flags & entity_component_flag_collision) {
+						entity_collision_component *collision_component = entity_get_collision_component(level, editor->entity_index);
+						if (collision_component->shape == collision_shape_sphere) {
+							if (ImGui::MenuItem("sphere scale##gizmo_mode_collision_sphere_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_sphere_scale)) {
+								editor->gizmo_mode = gizmo_mode_collision_sphere_scale;
+							}
+						}
+						else if (collision_component->shape == collision_shape_capsule) {
+							if (ImGui::MenuItem("capsule scale##gizmo_mode_collision_capsule_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_scale)) {
+								editor->gizmo_mode = gizmo_mode_collision_capsule_scale;
+							}
+							if (ImGui::MenuItem("capsule translate##gizmo_mode_collision_capsule_translate", nullptr, editor->gizmo_mode == gizmo_mode_collision_capsule_translate)) {
+								editor->gizmo_mode = gizmo_mode_collision_capsule_translate;
+							}
+						}
+						else if (collision_component->shape == collision_shape_box) {
+							if (ImGui::MenuItem("box scale##gizmo_mode_collision_box_scale", nullptr, editor->gizmo_mode == gizmo_mode_collision_box_scale)) {
+								editor->gizmo_mode = gizmo_mode_collision_box_scale;
+							}
+						}
+					}
+				}
+				ImGui::EndPopup();
+			}
+			ImGui::PopID();
+		}
+		{ // selection
+			if (ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyShift && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
+				vec3 window_pos = vec3{ImGui::GetMousePos().x, ImGui::GetIO().DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
+				vec4 viewport = vec4{0, 0, ImGui::GetIO().DisplaySize.x , ImGui::GetIO().DisplaySize.y};
+				vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
+				ray ray = {editor->camera.position, vec3_normalize(mouse_world_position - editor->camera.position), editor->camera.zfar};
+				if (editor->selection_mode == selection_mode_entity) {
+					float entity_min_distance = ray.len;
+					uint32 entity_index = UINT32_MAX;
+					for (uint32 i = 0; i < level->entity_count; i += 1) {
+						if (level->entity_flags[i] & entity_component_flag_render) {
+							entity_render_component *render_component = entity_get_render_component(level, i);
+							if (render_component->model_index < level->model_count) {
+								model *model = &level->models[render_component->model_index];
+								mat4 transform_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(render_component->adjustment_transform);
+								float model_min_distance = ray.len;
+								traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
+									if (node->mesh_index < model->mesh_count) {
+										float distance = 0;
+										if (ray_intersect_mesh(ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {
+											model_min_distance = distance;
+										}
+									}
+								});
+								if (model_min_distance < entity_min_distance) {
+									entity_min_distance = model_min_distance;
+									entity_index = i;
+								}
+							}
+						}
+					}
+					if (editor->entity_index != entity_index) {
+						editor->entity_index = entity_index;
+					}
+				}
+				else if (editor->selection_mode == selection_mode_mesh) {
+				}
+			}
+		}
 		ImGui::Render();
+
 		auto generate_render_data = [&] {
 			editor->render_data = {};
 			{ // lines

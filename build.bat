@@ -17,7 +17,7 @@ pushd "%~dp0\build"
 
 set flags=/nologo /Od /Z7 /MD /EHsc /W3 /GS /sdl /FC /D_CRT_SECURE_NO_WARNINGS /D "_ITERATOR_DEBUG_LEVEL=0"
 set dirs=/I %VULKAN_SDK%\include /link /LIBPATH:..\vendor\lib\windows
-set libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib
+set libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib Comdlg32.lib
 set bullet3_libs=BulletCollision.lib BulletDynamics.lib BulletInverseDynamics.lib BulletInverseDynamicsUtils.lib BulletSoftBody.lib LinearMath.lib Bullet3Common.lib Bullet3Collision.lib Bullet3Dynamics.lib Bullet3Geometry.lib
 set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
 

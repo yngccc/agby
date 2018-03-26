@@ -280,7 +280,6 @@ struct level {
 	uint32 skybox_index;
 
 	level_render_data render_data;
-	bool show_frame_stats;
 
 	memory_arena main_thread_frame_memory_arena;
 	memory_arena render_thread_frame_memory_arena;
@@ -288,7 +287,7 @@ struct level {
 	uint32 entity_components_memory_arena_index;
 	memory_arena assets_memory_arena;
 
-	char json_file[128];
+	char json_file[256];
 };
 
 void initialize_level(level *level, vulkan *vulkan) {
@@ -313,14 +312,6 @@ void initialize_level(level *level, vulkan *vulkan) {
 	level->assets_memory_arena.capacity = m_megabytes(64);
 	level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
 	m_assert(level->assets_memory_arena.memory);
-
-	level->model_capacity = 1024;
-	level->model_count = 0;
-	level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
-
-	level->skybox_capacity = 16;
-	level->skybox_count = 0;
-	level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
 }
 
 entity_render_component *entity_get_render_component(level *level, uint32 entity_index) {
@@ -828,6 +819,41 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	m_assert(open_file_mapping(level_json_file, &level_json_file_mapping));
 	nlohmann::json json = nlohmann::json::parse(level_json_file_mapping.ptr, level_json_file_mapping.ptr + level_json_file_mapping.size);
 	close_file_mapping(level_json_file_mapping);
+	{
+		level->render_data = {};
+		level->entity_components_memory_arenas[0].size = 0;
+		level->entity_components_memory_arenas[1].size = 0;
+		level->entity_components_memory_arena_index = 0;
+		level->assets_memory_arena.size = 0;
+		snprintf(level->json_file, sizeof(level->json_file), "%s", level_json_file);
+
+		for (uint32 i = 0; i < level->model_count; i += 1) {
+			model *model = &level->models[i];
+			for (uint32 i = 0; i < model->material_count; i += 1) {
+				vkFreeDescriptorSets(vulkan->device.device, vulkan->descriptors.pool, 1, &model->materials[i].textures_descriptor_set);
+			}
+			for (uint32 i = 0; i < model->image_count; i += 1) {
+				vkDestroyImageView(vulkan->device.device, model->images[i].image.view, nullptr);
+				vkDestroyImage(vulkan->device.device, model->images[i].image.image, nullptr);
+			}
+		}
+		level->model_count = 0;
+		level->model_capacity = 1024;
+		level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
+
+		for (uint32 i = 0; i < level->skybox_count; i += 1) {
+			skybox *skybox = &level->skyboxes[i];
+			vkFreeDescriptorSets(vulkan->device.device, vulkan->descriptors.pool, 1, &skybox->descriptor_set);
+			vkDestroyImageView(vulkan->device.device, skybox->cubemap_image.view, nullptr);
+			vkDestroyImage(vulkan->device.device, skybox->cubemap_image.image, nullptr);
+		}
+		level->skybox_count = 0;
+		level->skybox_capacity = 16;
+		level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
+
+		vulkan->buffers.level_vertex_buffer_offset = 0;
+		vulkan->memories.level_images_memory.size = 0;
+	}
 	{ // models, skyboxes
 		std::vector<std::string> model_gpk_files = json["models"];
 		for (auto &m : model_gpk_files) {
@@ -863,14 +889,24 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 
 		level->entity_components_memory_arena_index = 0;
 		memory_arena *memory_arena = &level->entity_components_memory_arenas[0];
-		level->entity_flags = allocate_memory<uint32>(memory_arena, level->entity_count);
-		level->entity_infos = allocate_memory<entity_info>(memory_arena, level->entity_count);
-		level->entity_transforms = allocate_memory<transform>(memory_arena, level->entity_count);
-		level->entity_modifications = allocate_memory<entity_modification>(memory_arena, level->entity_count);
-		level->render_components = allocate_memory<entity_render_component>(memory_arena, level->render_component_count);
-		level->collision_components = allocate_memory<entity_collision_component>(memory_arena, level->collision_component_count);
-		level->physics_components = allocate_memory<entity_physics_component>(memory_arena, level->physics_component_count);
-		level->light_components = allocate_memory<entity_light_component>(memory_arena, level->light_component_count);
+		if (level->entity_count > 0) {
+			level->entity_flags = allocate_memory<uint32>(memory_arena, level->entity_count);
+			level->entity_infos = allocate_memory<entity_info>(memory_arena, level->entity_count);
+			level->entity_transforms = allocate_memory<transform>(memory_arena, level->entity_count);
+			level->entity_modifications = allocate_memory<entity_modification>(memory_arena, level->entity_count);
+		}
+		if (level->render_component_count > 0) {
+			level->render_components = allocate_memory<entity_render_component>(memory_arena, level->render_component_count);
+		}
+		if (level->collision_component_count > 0) {
+			level->collision_components = allocate_memory<entity_collision_component>(memory_arena, level->collision_component_count);
+		}
+		if (level->physics_component_count > 0) {
+			level->physics_components = allocate_memory<entity_physics_component>(memory_arena, level->physics_component_count);
+		}
+		if (level->light_component_count > 0) {
+			level->light_components = allocate_memory<entity_light_component>(memory_arena, level->light_component_count);
+		}
 
 		auto read_entity_info = [](const nlohmann::json &json, entity_info *info) {
 			std::string name = json["name"];
@@ -1040,16 +1076,18 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	}
   { // player
 		level->player_entity_index = UINT32_MAX;
-		std::string player_entity_name = json["player"]["entity_name"];
-		for (uint32 i = 0; i < level->entity_count; i += 1) {
-			if (!strcmp(player_entity_name.c_str(), level->entity_infos[i].name)) {
-				level->player_entity_index = i;
-				break;
+		auto &player = json["player"];
+		auto entity_name = player.find("entity_name");
+		if (entity_name != player.end()) {
+			std::string player_entity_name = *entity_name;
+			for (uint32 i = 0; i < level->entity_count; i += 1) {
+				if (!strcmp(player_entity_name.c_str(), level->entity_infos[i].name)) {
+					level->player_entity_index = i;
+					break;
+				}
 			}
 		}
-		m_assert(level->player_entity_index != UINT32_MAX);
 	}
-	snprintf(level->json_file, sizeof(level->json_file), "%s", level_json_file);
 	extra_read(json);
 }
 
@@ -1058,10 +1096,12 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 	nlohmann::json json;
 	{ // models, skyboxes
 		auto &models = json["models"];
+		models = nlohmann::json::array();
 		for (uint32 i = 0; i < level->model_count; i += 1) {
 			models.push_back(level->models[i].gpk_file);
 		}
 		auto &skyboxes = json["skyboxes"];
+		skyboxes = nlohmann::json::array();
 		for (uint32 i = 0; i < level->skybox_count; i += 1) {
 			skyboxes.push_back(level->skyboxes[i].gpk_file);
 		}
@@ -1069,6 +1109,7 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 	}
 	{ // entities
 		auto &entities = json["entities"];
+		entities = nlohmann::json::array();
 		for (uint32 i = 0; i < level->entity_count; i += 1) {
 			uint32 &flags = level->entity_flags[i];
 			entity_info &info = level->entity_infos[i];
@@ -1154,9 +1195,13 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 		}
 	}
 	{ // player
-		json["player"] = {
-			{"entity_name", level->entity_infos[level->player_entity_index].name}
-		};
+		auto &player = json["player"];
+		player = nlohmann::json::object();
+		if (level->player_entity_index < level->entity_count) {
+			player = {
+				{"entity_name", level->entity_infos[level->player_entity_index].name}
+			};
+		}
 	}
 	extra_write(json);
 	std::string json_string = json.dump(2);

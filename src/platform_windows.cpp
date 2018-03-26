@@ -9,11 +9,7 @@
 #include <windows.h>
 #include <wtsapi32.h>
 #include <shellscalingapi.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <mswsock.h>
-#include <io.h>
-#include <fcntl.h>
+#include <commdlg.h>
 #undef far
 #undef near
 
@@ -61,6 +57,11 @@ void console(const char *fmt, ...) {
 	int n2 = (n1 < (int)sizeof(buffer) - 1) ? n1 : ((int)sizeof(buffer) - 1);
 	DWORD n3;
 	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), buffer, n2, &n3, nullptr);
+}
+
+bool get_current_dir(char *buffer, uint32 buffer_size) {
+	DWORD d = GetCurrentDirectory(buffer_size, buffer);
+	return d > 0;
 }
 
 bool set_exe_dir_as_current() {
@@ -195,6 +196,26 @@ void close_file_mapping(file_mapping file_mapping) {
 	UnmapViewOfFile(file_mapping.ptr);
 	CloseHandle(file_mapping.mapping_handle);
 	CloseHandle(file_mapping.file_handle);
+}
+
+bool open_file_dialog(char *file_name_buffer, uint32 file_name_buffer_size) {
+	memset(file_name_buffer, 0, file_name_buffer_size);
+	OPENFILENAME open_file_name = {};
+	open_file_name.lStructSize = sizeof(open_file_name);
+	open_file_name.lpstrFile = file_name_buffer;
+	open_file_name.nMaxFile = file_name_buffer_size;
+	BOOL b = GetOpenFileNameA(&open_file_name);
+	return b;
+}
+
+bool save_file_dialog(char *file_name_buffer, uint32 file_name_buffer_size) {
+	memset(file_name_buffer, 0, file_name_buffer_size);
+	OPENFILENAME open_file_name = {};
+	open_file_name.lStructSize = sizeof(open_file_name);
+	open_file_name.lpstrFile = file_name_buffer;
+	open_file_name.nMaxFile = file_name_buffer_size;
+	BOOL b = GetSaveFileNameA(&open_file_name);
+	return b;
 }
 
 enum window_message_type {
