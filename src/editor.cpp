@@ -72,10 +72,10 @@ struct editor {
 	uint32 font_atlas_width;
 	uint32 font_atlas_height;
 
-	uint32 bound_vertices_level_vertex_buffer_offset;
-	uint32 sphere_vertices_level_vertex_buffer_offset;
-	uint32 cylinder_vertices_level_vertex_buffer_offset;
-	uint32 capsule_vertices_level_vertex_buffer_offset;
+	uint32 bound_vertices_common_vertex_buffer_offset;
+	uint32 sphere_vertices_common_vertex_buffer_offset;
+	uint32 cylinder_vertices_common_vertex_buffer_offset;
+	uint32 capsule_vertices_common_vertex_buffer_offset;
 
 	editor_render_data render_data;
 	
@@ -219,23 +219,23 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
 	}
 	{ // geometry vertices
-		round_up(&vulkan->buffers.level_vertex_buffer_offset, 12u);
+		round_up(&vulkan->buffers.common_vertex_buffer_offset, 12u);
 
-		editor->bound_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, bound_vertices, sizeof(bound_vertices));
-		vulkan->buffers.level_vertex_buffer_offset += sizeof(bound_vertices);
+		editor->bound_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, bound_vertices, sizeof(bound_vertices));
+		vulkan->buffers.common_vertex_buffer_offset += sizeof(bound_vertices);
 
-		editor->sphere_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, sphere_vertices, sizeof(sphere_vertices));
-		vulkan->buffers.level_vertex_buffer_offset += sizeof(sphere_vertices);
+		editor->sphere_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, sphere_vertices, sizeof(sphere_vertices));
+		vulkan->buffers.common_vertex_buffer_offset += sizeof(sphere_vertices);
 
-		editor->cylinder_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, cylinder_vertices, sizeof(cylinder_vertices));
-		vulkan->buffers.level_vertex_buffer_offset += sizeof(cylinder_vertices);
+		editor->cylinder_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, cylinder_vertices, sizeof(cylinder_vertices));
+		vulkan->buffers.common_vertex_buffer_offset += sizeof(cylinder_vertices);
 
-		editor->capsule_vertices_level_vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
-		vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, vulkan->buffers.level_vertex_buffer_offset, capsule_vertices, sizeof(capsule_vertices));
-		vulkan->buffers.level_vertex_buffer_offset += sizeof(capsule_vertices);
+		editor->capsule_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, &vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, capsule_vertices, sizeof(capsule_vertices));
+		vulkan->buffers.common_vertex_buffer_offset += sizeof(capsule_vertices);
 	}
 	{ // misc
 		editor->camera.position = vec3{4, 8, 8};
@@ -1093,9 +1093,10 @@ int main(int argc, char **argv) {
 				imgui_render_memory(entity_components_memory_arena->size, entity_components_memory_arena->capacity, entity_components_memory_arena->name);
 				imgui_render_memory(level->assets_memory_arena.size, level->assets_memory_arena.capacity, level->assets_memory_arena.name);
 				ImGui::Text("Vulkan Memories");
-				imgui_render_memory(vulkan->memories.common_images_memory.size, vulkan->memories.common_images_memory.capacity, "common images");
-				imgui_render_memory(vulkan->memories.level_images_memory.size, vulkan->memories.level_images_memory.capacity, "level images");
-				imgui_render_memory(vulkan->buffers.level_vertex_buffer_offset, vulkan->buffers.level_vertex_buffer.capacity, "level vertices");
+				imgui_render_memory(vulkan->memories.common_images_memory.size, vulkan->memories.common_images_memory.capacity, "common images memory");
+				imgui_render_memory(vulkan->buffers.common_vertex_buffer_offset, vulkan->buffers.common_vertex_buffer.capacity, "common vertices memory");
+				imgui_render_memory(vulkan->memories.level_images_memory.size, vulkan->memories.level_images_memory.capacity, "level images memory");
+				imgui_render_memory(vulkan->buffers.level_vertex_buffer_offset, vulkan->buffers.level_vertex_buffer.capacity, "level vertices memory");
 				imgui_render_memory(vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].capacity, "frame vertices");
 				imgui_render_memory(vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], vulkan->buffers.frame_uniform_buffers[vulkan->frame_index].capacity, "frame uniforms");
 			}
@@ -1369,7 +1370,7 @@ int main(int argc, char **argv) {
 			vkCmdDraw(cmd_buffer, editor->render_data.lines_vertex_count, 1, editor->render_data.lines_frame_vertex_buffer_offset / 16, 0);
 
 			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.pipeline);
-			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.level_vertex_buffer.buffer, &vertices_offset);
+			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.common_vertex_buffer.buffer, &vertices_offset);
 			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
 			struct collision_object_push_consts {
 				mat4 transform;
@@ -1378,25 +1379,25 @@ int main(int argc, char **argv) {
 			for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
 				collision_object_push_consts push_consts = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color};
 				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
 			}
 			for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
 				collision_object_push_consts cylinder_push_consts = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color};
 				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(cylinder_push_consts), &cylinder_push_consts);
-				vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, editor->cylinder_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+				vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, editor->cylinder_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
 
 				collision_object_push_consts sphere_1_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[0], editor->render_data.collision_capsules[i].color};
 				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_1_push_consts), &sphere_1_push_consts);
-				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
 
 				collision_object_push_consts sphere_2_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[1], editor->render_data.collision_capsules[i].color};
 				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_2_push_consts), &sphere_2_push_consts);
-				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+				vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
 			}
 			for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
 				collision_object_push_consts push_consts = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color};
 				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-				vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, editor->bound_vertices_level_vertex_buffer_offset / sizeof(vec3), 0);
+				vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, editor->bound_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
 			}
 		};
    	auto extra_swap_chain_render_commands = [&] {

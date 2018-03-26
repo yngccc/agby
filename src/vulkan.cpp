@@ -187,6 +187,7 @@ struct vulkan_memory {
 
 struct vulkan_memories {
 	vulkan_memory common_images_memory;
+	vulkan_memory common_vertex_buffer_memory;
 	vulkan_memory level_images_memory;
 	vulkan_memory level_vertex_buffer_memory;
 	vulkan_memory frame_vertex_buffer_memories[vulkan_buffering_count];
@@ -199,6 +200,9 @@ struct vulkan_buffer {
 };
 
 struct vulkan_buffers {
+	vulkan_buffer common_vertex_buffer;
+	uint32 common_vertex_buffer_offset;
+
 	vulkan_buffer level_vertex_buffer;
 	uint32 level_vertex_buffer_offset;
 
@@ -1204,6 +1208,19 @@ void initialize_vulkan_memories(vulkan *vulkan) {
 		m_assert(find_memory_type_index(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memory_type_index));
 		m_assert(allocate_memory_type(memory_type_index, m_megabytes(16), &vulkan->memories.common_images_memory));
 	}
+	{ // common vertex buffer
+		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+		buffer_create_info.size = m_megabytes(4);
+		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		VkBuffer vulkan_buffer = {};
+		m_vk_assert(vkCreateBuffer(vulkan->device.device, &buffer_create_info, nullptr, &vulkan_buffer));
+		VkMemoryRequirements requirements = {};
+		vkGetBufferMemoryRequirements(vulkan->device.device, vulkan_buffer, &requirements);
+		vkDestroyBuffer(vulkan->device.device, vulkan_buffer, nullptr);
+		uint32 memory_type_index = 0;
+		m_assert(find_memory_type_index(requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memory_type_index));
+		m_assert(allocate_memory_type(memory_type_index, requirements.size, &vulkan->memories.common_vertex_buffer_memory));
+	}
 	{ // level images
 		VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_create_info.imageType = VK_IMAGE_TYPE_2D;
@@ -1314,12 +1331,22 @@ void vulkan_buffer_transfer(vulkan *vulkan, vulkan_buffer *vulkan_buffer, uint64
 }
 
 void initialize_vulkan_buffers(vulkan *vulkan) {
-	VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-	buffer_create_info.size = vulkan->memories.level_vertex_buffer_memory.capacity;
-	buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	vulkan->buffers.level_vertex_buffer = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.level_vertex_buffer_memory, buffer_create_info);
-	vulkan->buffers.level_vertex_buffer_offset = 0;
+	{
+		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+		buffer_create_info.size = vulkan->memories.common_vertex_buffer_memory.capacity;
+		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		vulkan->buffers.common_vertex_buffer = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.common_vertex_buffer_memory, buffer_create_info);
+		vulkan->buffers.common_vertex_buffer_offset = 0;
+	}
+	{
+		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+		buffer_create_info.size = vulkan->memories.level_vertex_buffer_memory.capacity;
+		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		vulkan->buffers.level_vertex_buffer = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.level_vertex_buffer_memory, buffer_create_info);
+		vulkan->buffers.level_vertex_buffer_offset = 0;
+	}
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
+		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 		buffer_create_info.size = vulkan->memories.frame_vertex_buffer_memories[i].capacity;
 		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 		vulkan->buffers.frame_vertex_buffers[i] = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.frame_vertex_buffer_memories[i], buffer_create_info);
@@ -1327,6 +1354,7 @@ void initialize_vulkan_buffers(vulkan *vulkan) {
 		vulkan->buffers.frame_vertex_buffer_offsets[i] = 0;
 	}
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
+		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 		buffer_create_info.size = vulkan->memories.frame_uniform_buffer_memories[i].capacity;
 		buffer_create_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 		vulkan->buffers.frame_uniform_buffers[i] = allocate_vulkan_buffer(&vulkan->device, &vulkan->memories.frame_uniform_buffer_memories[i], buffer_create_info);

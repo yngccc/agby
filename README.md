@@ -1,4 +1,3 @@
-# C++/Vulkan Game Engine
 
 <img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_0.png" width="400"> <img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_1.png" width="400">
 <img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_2.png" width="400"> <img src="https://github.com/yngccc/agby/blob/master/misc/screenshot_3.png" width="400">
@@ -8,4 +7,4 @@
 * Run build.bat
 
 # Dependencies
-* Vulkan SDK
+* Vulkan SD# C++/Vulkan Game Engine
