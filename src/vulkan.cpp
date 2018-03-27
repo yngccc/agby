@@ -416,7 +416,7 @@ bool vulkan_allocate_image(vulkan_device *vulkan_device, VkImageCreateInfo image
 
 void initialize_vulkan_device(vulkan_device *vulkan_device) {
 	bool enable_validation_layer = true;
-	bool enable_renderdoc_layer = false;
+	bool enable_renderdoc_layer = true;
 	bool enable_nsight_layer = false;
 
 	struct memory_arena memory_arena = {};

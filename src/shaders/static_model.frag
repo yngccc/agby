@@ -41,6 +41,8 @@ layout(push_constant) uniform push_constant {
   uint shadow_map_index;
 } pc;
 
+const float PI = 3.14159265359;
+
 float shadow_mapping() {
   vec3 shadow_map_coord = shadow_map_coord_in.xyz / shadow_map_coord_in.w;
   shadow_map_coord.xy = shadow_map_coord.xy * 0.5 + 0.5;
@@ -73,44 +75,42 @@ vec2 parallax_mapping(vec2 uv, vec3 view) {
   float before_height = texture(height_map, prev_uv).r - current_layer_height + layer_height;
   float weight = after_height / (after_height - before_height);
   vec2 final_uv = prev_uv * weight + current_uv * (1 - weight);
-  return final_uv;  
+  return final_uv;
 } 
 
-vec3 cook_torrance_brdf(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color, vec3 diffuse, float metallic, float roughness) {
-  const float PI = 3.14159265359;
-  vec3 half_way = normalize(view + light_dir);
-  float distribution_ggx = 0;
+vec3 get_light_irradiance(vec3 normal, vec3 view, vec3 light_dir, vec3 light_color, vec3 diffuse, float metallic, float roughness) {
+  vec3 half_way = normalize(light_dir + view);
+  float distribution_ggx;
   {
     float a = roughness * roughness;
     float a2 = a * a;
     float n_dot_h = max(dot(normal, half_way), 0);
     float n_dot_h2 = n_dot_h * n_dot_h;
-    float nom = a2;
+    float num = a2;
     float denom = n_dot_h2 * (a2 - 1) + 1;
     denom = PI * denom * denom;
-    distribution_ggx = nom / denom;
+    distribution_ggx = num / denom;
   }
-  float geometry_smith = 0;
+  float geometry_smith;
   {
-    float r = roughness + 1;
-    float k = r * r / 8;
     float n_dot_l = max(dot(normal, light_dir), 0);
     float n_dot_v = max(dot(normal, view), 0);
+    float r = roughness + 1;
+    float k = r * r / 8;
     float ggx1  = n_dot_l / (n_dot_l * (1 - k) + k);
     float ggx2  = n_dot_v / (n_dot_v * (1 - k) + k);
     geometry_smith = ggx1 * ggx2;
   }
-  vec3 fresnel_schlick = vec3(0, 0, 0); 
+  vec3 fresnel_schlick;
   {
     vec3 F0 = mix(vec3(0.04), diffuse, metallic);
     float cos_theta = max(dot(half_way, view), 0);
     fresnel_schlick = F0 + (1 - F0) * pow(1 - cos_theta, 5);
   }
-  vec3 ks = fresnel_schlick;
-  vec3 kd = (vec3(1) - ks) * (1 - metallic);
-  vec3 nom = distribution_ggx * geometry_smith * fresnel_schlick;
-  float denom = 4 * max(dot(normal, view), 0) * max(dot(normal, light_dir), 0) + 0.001;
-  vec3 specular = nom / denom;
+  vec3 kd = (vec3(1, 1, 1) - fresnel_schlick) * (1 - metallic);
+  vec3 num = distribution_ggx * geometry_smith * fresnel_schlick;
+  float denom = max(4 * max(dot(normal, view), 0) * max(dot(normal, light_dir), 0), 0.001);
+  vec3 specular = num / denom;
   return (kd * diffuse / PI + specular) * light_color * max(dot(normal, light_dir), 0);
 }
 
@@ -125,14 +125,14 @@ void main() {
   float metallic = texture(metallic_map, uv).x * primitive.metallic_factor;  
   float roughness = texture(roughness_map, uv).x * primitive.roughness_factor;
 
-  vec3 brdf = diffuse * level.ambient_light_color.xyz;
-  brdf += cook_torrance_brdf(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness);
+  vec3 irradiance = diffuse * level.ambient_light_color.xyz;
+  irradiance += get_light_irradiance(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness);
   // brdf *= shadow_mapping();
 
-  float attenuation = level.point_light_position.w;
-  vec3 direction = tbn_point_light_in - tbn_position_in;
-  vec3 light_color = level.point_light_color.xyz / pow(length(direction), attenuation);
-  brdf += cook_torrance_brdf(normal, view, normalize(direction), light_color, diffuse, metallic, roughness);
+  // float attenuation = level.point_light_position.w;
+  // vec3 direction = tbn_point_light_in - tbn_position_in;
+  // vec3 light_color = level.point_light_color.xyz / pow(length(direction), attenuation);
+  // brdf += cook_torrance_brdf(normal, view, normalize(direction), light_color, diffuse, metallic, roughness);
 
-  color_out = vec4(brdf, 1);
+  color_out = vec4(irradiance, 1);
 }

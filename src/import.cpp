@@ -383,8 +383,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			gpk_model_materials[i].diffuse_factor = {0.8f, 0.8f, 0.8f, 1.0f};
 			gpk_model_materials[i].metallic_image_index = UINT32_MAX;
 			gpk_model_materials[i].roughness_image_index = UINT32_MAX;
-			gpk_model_materials[i].metallic_factor = 0.5f;
-			gpk_model_materials[i].roughness_factor = 0.5f;
+			gpk_model_materials[i].metallic_factor = 0.1f;
+			gpk_model_materials[i].roughness_factor = 0.8f;
 			gpk_model_materials[i].normal_image_index = UINT32_MAX;
 		}
 		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
