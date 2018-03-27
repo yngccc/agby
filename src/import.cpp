@@ -45,7 +45,6 @@ void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
 
 enum compress_image_type {
 	compress_image_type_color,
-	compress_image_type_color_high_quality,
 	compress_image_type_grayscale,
 	compress_image_type_normal_map
 };
@@ -68,9 +67,6 @@ void compress_image(compress_image_type image_type, uint8 *data, uint32 width, u
 	m_assert(input_options.setMipmapData(data, width, height));
 	if (image_type == compress_image_type_color) {
 		compression_options.setFormat(Format_BC1);
-	}
-	else if (image_type == compress_image_type_color_high_quality) {
-		compression_options.setFormat(Format_BC7);
 	}
 	else if (image_type == compress_image_type_grayscale) {
 		input_options.setGamma(1.0f, 1.0f);
