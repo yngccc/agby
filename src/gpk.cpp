@@ -146,6 +146,12 @@ struct gpk_skybox {
 	uint32 cubemap_offset;
 	uint32 cubemap_width;
 	uint32 cubemap_height;
+	uint32 cubemap_mipmap_count;
+	uint32 cubemap_layer_count;
+	uint32 cubemap_size;
+	uint32 cubemap_format;
+	uint32 cubemap_format_block_dimension;
+	uint32 cubemap_format_block_size;
 };
 
 struct gpk_terrain {

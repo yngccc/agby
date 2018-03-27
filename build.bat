@@ -30,7 +30,7 @@ rem codegen ..\src\common.cpp ..\src\math.cpp ..\src\vulkan.cpp ..\src\assets.cp
 
 set compile_editor=start /b cl ..\src\editor.cpp %flags% %dirs% %libs% %bullet3_libs%
 set compile_game=start /b cl ..\src\game.cpp %flags% %dirs% %libs% %bullet3_libs%
-set compile_import=start /b cl ..\src\import.cpp %flags% %dirs% %libs% nvtt.lib
+set compile_import=start /b cl ..\src\import.cpp %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib
 set compile_lightmap=start /b cl ..\src\lightmap.cpp %flags% %dirs% %libs% UVAtlas.lib DirectXMesh.lib
 set compile_test=start /b cl ..\src\test.cpp %flags% %dirs% %libs%
 
@@ -54,6 +54,7 @@ for %%G in (.vert, .frag) do forfiles /m *%%G /c "cmd /c %VULKAN_SDK%\Bin\glslc.
 popd
 
 copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >NUL
+copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >NUL
 
 if not exist "assets" mkdir "assets"
 pushd "assets"

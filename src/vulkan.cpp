@@ -1423,23 +1423,20 @@ void vulkan_image_transfer(vulkan_device *vulkan_device, vulkan_cmd_buffers *vul
 	}
 	{
 		uint32 buffer_offset = 0;
-		for (uint32 i = 0; i < vulkan_image->layer_count; i += 1) {
-			uint32 mipmap_width = vulkan_image->width;
-			uint32 mipmap_height = vulkan_image->height;
-			for (uint32 j = 0; j < vulkan_image->mipmap_count; j += 1) {
-				VkBufferImageCopy buffer_image_copy = {};
-				buffer_image_copy.bufferOffset = buffer_offset;
-				buffer_image_copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				buffer_image_copy.imageSubresource.mipLevel = j;
-				buffer_image_copy.imageSubresource.baseArrayLayer = i;
-				buffer_image_copy.imageSubresource.layerCount = 1;
-				buffer_image_copy.imageExtent = {mipmap_width, mipmap_height, 1};
-				vkCmdCopyBufferToImage(cmd_buffer, staging_buffer, vulkan_image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
-				uint32 block_count = (mipmap_width * mipmap_height) / (vulkan_image->format_block_dimension * vulkan_image->format_block_dimension);
-				buffer_offset = buffer_offset + block_count * vulkan_image->format_block_size;
-				mipmap_width = max(mipmap_width / 2, vulkan_image->format_block_dimension);
-				mipmap_height = max(mipmap_height / 2, vulkan_image->format_block_dimension);
-			}
+		uint32 mipmap_width = vulkan_image->width;
+		uint32 mipmap_height = vulkan_image->height;
+		for (uint32 i = 0; i < vulkan_image->mipmap_count; i += 1) {
+			VkBufferImageCopy buffer_image_copy = {};
+			buffer_image_copy.bufferOffset = buffer_offset;
+			buffer_image_copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			buffer_image_copy.imageSubresource.mipLevel = i;
+			buffer_image_copy.imageSubresource.layerCount = vulkan_image->layer_count;
+			buffer_image_copy.imageExtent = {mipmap_width, mipmap_height, 1};
+			vkCmdCopyBufferToImage(cmd_buffer, staging_buffer, vulkan_image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffer_image_copy);
+			uint32 block_count = (mipmap_width * mipmap_height) / (vulkan_image->format_block_dimension * vulkan_image->format_block_dimension);
+			buffer_offset += vulkan_image->format_block_size * block_count * vulkan_image->layer_count;
+			mipmap_width = max(mipmap_width / 2, vulkan_image->format_block_dimension);
+			mipmap_height = max(mipmap_height / 2, vulkan_image->format_block_dimension);
 		}
 	}
 	{

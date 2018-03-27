@@ -7,6 +7,8 @@
 #define NVTT_SHARED 1
 #include "../vendor/include/nvtt/nvtt.h"
 
+#include "../vendor/include/ispc_texcomp/ispc_texcomp.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_IMPLEMENTATION
 #include "../vendor/include/tinygltf/tiny_gltf.h"
@@ -43,6 +45,7 @@ void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
 
 enum compress_image_type {
 	compress_image_type_color,
+	compress_image_type_color_high_quality,
 	compress_image_type_grayscale,
 	compress_image_type_normal_map
 };
@@ -65,6 +68,9 @@ void compress_image(compress_image_type image_type, uint8 *data, uint32 width, u
 	m_assert(input_options.setMipmapData(data, width, height));
 	if (image_type == compress_image_type_color) {
 		compression_options.setFormat(Format_BC1);
+	}
+	else if (image_type == compress_image_type_color_high_quality) {
+		compression_options.setFormat(Format_BC7);
 	}
 	else if (image_type == compress_image_type_grayscale) {
 		input_options.setGamma(1.0f, 1.0f);
@@ -115,32 +121,52 @@ void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
 
 	const char *cubemap_files[6] = {"left.png", "right.png", "up.png", "down.png", "front.png", "back.png"};
 	uint8 *cubemap_data[6] = {};
-	int32 cubemap_sizes[12] = {};
-	for (uint32 i = 0; i < m_countof(cubemap_files); i += 1) {
+	std::pair<int32, int32> cubemap_sizes[6] = {};
+	for (uint32 i = 0; i < 6; i += 1) {
 		std::string png_file = skybox_dir + "\\" + cubemap_files[i];
 		int32 channel = 0;
-    cubemap_data[i] = stbi_load(png_file.c_str(), &cubemap_sizes[i * 2], &cubemap_sizes[i * 2 + 1], &channel, 4);
+    cubemap_data[i] = stbi_load(png_file.c_str(), &cubemap_sizes[i].first, &cubemap_sizes[i].second, &channel, 4);
     m_assert(cubemap_data[i]);
 	}
-	for (uint32 i = 0; i < m_countof(cubemap_sizes); i += 1) {
-		m_assert(cubemap_sizes[i] == cubemap_sizes[0]);
-	}
-	uint32 cubemap_image_size = cubemap_sizes[0] * cubemap_sizes[1] * 4;
-	uint32 cubemap_offset = round_up((uint32)sizeof(struct gpk_skybox), 16u);
-	uint32 file_size = cubemap_offset + cubemap_image_size * 6;
-	file_mapping import_file_mapping;
-	m_assert(create_file_mapping(gpk_file.c_str(), file_size, &import_file_mapping));
-	gpk_skybox *header = (gpk_skybox *)import_file_mapping.ptr;
-	*header = {"GPK_SKYBOX_FORMAT"};
-	header->cubemap_offset = cubemap_offset;
-	header->cubemap_width = cubemap_sizes[0];
-	header->cubemap_height = cubemap_sizes[1];
 	for (uint32 i = 0; i < 6; i += 1) {
-		uint8 *dst = import_file_mapping.ptr + cubemap_offset + i * cubemap_image_size;
-		memcpy(dst, cubemap_data[i], cubemap_image_size);
+		m_assert(cubemap_sizes[i] == cubemap_sizes[0]);
+		m_assert(cubemap_sizes[i].first % 4 == 0);
+		m_assert(cubemap_sizes[i].second % 4 == 0);
 	}
-	flush_file_mapping(import_file_mapping);
-	close_file_mapping(import_file_mapping);
+	uint8* cubemap_compressed_data[6];
+	uint32 cubemap_compressed_size = cubemap_sizes[0].first * cubemap_sizes[0].second;
+	for (uint32 i = 0; i < 6; i += 1) {
+		cubemap_compressed_data[i] = (uint8*)malloc(cubemap_compressed_size);
+	}
+	bc7_enc_settings settings;
+	GetProfile_basic(&settings);
+	for (uint32 i = 0; i < 6; i += 1) {
+		rgba_surface surface = {cubemap_data[i], cubemap_sizes[0].first, cubemap_sizes[0].second, cubemap_sizes[0].first * 4};
+		CompressBlocksBC7(&surface, cubemap_compressed_data[i], &settings);
+	}
+
+	uint32 cubemap_offset = round_up((uint32)sizeof(struct gpk_skybox), 16u);
+	uint32 gpk_file_size = cubemap_offset + cubemap_compressed_size * 6;
+	file_mapping gpk_file_mapping;
+	m_assert(create_file_mapping(gpk_file.c_str(), gpk_file_size, &gpk_file_mapping));
+	gpk_skybox *gpk_skybox = (struct gpk_skybox *)gpk_file_mapping.ptr;
+	*gpk_skybox = {"GPK_SKYBOX_FORMAT"};
+	gpk_skybox->cubemap_offset = cubemap_offset;
+	gpk_skybox->cubemap_width = cubemap_sizes[0].first;
+	gpk_skybox->cubemap_height = cubemap_sizes[0].second;
+	gpk_skybox->cubemap_mipmap_count = 1;
+	gpk_skybox->cubemap_layer_count = 6;
+	gpk_skybox->cubemap_size = cubemap_compressed_size * 6;
+	gpk_skybox->cubemap_format = VK_FORMAT_BC7_SRGB_BLOCK;
+	gpk_skybox->cubemap_format_block_dimension = 4;
+	gpk_skybox->cubemap_format_block_size = 16;
+
+	for (uint32 i = 0; i < 6; i += 1) {
+		uint8 *dst = gpk_file_mapping.ptr + cubemap_offset + i * cubemap_compressed_size;
+		memcpy(dst, cubemap_compressed_data[i], cubemap_compressed_size);
+	}
+	flush_file_mapping(gpk_file_mapping);
+	close_file_mapping(gpk_file_mapping);
 
 	printf("done importing skybox: \"%s\"\n", gpk_file.c_str());
 }

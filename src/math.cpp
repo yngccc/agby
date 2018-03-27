@@ -1194,10 +1194,10 @@ void flip_rgba_image(void *image, uint32 w, uint32 h) {
 	}
 }
 
-void convert_rgba_image_to_bgra(uint8 *image, uint width, uint height) {
-	for (uint i = 0; i < height; i += 1) {
+void convert_rgba_image_to_bgra(uint8 *image, uint32 width, uint32 height) {
+	for (uint32 i = 0; i < height; i += 1) {
 		uint8 *row = image + i * width * 4;
-		for (uint i = 0; i < width; i += 1) {
+		for (uint32 i = 0; i < width; i += 1) {
 			uint8 *pixel = row + i * 4;
 			uint8 r = pixel[0];
 			pixel[0] = pixel[2];

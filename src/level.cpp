@@ -772,18 +772,18 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *gpk_file) {
 	skybox *skybox = &level->skyboxes[level->skybox_count++];
 	snprintf(skybox->gpk_file, sizeof(skybox->gpk_file), "%s", gpk_file);
 
-	file_mapping file_mapping = {};
-	m_assert(open_file_mapping(gpk_file, &file_mapping));
-	m_scope_exit(close_file_mapping(file_mapping));
-	gpk_skybox *gpk_skybox = (struct gpk_skybox *)file_mapping.ptr;
+	file_mapping gpk_file_mapping = {};
+	m_assert(open_file_mapping(gpk_file, &gpk_file_mapping));
+	m_scope_exit(close_file_mapping(gpk_file_mapping));
+	gpk_skybox *gpk_skybox = (struct gpk_skybox *)gpk_file_mapping.ptr;
 
 	VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 	image_create_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 	image_create_info.imageType = VK_IMAGE_TYPE_2D;
-	image_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+	image_create_info.format = (VkFormat)gpk_skybox->cubemap_format;
 	image_create_info.extent = {gpk_skybox->cubemap_width, gpk_skybox->cubemap_height, 1};
-	image_create_info.mipLevels = 1;
-	image_create_info.arrayLayers = 6;
+	image_create_info.mipLevels = gpk_skybox->cubemap_mipmap_count;
+	image_create_info.arrayLayers = gpk_skybox->cubemap_layer_count;
 	image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
 	image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 	image_create_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -791,12 +791,13 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *gpk_file) {
 	image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 	image_view_create_info.format = image_create_info.format;
 	image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	image_view_create_info.subresourceRange.levelCount = 1;
-	image_view_create_info.subresourceRange.layerCount = 6;
-	uint8 *cubemap = (uint8 *)gpk_skybox + gpk_skybox->cubemap_offset;
-	uint32 cubemap_size = gpk_skybox->cubemap_width * gpk_skybox->cubemap_height * 4 * 6;
-	skybox->cubemap_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, 1, 4);
-	vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &skybox->cubemap_image, cubemap, cubemap_size);
+	image_view_create_info.subresourceRange.levelCount = gpk_skybox->cubemap_mipmap_count;
+	image_view_create_info.subresourceRange.layerCount = gpk_skybox->cubemap_layer_count;
+
+	uint8 *cubemap_ptr = (uint8 *)gpk_skybox + gpk_skybox->cubemap_offset;
+	skybox->cubemap_image = allocate_vulkan_image(&vulkan->device, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, 
+                                         		    gpk_skybox->cubemap_format_block_dimension, gpk_skybox->cubemap_format_block_size);
+	vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &skybox->cubemap_image, cubemap_ptr, gpk_skybox->cubemap_size);
 
 	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
 	descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
