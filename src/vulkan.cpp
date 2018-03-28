@@ -1876,7 +1876,11 @@ void initialize_vulkan_pipelines(VkSampleCountFlagBits sample_count, vulkan *vul
 		shader_stages[1].pName = "main";
 
 		VkVertexInputBindingDescription vertex_input_bindings[1] = {0, 44, VK_VERTEX_INPUT_RATE_VERTEX};
-		VkVertexInputAttributeDescription vertex_attributes[1] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}};
+		VkVertexInputAttributeDescription vertex_attributes[3] = {
+			{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+			{1, 0, VK_FORMAT_R8G8B8A8_UINT, 32},
+			{2, 0, VK_FORMAT_R16G16B16A16_UNORM, 36}
+		};
 
 		VkPipelineVertexInputStateCreateInfo vertex_input_state = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
 		vertex_input_state.vertexBindingDescriptionCount = m_countof(vertex_input_bindings);

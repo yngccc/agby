@@ -37,19 +37,6 @@ layout(set = 0, binding = 3) uniform primitive_info {
   shader_primitive_info primitive;
 };
 
-layout(push_constant) uniform push_constant {
-  uint level_info_offset;
-  uint model_info_offset;
-  uint mesh_info_offset;
-  uint primitive_info_offset;
-  uint diffuse_map_index;
-  uint metallic_map_index;
-  uint roughness_map_index;
-  uint normal_map_index;
-  uint height_map_index;
-  uint shadow_map_index;
-} pc;
-
 void main() {
   mat4 joint_mat = mesh.joint_mats[joints_in[0]] * weights_in[0] + 
                    mesh.joint_mats[joints_in[1]] * weights_in[1] + 

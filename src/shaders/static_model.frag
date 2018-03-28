@@ -28,30 +28,16 @@ layout(set = 1, binding = 4) uniform sampler2D height_map;
 
 layout(set = 2, binding = 0) uniform sampler2D shadow_map;
 
-layout(push_constant) uniform push_constant {
-  uint level_info_offset;
-  uint model_info_offset;
-  uint mesh_info_offset;
-  uint primitive_info_offset;
-  uint diffuse_map_index;
-  uint metallic_map_index;
-  uint roughness_map_index;
-  uint normal_map_index;
-  uint height_map_index;
-  uint shadow_map_index;
-} pc;
-
 const float PI = 3.14159265359;
 
 float shadow_mapping() {
   vec3 shadow_map_coord = shadow_map_coord_in.xyz / shadow_map_coord_in.w;
   shadow_map_coord.xy = shadow_map_coord.xy * 0.5 + 0.5;
-  vec2 moments = texture(shadow_map, shadow_map_coord.xy).rg;
-  float p = step(shadow_map_coord_in.z, moments.r);
-  float variance = moments.g - moments.r * moments.r;
-  variance = max(variance, 0.00002);
-  float d = shadow_map_coord.z - moments.r;
-  float p_max = variance / (variance + d * d);
+  vec2 moments = texture(shadow_map, shadow_map_coord.xy).xy;
+  float p = step(shadow_map_coord_in.z, moments.x);
+  float variance = max(moments.y - moments.x * moments.x, 0.00002);
+  float d = shadow_map_coord.z - moments.x;
+  float p_max = clamp((variance / (variance + d * d) - 0.2) / 0.8, 0.0, 1.0);
   return min(max(p, p_max), 1);
 }
 
@@ -126,8 +112,7 @@ void main() {
   float roughness = texture(roughness_map, uv).x * primitive.roughness_factor;
 
   vec3 irradiance = diffuse * level.ambient_light_color.xyz;
-  irradiance += get_light_irradiance(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness);
-  // brdf *= shadow_mapping();
+  irradiance += get_light_irradiance(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness) * shadow_mapping();
 
   // float attenuation = level.point_light_position.w;
   // vec3 direction = tbn_point_light_in - tbn_position_in;
