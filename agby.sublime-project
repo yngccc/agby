@@ -12,9 +12,6 @@
 	[
 		{
 			"path": "."
-		},
-		{
-			"path": "C:\\VulkanSDK\\1.0.65.0\\Include\\vulkan"
 		}
 	]
 }

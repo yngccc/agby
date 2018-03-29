@@ -146,7 +146,7 @@ void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
 	file_mapping gpk_file_mapping;
 	m_assert(create_file_mapping(gpk_file.c_str(), gpk_file_size, &gpk_file_mapping));
 	gpk_skybox *gpk_skybox = (struct gpk_skybox *)gpk_file_mapping.ptr;
-	*gpk_skybox = {"GPK_SKYBOX_FORMAT"};
+	*gpk_skybox = {m_gpk_skybox_format_str};
 	gpk_skybox->cubemap_offset = cubemap_offset;
 	gpk_skybox->cubemap_width = cubemap_sizes[0].first;
 	gpk_skybox->cubemap_height = cubemap_sizes[0].second;
@@ -220,7 +220,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			m_assert(false);
 		}
 	}
-	gpk_model gpk_model = {"GPK_MODEL_FORMAT"};
+	gpk_model gpk_model = {m_gpk_model_format_str};
 	uint32 current_offset = round_up((uint32)sizeof(gpk_model), 16u);
 	std::vector<gpk_model_scene> gpk_model_scenes;
 	{

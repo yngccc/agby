@@ -114,8 +114,22 @@ struct model {
 };
 
 struct skybox {
-	VkDescriptorSet descriptor_set;
+	VkDescriptorSet cubemap_descriptor_set;
 	vulkan_image cubemap_image;
+	char gpk_file[128];
+};
+
+
+struct terrain_vertex {
+	vec3 position;
+	vec2 uv;
+};
+static_assert(sizeof(struct terrain_vertex) == 20, "");
+
+struct terrain {
+	VkDescriptorSet textures_descriptor_set;
+	vulkan_image height_map;
+	vulkan_image diffuse_map;
 	char gpk_file[128];
 };
 
@@ -279,6 +293,12 @@ struct level {
 	uint32 skybox_capacity;
 	uint32 skybox_index;
 
+	terrain *terrains;
+	uint32 terrain_count;
+	uint32 terrain_capacity;
+	uint32 terrain_index;
+	uint32 terrain_common_vertex_buffer_offset;
+
 	level_render_data render_data;
 
 	memory_arena main_thread_frame_memory_arena;
@@ -312,6 +332,51 @@ void initialize_level(level *level, vulkan *vulkan) {
 	level->assets_memory_arena.capacity = m_megabytes(64);
 	level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
 	m_assert(level->assets_memory_arena.memory);
+
+	level->model_capacity = 1024;
+	level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
+	level->skybox_capacity = 16;
+	level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
+	level->terrain_capacity = 16;
+	level->terrains = allocate_memory<struct terrain>(&level->assets_memory_arena, level->terrain_capacity);
+
+	{ // generate terrain vertices
+		uint32 vertices_size = 128 * 128 * 6 * sizeof(struct terrain_vertex);
+		m_memory_arena_undo_allocations_at_scope_exit(&level->main_thread_frame_memory_arena);
+		terrain_vertex *vertices = allocate_memory<terrain_vertex>(&level->main_thread_frame_memory_arena, 128 * 128 * 6);
+		const float dp = 0.5f;
+		const float duv = 1.0f / 128.0f;
+		vec3 position = {-32, 0, -32};
+		vec2 uv = {0, 0};
+		terrain_vertex *vertices_ptr = vertices;
+		for (uint32 i = 0; i < 128; i += 1) {
+			for (uint32 j = 0; j < 128; j += 1) {
+				vec3 pa = position;
+				vec3 pb = position; pb.z += dp;
+				vec3 pc = position; pc.x += dp;
+				vec3 pd = position; pd.x += dp; pd.z += dp;
+				vec2 ua = uv;
+				vec2 ub = uv; ub.y += duv;
+				vec2 uc = uv; uc.x += duv;
+				vec2 ud = uv; ud.x += duv; ud.y += duv;
+				vertices_ptr[0] = {pa, ua};
+				vertices_ptr[1] = {pb, ub};
+				vertices_ptr[2] = {pc, uc};
+				vertices_ptr[3] = {pc, uc};
+				vertices_ptr[4] = {pb, ub};
+				vertices_ptr[5] = {pd, ud};
+				position += {dp, 0, 0};
+				uv += {duv, 0};
+				vertices_ptr += 6;
+			}
+			position = {-32, 0, position.z + dp};
+			uv = {0, uv.y + duv};
+		}
+		round_up(&vulkan->buffers.common_vertex_buffer_offset, (uint32)sizeof(struct terrain_vertex));
+		level->terrain_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
+		vulkan_buffer_transfer(vulkan, vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, vertices, vertices_size);
+		vulkan->buffers.common_vertex_buffer_offset += vertices_size;
+	}
 }
 
 entity_render_component *entity_get_render_component(level *level, uint32 entity_index) {
@@ -562,6 +627,7 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 
 	model *model = &level->models[level->model_count];
 	gpk_model *gpk_model = (struct gpk_model *)gpk_file_mapping.ptr;
+	m_assert(!strcmp(gpk_model->format_str, m_gpk_model_format_str));
 	snprintf(model->gpk_file, sizeof(model->gpk_file), "%s", gpk_file);
 	model->scene_count = gpk_model->scene_count;
 	model->node_count = gpk_model->node_count;
@@ -631,8 +697,8 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 			primitive->vertex_buffer_offset = vulkan->buffers.level_vertex_buffer_offset;
 			vulkan->buffers.level_vertex_buffer_offset += vertices_size;
 
-			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, primitive->index_buffer_offset, indices_data, indices_size);
-			vulkan_buffer_transfer(vulkan, &vulkan->buffers.level_vertex_buffer, primitive->vertex_buffer_offset, vertices_data, vertices_size);
+			vulkan_buffer_transfer(vulkan, vulkan->buffers.level_vertex_buffer, primitive->index_buffer_offset, indices_data, indices_size);
+			vulkan_buffer_transfer(vulkan, vulkan->buffers.level_vertex_buffer, primitive->vertex_buffer_offset, vertices_data, vertices_size);
 			if (store_vertices) {
 				primitive->indices_data = allocate_memory<uint8>(&level->assets_memory_arena, indices_size);
 				primitive->vertices_data = allocate_memory<uint8>(&level->assets_memory_arena, vertices_size);
@@ -770,12 +836,14 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 void level_add_skybox(level *level, vulkan *vulkan, const char *gpk_file) {
 	m_assert(level->skybox_count < level->skybox_capacity);
 	skybox *skybox = &level->skyboxes[level->skybox_count++];
-	snprintf(skybox->gpk_file, sizeof(skybox->gpk_file), "%s", gpk_file);
+	m_assert(strlen(gpk_file) < sizeof(skybox->gpk_file));
+	strcpy(skybox->gpk_file, gpk_file);
 
 	file_mapping gpk_file_mapping = {};
 	m_assert(open_file_mapping(gpk_file, &gpk_file_mapping));
 	m_scope_exit(close_file_mapping(gpk_file_mapping));
 	gpk_skybox *gpk_skybox = (struct gpk_skybox *)gpk_file_mapping.ptr;
+	m_assert(!strcmp(gpk_skybox->format_str, m_gpk_skybox_format_str));
 
 	VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 	image_create_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
@@ -803,15 +871,92 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *gpk_file) {
 	descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
 	descriptor_set_allocate_info.descriptorSetCount = 1;
 	descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
-	m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &skybox->descriptor_set));
+	m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &skybox->cubemap_descriptor_set));
 	VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.skybox_cubemap_sampler, skybox->cubemap_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	write_descriptor_set.dstSet = skybox->descriptor_set;
+	write_descriptor_set.dstSet = skybox->cubemap_descriptor_set;
 	write_descriptor_set.dstBinding = 0;
 	write_descriptor_set.descriptorCount = 1;
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
+}
+
+void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
+	m_assert(level->terrain_count < level->terrain_capacity);
+	terrain *terrain = &level->terrains[level->terrain_count++];
+	m_assert(strlen(gpk_file) < sizeof(terrain->gpk_file));
+	strcpy(terrain->gpk_file, gpk_file);
+
+	file_mapping gpk_file_mapping = {};
+	m_assert(open_file_mapping(gpk_file, &gpk_file_mapping));
+	m_scope_exit(close_file_mapping(gpk_file_mapping));
+	gpk_terrain *gpk_terrain = (struct gpk_terrain *)gpk_file_mapping.ptr;
+	m_assert(!strcmp(gpk_terrain->format_str, m_gpk_terrain_format_str));
+	{
+		VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+		image_create_info.imageType = VK_IMAGE_TYPE_2D;
+		image_create_info.format = VK_FORMAT_R16_UNORM;
+		image_create_info.extent = {gpk_terrain->height_map_width, gpk_terrain->height_map_height, 1};
+		image_create_info.mipLevels = 1;
+		image_create_info.arrayLayers = 1;
+		image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		image_create_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+		image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		image_view_create_info.format = image_create_info.format;
+		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		image_view_create_info.subresourceRange.levelCount = 1;
+		image_view_create_info.subresourceRange.layerCount = 1;
+
+		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
+		terrain->height_map = allocate_vulkan_image(&vulkan->device, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, 1, 2);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &terrain->height_map, height_map_ptr, gpk_terrain->height_map_size);
+	}
+	{
+		VkImageCreateInfo image_create_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+		image_create_info.imageType = VK_IMAGE_TYPE_2D;
+		image_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+		image_create_info.extent = {gpk_terrain->diffuse_map_width, gpk_terrain->diffuse_map_height, 1};
+		image_create_info.mipLevels = 1;
+		image_create_info.arrayLayers = 1;
+		image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		image_create_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		VkImageViewCreateInfo image_view_create_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+		image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		image_view_create_info.format = image_create_info.format;
+		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		image_view_create_info.subresourceRange.levelCount = 1;
+		image_view_create_info.subresourceRange.layerCount = 1;
+
+		uint8 *diffuse_map_ptr = gpk_file_mapping.ptr + gpk_terrain->diffuse_map_offset;
+		terrain->diffuse_map = allocate_vulkan_image(&vulkan->device, &vulkan->memories.level_images_memory, image_create_info, image_view_create_info, 1, 4);
+		vulkan_image_transfer(&vulkan->device, &vulkan->cmd_buffers, &terrain->diffuse_map, diffuse_map_ptr, gpk_terrain->diffuse_map_size);
+	}
+	VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+	descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
+	descriptor_set_allocate_info.descriptorSetCount = 1;
+	descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[1];
+	m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &terrain->textures_descriptor_set));
+	VkDescriptorImageInfo descriptor_image_infos[2] = {};
+	descriptor_image_infos[0] = {vulkan->samplers.terrain_texture_sampler, terrain->height_map.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+	descriptor_image_infos[1] = {vulkan->samplers.terrain_texture_sampler, terrain->diffuse_map.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+	VkWriteDescriptorSet write_descriptor_sets[2] = {};
+	write_descriptor_sets[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+	write_descriptor_sets[0].dstSet = terrain->textures_descriptor_set;
+	write_descriptor_sets[0].dstBinding = 0;
+	write_descriptor_sets[0].descriptorCount = 1;
+	write_descriptor_sets[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write_descriptor_sets[0].pImageInfo = &descriptor_image_infos[0];
+	write_descriptor_sets[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+	write_descriptor_sets[1].dstSet = terrain->textures_descriptor_set;
+	write_descriptor_sets[1].dstBinding = 1;
+	write_descriptor_sets[1].descriptorCount = 1;
+	write_descriptor_sets[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write_descriptor_sets[1].pImageInfo = &descriptor_image_infos[1];
+	vkUpdateDescriptorSets(vulkan->device.device, m_countof(write_descriptor_sets), write_descriptor_sets, 0, nullptr);
 }
 
 template <typename F>
@@ -839,23 +984,19 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			}
 		}
 		level->model_count = 0;
-		level->model_capacity = 1024;
-		level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
 
 		for (uint32 i = 0; i < level->skybox_count; i += 1) {
 			skybox *skybox = &level->skyboxes[i];
-			vkFreeDescriptorSets(vulkan->device.device, vulkan->descriptors.pool, 1, &skybox->descriptor_set);
+			vkFreeDescriptorSets(vulkan->device.device, vulkan->descriptors.pool, 1, &skybox->cubemap_descriptor_set);
 			vkDestroyImageView(vulkan->device.device, skybox->cubemap_image.view, nullptr);
 			vkDestroyImage(vulkan->device.device, skybox->cubemap_image.image, nullptr);
 		}
 		level->skybox_count = 0;
-		level->skybox_capacity = 16;
-		level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
 
 		vulkan->buffers.level_vertex_buffer_offset = 0;
 		vulkan->memories.level_images_memory.size = 0;
 	}
-	{ // models, skyboxes
+	{ // models, skyboxes, terrains
 		std::vector<std::string> model_gpk_files = json["models"];
 		for (auto &m : model_gpk_files) {
 			level_add_gpk_model(level, vulkan, m.c_str(), store_vertices);
@@ -865,6 +1006,11 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			level_add_skybox(level, vulkan, s.c_str());
 		}
 		level->skybox_index = json["skybox_index"];
+		std::vector<std::string> terrain_gpk_files = json["terrains"];
+		for (auto &s : terrain_gpk_files) {
+			level_add_terrain(level, vulkan, s.c_str());
+		}
+		level->terrain_index = json["terrain_index"];
 	}
 	{ // entities
 		auto &entities_json = json["entities"];
@@ -1095,7 +1241,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 template <typename F>
 void level_write_json(level *level, const char *json_file_path, F extra_write) {
 	nlohmann::json json;
-	{ // models, skyboxes
+	{ // models, skyboxes, terrains
 		auto &models = json["models"];
 		models = nlohmann::json::array();
 		for (uint32 i = 0; i < level->model_count; i += 1) {
@@ -1107,6 +1253,12 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 			skyboxes.push_back(level->skyboxes[i].gpk_file);
 		}
 		json["skybox_index"] = level->skybox_index;
+		auto &terrains = json["terrains"];
+		terrains = nlohmann::json::array();
+		for (uint32 i = 0; i < level->terrain_count; i += 1) {
+			terrains.push_back(level->terrains[i].gpk_file);
+		}
+		json["terrain_index"] = level->terrain_index;
 	}
 	{ // entities
 		auto &entities = json["entities"];
@@ -1591,10 +1743,20 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 				}
 			}
 		}
+		if (level->terrain_index < level->terrain_count) {
+			terrain *terrain = &level->terrains[level->terrain_index];
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.pipeline);
+			VkDeviceSize vertex_buffer_offset = 0;
+			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.common_vertex_buffer.buffer, &vertex_buffer_offset);
+			uint32 offsets[4] = {level->render_data.frame_uniform_buffer_offset, 0, 0, 0};
+			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
+			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.layout, 1, 1, &terrain->textures_descriptor_set, 0, nullptr);
+			vkCmdDraw(cmd_buffer, 128 * 128 * 6, 1, level->terrain_common_vertex_buffer_offset / sizeof(struct terrain_vertex), 0);
+		}
 		if (level->skybox_index < level->skybox_count) {
 		  skybox *skybox = &level->skyboxes[level->skybox_index];
 		  vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline.pipeline);
-		  vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline.layout, 0, 1, &skybox->descriptor_set, 0, nullptr);
+		  vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline.layout, 0, 1, &skybox->cubemap_descriptor_set, 0, nullptr);
 		  struct camera skybox_camera = camera;
 		  skybox_camera.position = {0, 0, 0};
 		  struct {

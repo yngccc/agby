@@ -4,6 +4,8 @@
 
 #pragma once
 
+#define m_gpk_model_format_str "GPK_MODEL_FORMAT"
+
 struct gpk_model {
 	char format_str[32];
 	uint32 scene_offset;
@@ -141,6 +143,8 @@ struct gpk_model_image {
   uint32 data_offset;
 };
 
+#define m_gpk_skybox_format_str "GPK_SKYBOX_FORMAT"
+
 struct gpk_skybox {
 	char format_str[32];
 	uint32 cubemap_offset;
@@ -154,12 +158,16 @@ struct gpk_skybox {
 	uint32 cubemap_format_block_size;
 };
 
+#define m_gpk_terrain_format_str "GPK_TERRAIN_FORMAT"
+
 struct gpk_terrain {
 	char format_str[32];
+	uint32 height_map_offset;
+	uint32 height_map_width;
+	uint32 height_map_height;
+	uint32 height_map_size;
 	uint32 diffuse_map_offset;
-	vec2 diffuse_map_scales;
-	uint32 vertices_offset;
-	uint32 vertex_size;
-	uint32 vertex_count;
-	mat4 transform;
+	uint32 diffuse_map_width;
+	uint32 diffuse_map_height;
+	uint32 diffuse_map_size;
 };
