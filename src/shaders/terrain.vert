@@ -12,19 +12,17 @@ out gl_PerVertex {
   vec4 gl_Position;
 };
 
-layout(set = 0, binding = 0) uniform level_info {
-  shader_level_info level;
-};
-
-layout(set = 1, binding = 0) uniform sampler2D height_map;
+m_declare_uniform_buffer
+m_declare_2d_texture_array
+m_declare_terrain_push_constant
 
 const float max_height = 1024;
 
 void main() {
-	float height_percentage = texture(height_map, uv_in).x;
+	float height_percentage = texture(m_height_map, uv_in).x;
 	float height = max_height * height_percentage;
 	vec3 position = position_in + vec3(0, height, 0);
-	gl_Position = level.view_proj_mat * vec4(position, 1);
+	gl_Position = m_level_view_proj_mat * vec4(position, 1);
 	uv_out = uv_in;
 	normal_out = vec3(0, 1, 0);
 }

@@ -1,5 +1,7 @@
 #version 450
 
+#include "../shader_type.cpp"
+
 layout(location = 0) in vec2 position_in;
 layout(location = 1) in vec2 uv_in;
 layout(location = 2) in vec4 color_in;
@@ -11,12 +13,10 @@ out gl_PerVertex {
   vec4 gl_Position;
 };
 
-layout(push_constant) uniform push_constant {
-  vec2 viewport;
-} push_const;
+m_declare_imgui_push_constant
 
 void main() {
   uv_out = uv_in;
   color_out = color_in;
-  gl_Position = vec4(-1 + position_in.x / push_const.viewport.x * 2, -1 + position_in.y / push_const.viewport.y * 2, 0, 1);
+  gl_Position = vec4(-1 + position_in.x / pc.viewport.x * 2, -1 + position_in.y / pc.viewport.y * 2, 0, 1);
 } 

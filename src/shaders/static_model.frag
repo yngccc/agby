@@ -12,28 +12,16 @@ layout(location = 6) in vec3 tbn_point_light_in;
 
 layout(location = 0) out vec4 color_out;
 
-layout(set = 0, binding = 0) uniform level_info {
-  shader_level_info level;
-};
-
-layout(set = 0, binding = 3) uniform primitive_info {
-  shader_primitive_info primitive;
-};
-
-layout(set = 1, binding = 0) uniform sampler2D diffuse_map;
-layout(set = 1, binding = 1) uniform sampler2D metallic_map;
-layout(set = 1, binding = 2) uniform sampler2D roughness_map;
-layout(set = 1, binding = 3) uniform sampler2D normal_map;
-layout(set = 1, binding = 4) uniform sampler2D height_map;
-
-layout(set = 2, binding = 0) uniform sampler2D shadow_map;
+m_declare_uniform_buffer
+m_declare_2d_texture_array
+m_declare_model_push_constant
 
 const float PI = 3.14159265359;
 
 float shadow_mapping() {
   vec3 shadow_map_coord = shadow_map_coord_in.xyz / shadow_map_coord_in.w;
   shadow_map_coord.xy = shadow_map_coord.xy * 0.5 + 0.5;
-  vec2 moments = texture(shadow_map, shadow_map_coord.xy).xy;
+  vec2 moments = texture(m_shadow_map, shadow_map_coord.xy).xy;
   float p = step(shadow_map_coord_in.z, moments.x);
   float variance = max(moments.y - moments.x * moments.x, 0.00002);
   float d = shadow_map_coord.z - moments.x;
@@ -50,15 +38,15 @@ vec2 parallax_mapping(vec2 uv, vec3 view) {
   P.y = -P.y;
   vec2 delta_uv = P / layer_count;
   vec2 current_uv = uv;
-  float current_height_map_value = texture(height_map, current_uv).r;
+  float current_height_map_value = texture(m_height_map, current_uv).x;
   while(current_layer_height < current_height_map_value) {
     current_uv -= delta_uv;
-    current_height_map_value = texture(height_map, current_uv).r;  
+    current_height_map_value = texture(m_height_map, current_uv).x;
     current_layer_height += layer_height;  
   }
   vec2 prev_uv = current_uv + delta_uv;
   float after_height = current_height_map_value - current_layer_height;
-  float before_height = texture(height_map, prev_uv).r - current_layer_height + layer_height;
+  float before_height = texture(m_height_map, prev_uv).x - current_layer_height + layer_height;
   float weight = after_height / (after_height - before_height);
   vec2 final_uv = prev_uv * weight + current_uv * (1 - weight);
   return final_uv;
@@ -103,20 +91,20 @@ vec3 get_light_irradiance(vec3 normal, vec3 view, vec3 light_dir, vec3 light_col
 void main() {
   vec3 view = normalize(tbn_camera_position_in - tbn_position_in);
   vec2 uv = uv_in; // parallax_mapping(uv_in,  view);
-  vec2 normal_xy = texture(normal_map, uv).xy * 2 - 1;
+  vec2 normal_xy = texture(m_normal_map, uv).xy * 2 - 1;
   float normal_z = sqrt(1 - normal_xy.x * normal_xy.x - normal_xy.y * normal_xy.y);
   vec3 normal = vec3(normal_xy, normal_z);
 
-  vec3 diffuse = texture(diffuse_map, uv).xyz * primitive.diffuse_factor.xyz;
-  float metallic = texture(metallic_map, uv).x * primitive.metallic_factor;  
-  float roughness = texture(roughness_map, uv).x * primitive.roughness_factor;
+  vec3 diffuse = texture(m_diffuse_map, uv).xyz * m_primitive_diffuse_factor.xyz;
+  float metallic = texture(m_metallic_map, uv).x * m_primitive_metallic_factor;  
+  float roughness = texture(m_roughness_map, uv).x * m_primitive_roughness_factor;
 
-  vec3 irradiance = diffuse * level.ambient_light_color.xyz;
-  irradiance += get_light_irradiance(normal, view, tbn_directional_light_in, level.directional_light_color.xyz, diffuse, metallic, roughness) * shadow_mapping();
+  vec3 irradiance = diffuse * m_level_ambient_light_color.xyz;
+  irradiance += get_light_irradiance(normal, view, tbn_directional_light_in, m_level_directional_light_color.xyz, diffuse, metallic, roughness) * shadow_mapping();
 
-  // float attenuation = level.point_light_position.w;
+  // float attenuation = m_level_point_light_position.w;
   // vec3 direction = tbn_point_light_in - tbn_position_in;
-  // vec3 light_color = level.point_light_color.xyz / pow(length(direction), attenuation);
+  // vec3 light_color = m_level_point_light_color.xyz / pow(length(direction), attenuation);
   // brdf += cook_torrance_brdf(normal, view, normalize(direction), light_color, diffuse, metallic, roughness);
 
   color_out = vec4(irradiance, 1);

@@ -21,29 +21,16 @@ out gl_PerVertex {
   vec4 gl_Position;
 };
 
-layout(set = 0, binding = 0) uniform level_info {
-  shader_level_info level;
-};
-
-layout(set = 0, binding = 1) uniform model_info {
-  shader_model_info model;
-};
-
-layout(set = 0, binding = 2) uniform mesh_info {
-  shader_mesh_info mesh;
-};
-
-layout(set = 0, binding = 3) uniform primitive_info {
-  shader_primitive_info primitive;
-};
+m_declare_uniform_buffer
+m_declare_model_push_constant
 
 void main() {
-  mat4 joint_mat = mesh.joint_mats[joints_in[0]] * weights_in[0] + 
-                   mesh.joint_mats[joints_in[1]] * weights_in[1] + 
-                   mesh.joint_mats[joints_in[2]] * weights_in[2] + 
-                   mesh.joint_mats[joints_in[3]] * weights_in[3];
+  mat4 joint_mat = m_mesh_joint_mat(joints_in[0]) * weights_in[0] +
+                   m_mesh_joint_mat(joints_in[1]) * weights_in[1] +
+                   m_mesh_joint_mat(joints_in[2]) * weights_in[2] +
+                   m_mesh_joint_mat(joints_in[3]) * weights_in[3];
 
-  mat4 model_mat = model.model_mat * joint_mat;
+  mat4 model_mat = m_model_model_mat * joint_mat;
   mat3 normal_mat = mat3(model_mat);
 
   vec4 position = model_mat * vec4(position_in, 1);
@@ -52,12 +39,12 @@ void main() {
   vec3 bitangent = normalize(cross(normal, tangent));
   mat3 inverse_tbn_mat = transpose(mat3(tangent, bitangent, normal));
 
-  gl_Position = level.view_proj_mat * position;
+  gl_Position = m_level_view_proj_mat * position;
   position_out = position.xyz;
-  shadow_map_coord_out = level.shadow_map_proj_mat * position;
+  shadow_map_coord_out = m_level_shadow_map_proj_mat * position;
   uv_out = uv_in;
   tbn_position_out = inverse_tbn_mat * position.xyz;
-  tbn_camera_position_out = inverse_tbn_mat * level.camera_position.xyz;
-  tbn_directional_light_out = inverse_tbn_mat * level.directional_light_dir.xyz;
-  tbn_point_light_out = inverse_tbn_mat * level.point_light_position.xyz;
+  tbn_camera_position_out = inverse_tbn_mat * m_level_camera_position.xyz;
+  tbn_directional_light_out = inverse_tbn_mat * m_level_directional_light_dir.xyz;
+  tbn_point_light_out = inverse_tbn_mat * m_level_point_light_position.xyz;
 } 
