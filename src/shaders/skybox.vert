@@ -9,6 +9,7 @@ out gl_PerVertex {
 layout(location = 0) out vec3 uv_out;
 
 m_declare_uniform_buffer
+m_declare_skybox_push_constant
 
 const vec3 face_vertices[6][6] = vec3[][](
   vec3[](vec3(-1, 1, 1), vec3(-1, -1, 1), vec3(1, 1, 1), vec3(1, 1, 1), vec3(-1, -1, 1), vec3(1, -1, 1)),
@@ -22,5 +23,5 @@ const vec3 face_vertices[6][6] = vec3[][](
 void main() {
   vec3 vertex = face_vertices[gl_VertexIndex / 6][gl_VertexIndex % 6];
   uv_out = vertex;
-  gl_Position = (m_level_view_proj_mat * vec4(vertex, 1)).xyww;
+  gl_Position = (pc.view_proj_mat * vec4(vertex, 1)).xyww;
 }

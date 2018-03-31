@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
 		image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_view_create_info.subresourceRange.levelCount = 1;
 		image_view_create_info.subresourceRange.layerCount = 1;
-		vulkan_allocate_image(&vulkan_device, image_create_info, image_view_create_info, &vulkan_framebuffer_attachment_image_memory, &vulkan_framebuffer_attachment_image, &vulkan_framebuffer_attachment_image_view);
+		// vulkan_allocate_image(&vulkan_device, image_create_info, image_view_create_info, &vulkan_framebuffer_attachment_image_memory, &vulkan_framebuffer_attachment_image, &vulkan_framebuffer_attachment_image_view);
 
 		VkFramebufferCreateInfo framebuffer_create_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
 		framebuffer_create_info.renderPass = vulkan_render_pass;
@@ -250,7 +250,7 @@ int main(int argc, char **argv) {
 		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 		buffer_create_info.size = mesh_vertex_buffer.size() * sizeof(DirectX::UVAtlasVertex) + mesh_index_buffer.size();
 		buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-		m_assert(vulkan_allocate_buffer(&vulkan_device, buffer_create_info, &vulkan_vertex_buffer_memory, &vulkan_vertex_buffer));
+		// m_assert(vulkan_allocate_buffer(&vulkan_device, buffer_create_info, &vulkan_vertex_buffer_memory, &vulkan_vertex_buffer));
 		uint8 *vertex_buffer = nullptr;
 		vkMapMemory(vulkan_device.device, vulkan_vertex_buffer_memory, 0, VK_WHOLE_SIZE, 0, (void **)&vertex_buffer);
 		memcpy(vertex_buffer, mesh_vertex_buffer.data(), mesh_vertex_buffer.size() * sizeof(DirectX::UVAtlasVertex));
@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
 		VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 		buffer_create_info.size = lightmap_width * lightmap_height * 4;
 		buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		m_assert(vulkan_allocate_buffer(&vulkan_device, buffer_create_info, &staging_memory, &staging_buffer));
+		// m_assert(vulkan_allocate_buffer(&vulkan_device, buffer_create_info, &staging_memory, &staging_buffer));
 
 		VkCommandBufferBeginInfo cmd_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 		cmd_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

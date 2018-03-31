@@ -9,6 +9,8 @@
 #include "../vendor/include/bullet/btBulletCollisionCommon.h"
 #include "../vendor/include/bullet/btBulletDynamicsCommon.h"
 
+#include "geometry.cpp"
+
 const uint32 level_max_entity_count = 1024;
 const uint32 level_max_directional_light_count = 1;
 const uint32 level_max_point_light_count = 4;
@@ -236,50 +238,44 @@ struct entity_addition {
 
 struct primitive_render_data {
 	uint32 primitive_index;
-	uint32 frame_uniform_buffer_offset;
+	uint32 uniform_region_buffer_offset;
 };
 
 struct mesh_render_data {
 	uint32 mesh_index;
-	uint32 frame_uniform_buffer_offset;
+	uint32 uniform_region_buffer_offset;
 	primitive_render_data *primitives;
 };
 
 struct model_render_data {
 	uint32 model_index;
-	uint32 frame_uniform_buffer_offset;
+	uint32 uniform_region_buffer_offset;
 	mesh_render_data *meshes;
 	uint32 mesh_count;
 };
 
 struct level_render_data {
-	uint32 frame_uniform_buffer_offset;
 	model_render_data *models;
 	uint32 model_count;
-	uint32 text_frame_vertex_buffer_offset;
-	uint32 text_frame_uniform_buffer_offset;
-	uint32 text_frame_vertex_count;
-	uint32 text_frame_uniform_count;
 };
 
 struct level_persistant_data {
 	uint32 vulkan_vertex_region_offset;
 	uint32 vulkan_image_region_offset;
 	uint32 vulkan_image_region_image_index;
-	uint32 vulkan_combined_image_samplers_index;
+	uint32 vulkan_combined_2d_image_samplers_index;
+	uint32 vulkan_combined_cube_image_samplers_index;
 
 	uint32 bound_vertex_region_buffer_offset;
 	uint32 sphere_vertex_region_buffer_offset;
 	uint32 cylinder_vertex_region_buffer_offset;
-	uint32 capsule_vertex_region_buffer_offset;
+	uint32 terrain_vertex_region_buffer_offset;
 
 	uint32 default_diffuse_map_descriptor_index;
 	uint32 default_metallic_map_descriptor_index;
 	uint32 default_roughness_map_descriptor_index;
 	uint32 default_normal_map_descriptor_index;
 	uint32 default_height_map_descriptor_index;
-	uint32 imgui_font_atlas_descriptor_index;
-	uint32 font_atlas_descriptor_index;
 };
 
 struct level {
@@ -315,7 +311,6 @@ struct level {
 	uint32 terrain_count;
 	uint32 terrain_capacity;
 	uint32 terrain_index;
-	uint32 terrain_vertex_region_buffer_offset;
 
 	level_render_data render_data;
 
@@ -325,40 +320,42 @@ struct level {
 	uint32 entity_components_memory_arena_index;
 	memory_arena assets_memory_arena;
 
+	level_persistant_data persistant_data;
+
 	char json_file[256];
 };
 
 void initialize_level(level *level, vulkan *vulkan) {
-	level->main_thread_frame_memory_arena.name = "main thread frame";
-	level->main_thread_frame_memory_arena.capacity = m_megabytes(4);
-	level->main_thread_frame_memory_arena.memory = allocate_virtual_memory(level->main_thread_frame_memory_arena.capacity);
-	m_assert(level->main_thread_frame_memory_arena.memory);
+	{ // memories
+		level->main_thread_frame_memory_arena.name = "main thread frame";
+		level->main_thread_frame_memory_arena.capacity = m_megabytes(4);
+		level->main_thread_frame_memory_arena.memory = allocate_virtual_memory(level->main_thread_frame_memory_arena.capacity);
+		m_assert(level->main_thread_frame_memory_arena.memory);
 
-	level->render_thread_frame_memory_arena.name = "render thread frame";
-	level->render_thread_frame_memory_arena.capacity = m_megabytes(4);
-	level->render_thread_frame_memory_arena.memory = allocate_virtual_memory(level->render_thread_frame_memory_arena.capacity);
-	m_assert(level->render_thread_frame_memory_arena.memory);
+		level->render_thread_frame_memory_arena.name = "render thread frame";
+		level->render_thread_frame_memory_arena.capacity = m_megabytes(4);
+		level->render_thread_frame_memory_arena.memory = allocate_virtual_memory(level->render_thread_frame_memory_arena.capacity);
+		m_assert(level->render_thread_frame_memory_arena.memory);
 
-	for (uint32 i = 0; i < m_countof(level->entity_components_memory_arenas); i += 1) {
-		level->entity_components_memory_arenas[i].name = "entity_components";
-		level->entity_components_memory_arenas[i].capacity = m_megabytes(4);
-		level->entity_components_memory_arenas[i].memory = allocate_virtual_memory(level->entity_components_memory_arenas[i].capacity);
-		m_assert(level->entity_components_memory_arenas[i].memory);
+		for (uint32 i = 0; i < m_countof(level->entity_components_memory_arenas); i += 1) {
+			level->entity_components_memory_arenas[i].name = "entity_components";
+			level->entity_components_memory_arenas[i].capacity = m_megabytes(4);
+			level->entity_components_memory_arenas[i].memory = allocate_virtual_memory(level->entity_components_memory_arenas[i].capacity);
+			m_assert(level->entity_components_memory_arenas[i].memory);
+		}
+
+		level->assets_memory_arena.name = "assets";
+		level->assets_memory_arena.capacity = m_megabytes(64);
+		level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
+		m_assert(level->assets_memory_arena.memory);
 	}
+	{ // font
+	}
+	{ // vertices
+		level->persistant_data.bound_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, bound_vertices, sizeof(bound_vertices), 12u);
+		level->persistant_data.sphere_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, sphere_vertices, sizeof(sphere_vertices), 12u);
+		level->persistant_data.cylinder_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, cylinder_vertices, sizeof(cylinder_vertices), 12u);
 
-	level->assets_memory_arena.name = "assets";
-	level->assets_memory_arena.capacity = m_megabytes(64);
-	level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
-	m_assert(level->assets_memory_arena.memory);
-
-	level->model_capacity = 1024;
-	level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
-	level->skybox_capacity = 16;
-	level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
-	level->terrain_capacity = 16;
-	level->terrains = allocate_memory<struct terrain>(&level->assets_memory_arena, level->terrain_capacity);
-
-	{ // generate terrain vertices
 		uint32 vertices_size = 128 * 128 * 6 * sizeof(struct terrain_vertex);
 		m_memory_arena_undo_allocations_at_scope_exit(&level->main_thread_frame_memory_arena);
 		terrain_vertex *vertices = allocate_memory<terrain_vertex>(&level->main_thread_frame_memory_arena, 128 * 128 * 6);
@@ -390,8 +387,59 @@ void initialize_level(level *level, vulkan *vulkan) {
 			position = {-32, 0, position.z + dp};
 			uv = {0, uv.y + duv};
 		}
-		level->terrain_vertex_region_buffer_offset = append_to_vulkan_vertex_region(vulkan, (uint8 *)vertices, vertices_size, sizeof(struct terrain_vertex));
+		level->persistant_data.terrain_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, (uint8 *)vertices, vertices_size, sizeof(struct terrain_vertex));
 	}
+	{ // images
+		uint8 default_diffuse_map_data[] = {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+		uint8 default_metallic_map_data[] = {255, 255, 255, 255};
+		uint8 default_roughness_map_data[] = {255, 255, 255, 255};
+		uint8 default_normal_map_data[] = {128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0};
+		uint8 default_height_map_data[] = {0, 0, 0, 0};
+
+		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+		image_info.imageType = VK_IMAGE_TYPE_2D;
+		image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+		image_info.extent = {2, 2, 1};
+		image_info.mipLevels = 1;
+		image_info.arrayLayers = 1;
+		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		image_view_info.format = image_info.format;
+		image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		image_view_info.subresourceRange.levelCount = 1;
+		image_view_info.subresourceRange.layerCount = 1;
+
+		uint32 diffuse_map_index = append_vulkan_image_region(vulkan, image_info, image_view_info, default_diffuse_map_data, sizeof(default_diffuse_map_data), 1, 4);
+		level->persistant_data.default_diffuse_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, diffuse_map_index, vulkan->samplers.mipmap_samplers[0]);
+
+		image_info.format = VK_FORMAT_R8_UNORM;
+		image_view_info.format = image_info.format;
+		uint32 metallic_map_index = append_vulkan_image_region(vulkan, image_info, image_view_info, default_metallic_map_data, sizeof(default_metallic_map_data), 1, 1);
+		level->persistant_data.default_metallic_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, metallic_map_index, vulkan->samplers.mipmap_samplers[0]);
+
+		image_info.format = VK_FORMAT_R8_UNORM;
+		image_view_info.format = image_info.format;
+		uint32 roughness_map_index = append_vulkan_image_region(vulkan, image_info, image_view_info, default_roughness_map_data, sizeof(default_roughness_map_data), 1, 1);
+		level->persistant_data.default_roughness_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, roughness_map_index, vulkan->samplers.mipmap_samplers[0]);
+
+		image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+		image_view_info.format = image_info.format;
+		uint32 normal_map_index = append_vulkan_image_region(vulkan, image_info, image_view_info, default_normal_map_data, sizeof(default_normal_map_data), 1, 4);
+		level->persistant_data.default_normal_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, normal_map_index, vulkan->samplers.mipmap_samplers[0]);
+
+		image_info.format = VK_FORMAT_R8_UNORM;
+		image_view_info.format = image_info.format;
+		uint32 height_map_index = append_vulkan_image_region(vulkan, image_info, image_view_info, default_height_map_data, sizeof(default_height_map_data), 1, 1);
+		level->persistant_data.default_height_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, height_map_index, vulkan->samplers.mipmap_samplers[0]);
+	}
+	level->persistant_data.vulkan_vertex_region_offset = vulkan->memory_regions.vertex_region_size;
+	level->persistant_data.vulkan_image_region_offset = (uint32)vulkan->memory_regions.image_region_size;
+	level->persistant_data.vulkan_image_region_image_index = vulkan->memory_regions.image_region_image_count;
+	level->persistant_data.vulkan_combined_2d_image_samplers_index = vulkan->descriptors.combined_2d_image_sampler_count;
+	level->persistant_data.vulkan_combined_cube_image_samplers_index = vulkan->descriptors.combined_cube_image_sampler_count;
 }
 
 entity_render_component *entity_get_render_component(level *level, uint32 entity_index) {
@@ -703,10 +751,10 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 			uint8 *vertices_data = gpk_file_mapping.ptr + gpk_primitive->vertices_offset;
 			
 			primitive->index_count = gpk_primitive->index_count;
-			primitive->index_buffer_offset = append_to_vulkan_vertex_region(vulkan, indices_data, indices_size, sizeof(uint16));
+			primitive->index_buffer_offset = append_vulkan_vertex_region(vulkan, indices_data, indices_size, sizeof(uint16));
 
 			primitive->vertex_count = gpk_primitive->vertex_count;
-			primitive->vertex_buffer_offset = append_to_vulkan_vertex_region(vulkan, vertices_data, vertices_size, sizeof(struct gpk_model_vertex));
+			primitive->vertex_buffer_offset = append_vulkan_vertex_region(vulkan, vertices_data, vertices_size, sizeof(struct gpk_model_vertex));
 
 			if (store_vertices) {
 				primitive->indices_data = allocate_memory<uint8>(&level->assets_memory_arena, indices_size);
@@ -775,16 +823,16 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 		image_view_info.subresourceRange.levelCount = image_info.mipLevels;
 		image_view_info.subresourceRange.layerCount = image_info.arrayLayers;
 		uint8 *image_data = gpk_file_mapping.ptr + gpk_model_image->data_offset;
-		model->images[i].index = append_to_vulkan_image_region(vulkan, image_info, image_view_info, image_data, gpk_model_image->size, gpk_model_image->format_block_dimension, gpk_model_image->format_block_size);
+		model->images[i].index = append_vulkan_image_region(vulkan, image_info, image_view_info, image_data, gpk_model_image->size, gpk_model_image->format_block_dimension, gpk_model_image->format_block_size);
 	}
 	for (uint32 i = 0; i < model->material_count; i += 1) {
 		gpk_model_material *gpk_model_material = ((struct gpk_model_material*)(gpk_file_mapping.ptr + gpk_model->material_offset)) + i;
 		model_material *model_material = &model->materials[i];
 		array_copy(model_material->name, gpk_model_material->name);
-		model_material->diffuse_map_descriptor_index = UINT32_MAX;
-		model_material->metallic_map_descriptor_index = UINT32_MAX;
-		model_material->roughness_map_descriptor_index = UINT32_MAX;
-		model_material->normal_map_descriptor_index = UINT32_MAX;
+		model_material->diffuse_map_descriptor_index = level->persistant_data.default_diffuse_map_descriptor_index;
+		model_material->metallic_map_descriptor_index = level->persistant_data.default_metallic_map_descriptor_index;
+		model_material->roughness_map_descriptor_index = level->persistant_data.default_roughness_map_descriptor_index;
+		model_material->normal_map_descriptor_index = level->persistant_data.default_normal_map_descriptor_index;
 		model_material->diffuse_factor = gpk_model_material->diffuse_factor;
 		model_material->metallic_factor = gpk_model_material->metallic_factor;
 		model_material->roughness_factor = gpk_model_material->roughness_factor;
@@ -821,21 +869,8 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *gpk_file) {
 	image_view_info.subresourceRange.levelCount = gpk_skybox->cubemap_mipmap_count;
 	image_view_info.subresourceRange.layerCount = gpk_skybox->cubemap_layer_count;
 	uint8 *cubemap_ptr = (uint8 *)gpk_skybox + gpk_skybox->cubemap_offset;
-	append_to_vulkan_image_region(vulkan, image_info, image_view_info, cubemap_ptr, gpk_skybox->cubemap_size, gpk_skybox->cubemap_format_block_dimension, gpk_skybox->cubemap_format_block_size);
-	skybox->cubemap_descriptor_index = UINT32_MAX;
-	// VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-	// descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
-	// descriptor_set_allocate_info.descriptorSetCount = 1;
-	// descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
-	// m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &skybox->cubemap_descriptor_set));
-	// VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.skybox_cubemap_sampler, skybox->cubemap_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-	// VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	// write_descriptor_set.dstSet = skybox->cubemap_descriptor_set;
-	// write_descriptor_set.dstBinding = 0;
-	// write_descriptor_set.descriptorCount = 1;
-	// write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	// write_descriptor_set.pImageInfo = &descriptor_image_info;
-	// vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
+	uint32 cubemap_index = append_vulkan_image_region(vulkan, image_info, image_view_info, cubemap_ptr, gpk_skybox->cubemap_size, gpk_skybox->cubemap_format_block_dimension, gpk_skybox->cubemap_format_block_size);
+	skybox->cubemap_descriptor_index = append_vulkan_combined_cube_image_samplers(vulkan, cubemap_index, vulkan->samplers.skybox_cubemap_sampler);
 }
 
 void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
@@ -866,8 +901,8 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_view_info.subresourceRange.levelCount = 1;
 		image_view_info.subresourceRange.layerCount = 1;
 		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
-		append_to_vulkan_image_region(vulkan, image_info, image_view_info, height_map_ptr, gpk_terrain->height_map_size, 1, 2);
-		terrain->height_map_descriptor_index = UINT32_MAX;
+		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, height_map_ptr, gpk_terrain->height_map_size, 1, 2);
+		terrain->height_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.terrain_texture_sampler);
 	}
 	{
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -886,38 +921,22 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_view_info.subresourceRange.levelCount = 1;
 		image_view_info.subresourceRange.layerCount = 1;
 		uint8 *diffuse_map_ptr = gpk_file_mapping.ptr + gpk_terrain->diffuse_map_offset;
-		append_to_vulkan_image_region(vulkan, image_info, image_view_info, diffuse_map_ptr, gpk_terrain->diffuse_map_size, 1, 4);
-		terrain->diffuse_map_descriptor_index = UINT32_MAX;
+		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, diffuse_map_ptr, gpk_terrain->diffuse_map_size, 1, 4);
+		terrain->diffuse_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.terrain_texture_sampler);
 	}
-	// VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-	// descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
-	// descriptor_set_allocate_info.descriptorSetCount = 1;
-	// descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[1];
-	// m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &terrain->textures_descriptor_set));
-	// VkDescriptorImageInfo descriptor_image_infos[2] = {};
-	// descriptor_image_infos[0] = {vulkan->samplers.terrain_texture_sampler, terrain->height_map.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-	// descriptor_image_infos[1] = {vulkan->samplers.terrain_texture_sampler, terrain->diffuse_map.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-	// VkWriteDescriptorSet write_descriptor_sets[2] = {};
-	// write_descriptor_sets[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	// write_descriptor_sets[0].dstSet = terrain->textures_descriptor_set;
-	// write_descriptor_sets[0].dstBinding = 0;
-	// write_descriptor_sets[0].descriptorCount = 1;
-	// write_descriptor_sets[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	// write_descriptor_sets[0].pImageInfo = &descriptor_image_infos[0];
-	// write_descriptor_sets[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	// write_descriptor_sets[1].dstSet = terrain->textures_descriptor_set;
-	// write_descriptor_sets[1].dstBinding = 1;
-	// write_descriptor_sets[1].descriptorCount = 1;
-	// write_descriptor_sets[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	// write_descriptor_sets[1].pImageInfo = &descriptor_image_infos[1];
-	// vkUpdateDescriptorSets(vulkan->device.device, m_countof(write_descriptor_sets), write_descriptor_sets, 0, nullptr);
 }
 
 template <typename F>
 void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, F extra_read, bool store_vertices) {
 	file_mapping level_json_file_mapping = {};
 	m_assert(open_file_mapping(level_json_file, &level_json_file_mapping));
-	nlohmann::json json = nlohmann::json::parse(level_json_file_mapping.ptr, level_json_file_mapping.ptr + level_json_file_mapping.size);
+	nlohmann::json json;
+	try {
+		json = nlohmann::json::parse(level_json_file_mapping.ptr, level_json_file_mapping.ptr + level_json_file_mapping.size);
+	} catch (nlohmann::json::exception &e) {
+		printf("%s\n", e.what());
+		m_assert(false);
+	}
 	close_file_mapping(level_json_file_mapping);
 	{
 		level->render_data = {};
@@ -927,8 +946,14 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		level->assets_memory_arena.size = 0;
 		snprintf(level->json_file, sizeof(level->json_file), "%s", level_json_file);
 		level->model_count = 0;
+		level->model_capacity = 1024;
+		level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
 		level->skybox_count = 0;
+		level->skybox_capacity = 16;
+		level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
 		level->terrain_count = 0;
+		level->terrain_capacity = 16;
+		level->terrains = allocate_memory<struct terrain>(&level->assets_memory_arena, level->terrain_capacity);
 	}
 	{ // models, skyboxes, terrains
 		std::vector<std::string> model_gpk_files = json["models"];
@@ -1367,16 +1392,10 @@ template <typename F>
 void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F generate_extra_render_data) {
 	level->render_data = {};
 
-	uint32 *frame_vertex_buffer_offset = &vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
-	uint32 *frame_uniform_buffer_offset = &vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
-	uint8 *frame_uniform_buffer_ptr = vulkan->buffers.frame_uniform_buffer_ptrs[vulkan->frame_index];
+	vulkan->memory_regions.uniform_region_sizes[vulkan->frame_index] = 0;
+	vulkan->memory_regions.dynamic_vertex_region_sizes[vulkan->frame_index] = 0;
 
-	*frame_vertex_buffer_offset = 0;
-	*frame_uniform_buffer_offset = 0;
-
-	uint32 uniform_alignment = (uint32)vulkan->device.physical_device_properties.limits.minUniformBufferOffsetAlignment;
-
-	{ // scene
+	{ // level
 		ambient_light ambient_light = {{0, 0, 0}};
 		directional_light directional_light = {{0, 0, 0}, {1, 0, 0}};
 		point_light point_light = {};
@@ -1393,162 +1412,152 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 				} break;
 			}
 		}
-
-		round_up(frame_uniform_buffer_offset, uniform_alignment);
-		level->render_data.frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
-		shader_level_info *level_info = (struct shader_level_info *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
-		level_info->view_proj_mat = mat4_vulkan_clip() * camera_view_projection_mat4(camera);
-		level_info->camera_position = vec4{m_unpack3(camera.position.e), 0};
 		struct camera shadow_map_camera = camera;
 		shadow_map_camera.zfar = 100;
-		level_info->shadow_map_proj_mat = mat4_vulkan_clip() * camera_shadow_map_projection_mat4(shadow_map_camera, directional_light.direction);
-		level_info->ambient_light_color = vec4{m_unpack3(ambient_light.color), 0};
-		level_info->directional_light_color = vec4{m_unpack3(directional_light.color), 0};
-		level_info->directional_light_dir = vec4{m_unpack3(directional_light.direction), 0};
-		level_info->point_light_color = vec4{m_unpack3(point_light.color), 0};
-		level_info->point_light_position = vec4{m_unpack3(point_light.position), point_light.attenuation};
-		*frame_uniform_buffer_offset += sizeof(struct shader_level_info);
+		shader_level_info level_info = {};
+		level_info.view_proj_mat = mat4_vulkan_clip() * camera_view_projection_mat4(camera);
+		level_info.camera_position = vec4{m_unpack3(camera.position.e), 0};
+		level_info.shadow_map_proj_mat = mat4_vulkan_clip() * camera_shadow_map_projection_mat4(shadow_map_camera, directional_light.direction);
+		level_info.ambient_light_color = vec4{m_unpack3(ambient_light.color), 0};
+		level_info.directional_light_color = vec4{m_unpack3(directional_light.color), 0};
+		level_info.directional_light_dir = vec4{m_unpack3(directional_light.direction), 0};
+		level_info.point_light_color = vec4{m_unpack3(point_light.color), 0};
+		level_info.point_light_position = vec4{m_unpack3(point_light.position), point_light.attenuation};
+		uint32 offset = append_vulkan_uniform_region(vulkan, &level_info, sizeof(level_info));
+		m_assert(offset == 0);
 	}
 	{ // models
 		if (level->render_component_count > 0) {
-			round_up(frame_uniform_buffer_offset, uniform_alignment);
 			level->render_data.models = allocate_memory<struct model_render_data>(&level->render_thread_frame_memory_arena, level->render_component_count);
 			level->render_data.model_count = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
-				if (level->entity_flags[i] & entity_component_flag_render) {
-					entity_render_component *render_component = entity_get_render_component(level, i);
-					if (render_component->model_index < level->model_count && !render_component->hide) {
-						model_render_data *model_render_data = &level->render_data.models[level->render_data.model_count++];
-
-						model_render_data->model_index = render_component->model_index;
-						round_up(frame_uniform_buffer_offset, uniform_alignment);
-						model_render_data->frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
-						shader_model_info *model_info = (struct shader_model_info *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
-						model_info->model_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(render_component->adjustment_transform);
-						*frame_uniform_buffer_offset += sizeof(struct shader_model_info);
-
-						model model = level->models[render_component->model_index];
-						if (render_component->animation_index < model.animation_count) {
-							model_animation *animation = &model.animations[render_component->animation_index];
-							model_node *animated_nodes = allocate_memory<struct model_node>(&level->render_thread_frame_memory_arena, model.node_count);
-							memcpy(animated_nodes, model.nodes, model.node_count * sizeof(struct model_node));
-							transform *animated_node_transforms = allocate_memory<struct transform>(&level->render_thread_frame_memory_arena, model.node_count);
-							for (uint32 i = 0; i < model.node_count; i += 1) {
-								animated_node_transforms[i] = animated_nodes[i].local_transform;
-							}
-							for (uint32 i = 0; i < animation->channel_count; i += 1) {
-								model_animation_channel *channel = &animation->channels[i];
-								model_animation_sampler *sampler = &animation->samplers[channel->sampler_index];
-								m_assert(sampler->interpolation_type == gpk_model_animation_linear_interpolation);
-								float time = (float)fmod(render_component->animation_time, (double)sampler->key_frames[sampler->key_frame_count - 1].time);
-								for (uint32 i = 0; i < sampler->key_frame_count; i += 1) {
-									model_animation_key_frame *key_frame = &sampler->key_frames[i];
-									if (time <= key_frame->time) {
-										if (channel->channel_type == gpk_model_animation_translate_channel) {
-											vec3 translate = {};
-											if (i == 0) {
-												translate = vec3_lerp({0, 0, 0}, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
-											}
-											else {
-												model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
-												translate = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
-											}
-											animated_node_transforms[channel->node_index].translate = translate;
-										}
-										else if (channel->channel_type == gpk_model_animation_rotate_channel) {
-											quat rotate = {};
-											if (i == 0) {
-												rotate = quat_slerp({0, 0, 0, 1}, {m_unpack4(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
-											}
-											else {
-												model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
-												rotate = quat_slerp({m_unpack4(prev_key_frame->transform_data)}, {m_unpack4(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
-											}
-											animated_node_transforms[channel->node_index].rotate = rotate;
-										}
-										else if (channel->channel_type == gpk_model_animation_scale_channel) {
-											vec3 scale = {};
-											if (i == 0) {
-												scale = vec3_lerp({1, 1, 1}, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
-											}
-											else {
-												model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
-												scale = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
-											}
-											animated_node_transforms[channel->node_index].scale = scale;
-										}
-										break;
-									}
-								}
-							}
-							for (uint32 i = 0; i < model.node_count; i += 1) {
-								animated_nodes[i].local_transform_mat = mat4_from_transform(animated_node_transforms[i]);
-							}
-							model.nodes = animated_nodes;
-						}
-
-						uint32 joints_frame_uniform_buffer_offset = 0;
-						if (model.skin_count > 0) {
-							model_skin *skin = &model.skins[0];
-							round_up(frame_uniform_buffer_offset, uniform_alignment);
-							joints_frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
-							mat4 *joint_mats = (mat4 *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
-							*frame_uniform_buffer_offset += skin->joint_count * sizeof(mat4);
-							traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
-								for (uint32 i = 0; i < skin->joint_count; i += 1) {
-									if (skin->joints[i].node_index == index) {
-										joint_mats[i] = global_transform * skin->joints[i].inverse_bind_mat;
-										break;
-									}
-								}
-							});
-							for (uint32 i = 0; i < skin->joint_count; i += 1) {
-								m_assert(joint_mats[i] != mat4{});
-							}
-						}
-
-						model_render_data->mesh_count = 0;
-						traverse_model_scenes(&model, [&](model_node *node, uint32 index) {
-							if (node->mesh_index < model.mesh_count) {
-								model_render_data->mesh_count += 1;
-							}
-						});
-						model_render_data->meshes = allocate_memory<struct mesh_render_data>(&level->render_thread_frame_memory_arena, model_render_data->mesh_count);
-						uint32 mesh_render_data_index = 0;
-						traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
-							if (node->mesh_index < model.mesh_count) {
-								mesh_render_data *mesh_render_data = &model_render_data->meshes[mesh_render_data_index++];
-								mesh_render_data->mesh_index = node->mesh_index;
-								if (model.skin_count > 0) {
-									mesh_render_data->frame_uniform_buffer_offset = joints_frame_uniform_buffer_offset;
-								}
-								else {
-									round_up(frame_uniform_buffer_offset, uniform_alignment);
-									mesh_render_data->frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
-									*(mat4 *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset) = global_transform;
-									*frame_uniform_buffer_offset += sizeof(mat4);
-								}
-								model_mesh *mesh = &model.meshes[node->mesh_index];
-								mesh_render_data->primitives = allocate_memory<struct primitive_render_data>(&level->render_thread_frame_memory_arena, mesh->primitive_count);
-								for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
-									primitive_render_data *primitive_render_data = &mesh_render_data->primitives[i];
-									primitive_render_data->primitive_index = i;
-
-									model_mesh_primitive *primitive = &mesh->primitives[i];
-									model_material *material = &model.materials[primitive->material_index];
-
-									round_up(frame_uniform_buffer_offset, uniform_alignment);
-									primitive_render_data->frame_uniform_buffer_offset = *frame_uniform_buffer_offset;
-									shader_primitive_info *primitive_info = (shader_primitive_info *)(frame_uniform_buffer_ptr + *frame_uniform_buffer_offset);
-									primitive_info->diffuse_factor = material->diffuse_factor;
-									primitive_info->metallic_factor = material->metallic_factor;
-									primitive_info->roughness_factor = material->roughness_factor;
-									*frame_uniform_buffer_offset += sizeof(struct shader_primitive_info);
-								}
-							}
-						});
-					}
+				if (!(level->entity_flags[i] & entity_component_flag_render)) {
+					continue;
 				}
+				entity_render_component *render_component = entity_get_render_component(level, i);
+				if (render_component->model_index >= level->model_count || render_component->hide) {
+					continue;
+				}
+				model_render_data *model_render_data = &level->render_data.models[level->render_data.model_count++];
+				model_render_data->model_index = render_component->model_index;
+
+				shader_model_info model_info = {};
+				model_info.model_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(render_component->adjustment_transform);
+				model_render_data->uniform_region_buffer_offset = append_vulkan_uniform_region(vulkan, &model_info, sizeof(model_info));
+
+				model model = level->models[render_component->model_index];
+				if (render_component->animation_index < model.animation_count) {
+					model_animation *animation = &model.animations[render_component->animation_index];
+					model_node *animated_nodes = allocate_memory<struct model_node>(&level->render_thread_frame_memory_arena, model.node_count);
+					memcpy(animated_nodes, model.nodes, model.node_count * sizeof(struct model_node));
+					transform *animated_node_transforms = allocate_memory<struct transform>(&level->render_thread_frame_memory_arena, model.node_count);
+					for (uint32 i = 0; i < model.node_count; i += 1) {
+						animated_node_transforms[i] = animated_nodes[i].local_transform;
+					}
+					for (uint32 i = 0; i < animation->channel_count; i += 1) {
+						model_animation_channel *channel = &animation->channels[i];
+						model_animation_sampler *sampler = &animation->samplers[channel->sampler_index];
+						m_assert(sampler->interpolation_type == gpk_model_animation_linear_interpolation);
+						float time = (float)fmod(render_component->animation_time, (double)sampler->key_frames[sampler->key_frame_count - 1].time);
+						for (uint32 i = 0; i < sampler->key_frame_count; i += 1) {
+							model_animation_key_frame *key_frame = &sampler->key_frames[i];
+							if (time <= key_frame->time) {
+								if (channel->channel_type == gpk_model_animation_translate_channel) {
+									vec3 translate = {};
+									if (i == 0) {
+										translate = vec3_lerp({0, 0, 0}, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+									}
+									else {
+										model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+										translate = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+									}
+									animated_node_transforms[channel->node_index].translate = translate;
+								}
+								else if (channel->channel_type == gpk_model_animation_rotate_channel) {
+									quat rotate = {};
+									if (i == 0) {
+										rotate = quat_slerp({0, 0, 0, 1}, {m_unpack4(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+									}
+									else {
+										model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+										rotate = quat_slerp({m_unpack4(prev_key_frame->transform_data)}, {m_unpack4(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+									}
+									animated_node_transforms[channel->node_index].rotate = rotate;
+								}
+								else if (channel->channel_type == gpk_model_animation_scale_channel) {
+									vec3 scale = {};
+									if (i == 0) {
+										scale = vec3_lerp({1, 1, 1}, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+									}
+									else {
+										model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+										scale = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+									}
+									animated_node_transforms[channel->node_index].scale = scale;
+								}
+								break;
+							}
+						}
+					}
+					for (uint32 i = 0; i < model.node_count; i += 1) {
+						animated_nodes[i].local_transform_mat = mat4_from_transform(animated_node_transforms[i]);
+					}
+					model.nodes = animated_nodes;
+				}
+
+				uint32 joints_uniform_region_buffer_offset = 0;
+				if (model.skin_count > 0) {
+					model_skin *skin = &model.skins[0];
+					mat4 *joint_mats = allocate_memory<mat4>(&level->render_thread_frame_memory_arena, skin->joint_count);
+					traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
+						for (uint32 i = 0; i < skin->joint_count; i += 1) {
+							if (skin->joints[i].node_index == index) {
+								joint_mats[i] = global_transform * skin->joints[i].inverse_bind_mat;
+								break;
+							}
+						}
+					});
+					for (uint32 i = 0; i < skin->joint_count; i += 1) {
+						m_assert(joint_mats[i] != mat4{});
+					}
+					joints_uniform_region_buffer_offset = append_vulkan_uniform_region(vulkan, joint_mats, skin->joint_count * sizeof(mat4));
+				}
+
+				model_render_data->mesh_count = 0;
+				traverse_model_scenes(&model, [&](model_node *node, uint32 index) {
+					if (node->mesh_index < model.mesh_count) {
+						model_render_data->mesh_count += 1;
+					}
+				});
+				model_render_data->meshes = allocate_memory<struct mesh_render_data>(&level->render_thread_frame_memory_arena, model_render_data->mesh_count);
+				uint32 mesh_render_data_index = 0;
+				traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
+					if (node->mesh_index < model.mesh_count) {
+						mesh_render_data *mesh_render_data = &model_render_data->meshes[mesh_render_data_index++];
+						mesh_render_data->mesh_index = node->mesh_index;
+						if (model.skin_count > 0) {
+							mesh_render_data->uniform_region_buffer_offset = joints_uniform_region_buffer_offset;
+						}
+						else {
+							mesh_render_data->uniform_region_buffer_offset = append_vulkan_uniform_region(vulkan, &global_transform, sizeof(global_transform));
+						}
+						model_mesh *mesh = &model.meshes[node->mesh_index];
+						mesh_render_data->primitives = allocate_memory<struct primitive_render_data>(&level->render_thread_frame_memory_arena, mesh->primitive_count);
+						for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
+							primitive_render_data *primitive_render_data = &mesh_render_data->primitives[i];
+							primitive_render_data->primitive_index = i;
+
+							model_mesh_primitive *primitive = &mesh->primitives[i];
+							model_material *material = &model.materials[primitive->material_index];
+
+							shader_primitive_info primitive_info = {};
+							primitive_info.diffuse_factor = material->diffuse_factor;
+							primitive_info.metallic_factor = material->metallic_factor;
+							primitive_info.roughness_factor = material->roughness_factor;
+							primitive_render_data->uniform_region_buffer_offset = append_vulkan_uniform_region(vulkan, &primitive_info, sizeof(primitive_info));
+						}
+					}
+				});
 			}
 		}
 	}
@@ -1556,14 +1565,16 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 }
 
 template <typename F0, typename F1>
-void level_generate_render_commands(level *level, vulkan *vulkan, const camera &camera, F0 extra_main_render_pass_render_commands, F1 extra_swap_chain_render_commands) {
+void level_generate_render_commands(level *level, vulkan *vulkan, const camera &camera, F0 extra_color_render_pass_commands, F1 extra_swap_chain_render_pass_command) {
 	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
+	VkDescriptorSet descriptor_sets[2] = {vulkan->descriptors.uniform_buffers[vulkan->frame_index], vulkan->descriptors.combined_image_samplers};
+	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.pipeline_layout, 0, 2, descriptor_sets, 0, nullptr);
 	{ // shadow passes
 		{
 			VkClearValue clear_values[] = {{1, 1, 0, 0}, {1, 0}};
 			VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
 			render_pass_begin_info.renderPass = vulkan->render_passes.shadow_map_render_passes[0];
-			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].framebuffers[0];
+			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].framebuffer;
 			render_pass_begin_info.renderArea.offset = {0, 0};
 			render_pass_begin_info.renderArea.extent = {vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].height};
 			render_pass_begin_info.clearValueCount = m_countof(clear_values);
@@ -1573,45 +1584,45 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 			VkRect2D scissor = {{0, 0}, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].height};
 			vkCmdSetViewport(cmd_buffer, 0, 1, &viewport);
 			vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
-			if (level->render_data.model_count > 0) {
-				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_shadow_map_pipeline.pipeline);
-				VkDeviceSize vertex_buffer_offset = 0;
-				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.level_vertex_buffer.buffer, &vertex_buffer_offset);
-				vkCmdBindIndexBuffer(cmd_buffer, vulkan->buffers.level_vertex_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-				for (auto &model_render_data : make_range(level->render_data.models, level->render_data.model_count)) {
-					model &model = level->models[model_render_data.model_index];
-					for (auto &mesh_render_data : make_range(model_render_data.meshes, model_render_data.mesh_count)) {
-						model_mesh &mesh = model.meshes[mesh_render_data.mesh_index];
-						for (auto &primitive_render_data : make_range(mesh_render_data.primitives, mesh.primitive_count)) {
-							model_mesh_primitive &primitive = mesh.primitives[primitive_render_data.primitive_index];
-							uint32 offsets[4] = {
-								level->render_data.frame_uniform_buffer_offset, model_render_data.frame_uniform_buffer_offset, 
-								mesh_render_data.frame_uniform_buffer_offset, primitive_render_data.frame_uniform_buffer_offset
-							};
-							vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
-							vkCmdDrawIndexed(cmd_buffer, primitive.index_count, 1, primitive.index_buffer_offset / sizeof(uint16), primitive.vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
-						}
-					}
-				}
-			}
+			// if (level->render_data.model_count > 0) {
+			// 	vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_shadow_map_pipeline.pipeline);
+			// 	VkDeviceSize vertex_buffer_offset = 0;
+			// 	vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.level_vertex_buffer.buffer, &vertex_buffer_offset);
+			// 	vkCmdBindIndexBuffer(cmd_buffer, vulkan->buffers.level_vertex_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+			// 	for (auto &model_render_data : make_range(level->render_data.models, level->render_data.model_count)) {
+			// 		model &model = level->models[model_render_data.model_index];
+			// 		for (auto &mesh_render_data : make_range(model_render_data.meshes, model_render_data.mesh_count)) {
+			// 			model_mesh &mesh = model.meshes[mesh_render_data.mesh_index];
+			// 			for (auto &primitive_render_data : make_range(mesh_render_data.primitives, mesh.primitive_count)) {
+			// 				model_mesh_primitive &primitive = mesh.primitives[primitive_render_data.primitive_index];
+			// 				uint32 offsets[4] = {
+			// 					level->render_data.frame_uniform_buffer_offset, model_render_data.frame_uniform_buffer_offset, 
+			// 					mesh_render_data.frame_uniform_buffer_offset, primitive_render_data.frame_uniform_buffer_offset
+			// 				};
+			// 				vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
+			// 				vkCmdDrawIndexed(cmd_buffer, primitive.index_count, 1, primitive.index_buffer_offset / sizeof(uint16), primitive.vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
+			// 			}
+			// 		}
+			// 	}
+			// }
 			vkCmdEndRenderPass(cmd_buffer);
 		}
 		{
 			VkClearValue clear_values[] = {{0, 0, 0, 0}};
 			VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
 			render_pass_begin_info.renderPass = vulkan->render_passes.shadow_map_render_passes[1];
-			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].framebuffers[1];
+			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_blur_1_framebuffers[vulkan->frame_index].framebuffer;
 			render_pass_begin_info.renderArea.offset = {0, 0};
 			render_pass_begin_info.renderArea.extent = {vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].height};
 			render_pass_begin_info.clearValueCount = m_countof(clear_values);
 			render_pass_begin_info.pClearValues = clear_values;
 			vkCmdBeginRenderPass(cmd_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[0].pipeline);
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[0].layout, 0, 1, &vulkan->descriptors.shadow_map_framebuffer_textures[vulkan->frame_index][0], 0, nullptr);
-		  struct {
-		  	float x_dir, y_dir;
-		  } push_const = {1, 0};
-		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[0].layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_const), &push_const);
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[0]);
+		  shader_gaussian_blur_push_constant pc;
+		  pc.index = vulkan->framebuffers.shadow_map_blur_1_descriptor_indices[vulkan->frame_index];
+		  pc.x_dir = 1;
+		  pc.y_dir = 0;
+		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 			vkCmdDraw(cmd_buffer, 3, 1, 0, 0);
 			vkCmdEndRenderPass(cmd_buffer);
 		}
@@ -1619,64 +1630,64 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 			VkClearValue clear_values[] = {{0, 0, 0, 0}};
 			VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
 			render_pass_begin_info.renderPass = vulkan->render_passes.shadow_map_render_passes[2];
-			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].framebuffers[2];
+			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].framebuffer;
 			render_pass_begin_info.renderArea.offset = {0, 0};
 			render_pass_begin_info.renderArea.extent = {vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].height};
 			render_pass_begin_info.clearValueCount = m_countof(clear_values);
 			render_pass_begin_info.pClearValues = clear_values;
 			vkCmdBeginRenderPass(cmd_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[1].pipeline);
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[1].layout, 0, 1, &vulkan->descriptors.shadow_map_framebuffer_textures[vulkan->frame_index][1], 0, nullptr);
-		  struct {
-		  	float x_dir, y_dir;
-		  } push_const = {0, 1};
-		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[1].layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_const), &push_const);
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.shadow_map_gaussian_blur_pipelines[1]);
+		  shader_gaussian_blur_push_constant pc;
+		  pc.index = vulkan->framebuffers.shadow_map_blur_2_descriptor_indices[vulkan->frame_index];
+		  pc.x_dir = 0;
+		  pc.y_dir = 1;
+		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 			vkCmdDraw(cmd_buffer, 3, 1, 0, 0);
 			vkCmdEndRenderPass(cmd_buffer);
 		}
 	}
-	{ // main render pass
+	{ // color render pass
 		VkClearValue clear_values[2] = {{0, 0, 0, 1}, {0, 0}};
 		VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-		render_pass_begin_info.renderPass = vulkan->render_passes.main_render_pass;
-		render_pass_begin_info.framebuffer = vulkan->framebuffers.main_framebuffers[vulkan->frame_index].framebuffer;
+		render_pass_begin_info.renderPass = vulkan->render_passes.color_render_pass;
+		render_pass_begin_info.framebuffer = vulkan->framebuffers.color_framebuffers[vulkan->frame_index].framebuffer;
 		render_pass_begin_info.renderArea.offset = {0, 0};
-		render_pass_begin_info.renderArea.extent = {vulkan->framebuffers.main_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.main_framebuffers[vulkan->frame_index].height};
+		render_pass_begin_info.renderArea.extent = {vulkan->framebuffers.color_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.color_framebuffers[vulkan->frame_index].height};
 		render_pass_begin_info.clearValueCount = m_countof(clear_values);
 		render_pass_begin_info.pClearValues = clear_values;
 		vkCmdBeginRenderPass(cmd_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-		VkViewport viewport = {0, 0, (float)vulkan->framebuffers.main_framebuffers[vulkan->frame_index].width, (float)vulkan->framebuffers.main_framebuffers[vulkan->frame_index].height, 1, 0};
-		VkRect2D scissor = {{0, 0}, vulkan->framebuffers.main_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.main_framebuffers[vulkan->frame_index].height};
+		VkViewport viewport = {0, 0, (float)vulkan->framebuffers.color_framebuffers[vulkan->frame_index].width, (float)vulkan->framebuffers.color_framebuffers[vulkan->frame_index].height, 1, 0};
+		VkRect2D scissor = {{0, 0}, vulkan->framebuffers.color_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.color_framebuffers[vulkan->frame_index].height};
 		vkCmdSetViewport(cmd_buffer, 0, 1, &viewport);
 		vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
 		if (level->render_data.model_count > 0) {
-			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.pipeline);
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline);
 			VkDeviceSize vertex_buffer_offset = 0;
-			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.level_vertex_buffer.buffer, &vertex_buffer_offset);
-			vkCmdBindIndexBuffer(cmd_buffer, vulkan->buffers.level_vertex_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 2, 1, &vulkan->descriptors.shadow_map_framebuffer_textures[vulkan->frame_index][2], 0, nullptr);
+			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertex_buffer_offset);
+			vkCmdBindIndexBuffer(cmd_buffer, vulkan->memory_regions.vertex_region_buffer, 0, VK_INDEX_TYPE_UINT16);
 			for (auto &model_render_data : make_range(level->render_data.models, level->render_data.model_count)) {
 				model &model = level->models[model_render_data.model_index];
 				for (auto &mesh_render_data : make_range(model_render_data.meshes, model_render_data.mesh_count)) {
 					model_mesh &mesh = model.meshes[mesh_render_data.mesh_index];
 					for (auto &primitive_render_data : make_range(mesh_render_data.primitives, mesh.primitive_count)) {
 						model_mesh_primitive &primitive = mesh.primitives[primitive_render_data.primitive_index];
-						uint32 offsets[4] = {
-							level->render_data.frame_uniform_buffer_offset, model_render_data.frame_uniform_buffer_offset, 
-							mesh_render_data.frame_uniform_buffer_offset, primitive_render_data.frame_uniform_buffer_offset
-						};
-						vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
-						if (primitive.material_index < model.material_count) {
-							vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 1, 1, &model.materials[primitive.material_index].textures_descriptor_set, 0, nullptr);
-						}
-						else {
-							vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 1, 1, &vulkan->descriptors.model_default_material_textures, 0, nullptr);
-						}
+						shader_model_push_constant pc = {};
+						pc.model_offset = model_render_data.uniform_region_buffer_offset;
+						pc.mesh_offset = mesh_render_data.uniform_region_buffer_offset;
+						pc.primitive_offset = primitive_render_data.uniform_region_buffer_offset;
+						pc.diffuse_map_index = model.materials[primitive.material_index].diffuse_map_descriptor_index;
+						pc.metallic_map_index = model.materials[primitive.material_index].metallic_map_descriptor_index;
+						pc.roughness_map_index = model.materials[primitive.material_index].roughness_map_descriptor_index;
+						pc.normal_map_index = model.materials[primitive.material_index].normal_map_descriptor_index;
+						pc.height_map_index = level->persistant_data.default_height_map_descriptor_index;
+						pc.shadow_map_index = vulkan->framebuffers.shadow_map_blur_1_descriptor_indices[vulkan->frame_index];
+						vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd_buffer, primitive.index_count, 1, primitive.index_buffer_offset / sizeof(uint16), primitive.vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
 					}
 				}
 			}
 		}
+		#if 0
 		if (level->terrain_index < level->terrain_count) {
 			terrain *terrain = &level->terrains[level->terrain_index];
 			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.pipeline);
@@ -1687,19 +1698,19 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.layout, 1, 1, &terrain->textures_descriptor_set, 0, nullptr);
 			vkCmdDraw(cmd_buffer, 128 * 128 * 6, 1, level->terrain_common_vertex_buffer_offset / sizeof(struct terrain_vertex), 0);
 		}
+		#endif
 		if (level->skybox_index < level->skybox_count) {
 		  skybox *skybox = &level->skyboxes[level->skybox_index];
-		  vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline.pipeline);
-		  vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline.layout, 0, 1, &skybox->cubemap_descriptor_set, 0, nullptr);
+		  vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline);
 		  struct camera skybox_camera = camera;
 		  skybox_camera.position = {0, 0, 0};
-		  struct {
-		  	mat4 camera_view_proj_mat;
-		  } push_const = {mat4_vulkan_clip() * camera_view_projection_mat4(skybox_camera)};
-		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.skybox_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_const), &push_const);
+		  shader_skybox_push_constant pc = {};
+		  pc.view_proj_mat = mat4_vulkan_clip() * camera_view_projection_mat4(skybox_camera);
+		  pc.cube_map_index = 0;
+		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 		  vkCmdDraw(cmd_buffer, 36, 1, 0, 0);
 		}
-		extra_main_render_pass_render_commands();
+		extra_color_render_pass_commands();
 		vkCmdEndRenderPass(cmd_buffer);
 	}
 	{ // swap chain render pass
@@ -1711,22 +1722,67 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 		render_pass_begin_info.renderArea.extent = {vulkan->swap_chain.image_width, vulkan->swap_chain.image_height};
 		render_pass_begin_info.clearValueCount = 1;
 		render_pass_begin_info.pClearValues = &clear_value;
+
 		vkCmdBeginRenderPass(cmd_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
 		VkViewport viewport = {0, 0, (float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height, 0, 1};
 		VkRect2D scissor = {{0, 0}, {vulkan->swap_chain.image_width, vulkan->swap_chain.image_height}};
 		vkCmdSetViewport(cmd_buffer, 0, 1, &viewport);
 		vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
-		{
-			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.swap_chain_pipeline.pipeline);
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.swap_chain_pipeline.layout, 0, 1, &vulkan->descriptors.main_framebuffer_textures[vulkan->frame_index], 0, nullptr);
-			vkCmdDraw(cmd_buffer, 3, 1, 0, 0);
-		}
-		extra_swap_chain_render_commands();
+
+		vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.swap_chain_pipeline);
+		shader_swap_chain_push_constant pc = {};
+		pc.texture_index = vulkan->framebuffers.color_descriptor_indices[vulkan->frame_index];
+		vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+		vkCmdDraw(cmd_buffer, 3, 1, 0, 0);
+
+		extra_swap_chain_render_pass_command();
 		vkCmdEndRenderPass(cmd_buffer);
 	}
 }	
 
 #if 0
+stbtt_fontinfo stbtt_font_info;
+stbtt_pack_context stbtt_pack_context;
+stbtt_packedchar stbtt_packed_chars[95];
+float font_size;
+uint32 font_atlas_width;
+uint32 font_atlas_height;
+uint32 font_atlas_descriptor_index;
+
+file_mapping font_file_mapping = {};
+m_assert(open_file_mapping("assets\\fonts\\Roboto-Medium.ttf", &font_file_mapping));
+m_scope_exit(close_file_mapping(font_file_mapping));
+
+m_assert(stbtt_InitFont(&level->persistant_data.stbtt_font_info, font_file_mapping.ptr, 0));
+level->persistant_data.font_size = 128;
+level->persistant_data.font_atlas_width = 2048;
+level->persistant_data.font_atlas_height = 1024;
+uint8 *font_atlas = (uint8 *)allocate_virtual_memory(level->persistant_data.font_atlas_width * level->persistant_data.font_atlas_height);
+m_scope_exit(free_virtual_memory(font_atlas));
+m_assert(stbtt_PackBegin(&level->persistant_data.stbtt_pack_context, font_atlas, level->persistant_data.font_atlas_width, level->persistant_data.font_atlas_height, 0, 1, nullptr));
+stbtt_PackSetOversampling(&level->persistant_data.stbtt_pack_context, 2, 2);
+m_assert(stbtt_PackFontRange(&level->persistant_data.stbtt_pack_context, font_file_mapping.ptr, 0, level->persistant_data.font_size, 32, 95, level->persistant_data.stbtt_packed_chars));
+stbtt_PackEnd(&level->persistant_data.stbtt_pack_context);
+
+VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+image_info.imageType = VK_IMAGE_TYPE_2D;
+image_info.format = VK_FORMAT_R8_UNORM;
+image_info.extent = {level->persistant_data.font_atlas_width, level->persistant_data.font_atlas_height, 1};
+image_info.mipLevels = 1;
+image_info.arrayLayers = 1;
+image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+image_view_info.format = image_info.format;
+image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+image_view_info.subresourceRange.levelCount = 1;
+image_view_info.subresourceRange.layerCount = 1;
+uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, font_atlas, level->persistant_data.font_atlas_width * level->persistant_data.font_atlas_height, 1, 1);
+level->persistant_data.font_atlas_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[0]);
+
 { // texts
 	struct vertex {
 		vec4 position_uv;
@@ -1735,7 +1791,7 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 	};
 	static_assert(sizeof(struct vertex) == 24, "");
 	round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(struct vertex));
-	round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], uniform_alignment);
+	round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], 64u);
 	level->render_data.text_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
 	level->render_data.text_frame_uniform_buffer_offset = vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
 	level->render_data.text_frame_vertex_count = 0;
@@ -1775,14 +1831,6 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 		text_quad_translate.y += (bound.max.y - bound.min.y) / 2;
 
 		mat4 transform_mat = mat4_vulkan_clip() * camera_view_projection_mat4(camera) * mat4_from_translation(text_quad_translate) * camera_billboard_mat4(camera) * mat4_from_scaling(text_quad_scale) * mat4_from_translation({(-text_quad_center).x, (-text_quad_center).y, 0});
-		*(mat4 *)(vulkan->buffers.frame_uniform_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index]) = transform_mat;
-		vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index] += sizeof(mat4);
-
-		level->render_data.text_frame_vertex_count += text_len * 6;
-		level->render_data.text_frame_uniform_count += 1;
 	};
-	for (uint32 i = 0; i < level->entity_count; i += 1) {
-		append_text_render_data(level->entity_infos[i].name, aa_bound{{-1, -1, -1}, {1, 1, 1}});
-	}
 }
 #endif

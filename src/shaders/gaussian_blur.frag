@@ -7,12 +7,7 @@ layout(location = 0) in vec2 uv_in;
 layout(location = 0) out vec4 color_out;
 
 m_declare_2d_texture_array
-
-layout(push_constant) uniform push_constant {
-  uint index;
-	float x_dir;
-	float y_dir;
-} pc;
+m_declare_gaussian_blur_push_constant
 
 void main() {
 	vec2 ds_dt = vec2(1, 1) / textureSize(textures[pc.index], 0);

@@ -7,7 +7,6 @@
 #include "vulkan.cpp"
 #include "gpk.cpp"
 #include "level.cpp"
-#include "geometry.cpp"
 
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "../vendor/include/imgui/imgui_draw.cpp"
@@ -51,7 +50,7 @@ struct editor_render_data {
 	collision_shape_render_data *collision_bounds;
 	uint32 collision_bound_count;
 
-	uint32 imgui_frame_vertex_buffer_offset;
+	uint32 imgui_dynamic_vertex_region_buffer_offset;
 };
 
 enum undoable_type {
@@ -62,14 +61,9 @@ struct undoable {
 };
 
 struct editor {
-	stbtt_fontinfo stbtt_font_info;
-	stbtt_pack_context stbtt_pack_context;
-	stbtt_packedchar stbtt_packed_chars[95];
-	float font_size;
-	uint32 font_atlas_width;
-	uint32 font_atlas_height;
-
 	editor_render_data render_data;
+
+	uint32 imgui_font_atlas_descriptor_index;
 	
 	camera camera;
 	float camera_pitch;
@@ -98,36 +92,36 @@ struct editor {
 void initialize_editor(editor *editor, vulkan *vulkan) {
 	{ // imgui
 		ImGui::StyleColorsDark();
-		ImGuiIO *imgui_io = &ImGui::GetIO();
-		imgui_io->KeyMap[ImGuiKey_Tab] = keycode_tab;
-		imgui_io->KeyMap[ImGuiKey_LeftArrow] = keycode_left;
-		imgui_io->KeyMap[ImGuiKey_RightArrow] = keycode_right;
-		imgui_io->KeyMap[ImGuiKey_UpArrow] = keycode_up;
-		imgui_io->KeyMap[ImGuiKey_DownArrow] = keycode_down;
-		imgui_io->KeyMap[ImGuiKey_PageUp] = keycode_page_up;
-		imgui_io->KeyMap[ImGuiKey_PageDown] = keycode_page_down;
-		imgui_io->KeyMap[ImGuiKey_Home] = keycode_home;
-		imgui_io->KeyMap[ImGuiKey_End] = keycode_end;
-		imgui_io->KeyMap[ImGuiKey_Backspace] = keycode_backspace;
-		imgui_io->KeyMap[ImGuiKey_Enter] = keycode_return;
-		imgui_io->KeyMap[ImGuiKey_Escape] = keycode_esc;
-		imgui_io->KeyMap[ImGuiKey_A] = 'A';
-		imgui_io->KeyMap[ImGuiKey_C] = 'C';
-		imgui_io->KeyMap[ImGuiKey_V] = 'V';
-		imgui_io->KeyMap[ImGuiKey_X] = 'X';
-		imgui_io->KeyMap[ImGuiKey_Y] = 'Y';
-		imgui_io->KeyMap[ImGuiKey_Z] = 'Z';
-		imgui_io->DisplaySize = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
-		ImGuizmo::SetRect(0, 0, imgui_io->DisplaySize.x, imgui_io->DisplaySize.y);
-		imgui_io->IniFilename = nullptr;
-		imgui_io->MousePos = {-1, -1};
-		imgui_io->FontGlobalScale = (float)vulkan->swap_chain.image_width / (float)GetSystemMetrics(SM_CXSCREEN);
+		ImGuiIO &imgui_io = ImGui::GetIO();
+		imgui_io.KeyMap[ImGuiKey_Tab] = keycode_tab;
+		imgui_io.KeyMap[ImGuiKey_LeftArrow] = keycode_left;
+		imgui_io.KeyMap[ImGuiKey_RightArrow] = keycode_right;
+		imgui_io.KeyMap[ImGuiKey_UpArrow] = keycode_up;
+		imgui_io.KeyMap[ImGuiKey_DownArrow] = keycode_down;
+		imgui_io.KeyMap[ImGuiKey_PageUp] = keycode_page_up;
+		imgui_io.KeyMap[ImGuiKey_PageDown] = keycode_page_down;
+		imgui_io.KeyMap[ImGuiKey_Home] = keycode_home;
+		imgui_io.KeyMap[ImGuiKey_End] = keycode_end;
+		imgui_io.KeyMap[ImGuiKey_Backspace] = keycode_backspace;
+		imgui_io.KeyMap[ImGuiKey_Enter] = keycode_return;
+		imgui_io.KeyMap[ImGuiKey_Escape] = keycode_esc;
+		imgui_io.KeyMap[ImGuiKey_A] = 'A';
+		imgui_io.KeyMap[ImGuiKey_C] = 'C';
+		imgui_io.KeyMap[ImGuiKey_V] = 'V';
+		imgui_io.KeyMap[ImGuiKey_X] = 'X';
+		imgui_io.KeyMap[ImGuiKey_Y] = 'Y';
+		imgui_io.KeyMap[ImGuiKey_Z] = 'Z';
+		imgui_io.DisplaySize = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
+		ImGuizmo::SetRect(0, 0, imgui_io.DisplaySize.x, imgui_io.DisplaySize.y);
+		imgui_io.IniFilename = nullptr;
+		imgui_io.MousePos = {-1, -1};
+		imgui_io.FontGlobalScale = (float)vulkan->swap_chain.image_width / (float)GetSystemMetrics(SM_CXSCREEN);
 
-		m_assert(ImGui::GetIO().Fonts->AddFontFromFileTTF("assets\\fonts\\Roboto-Medium.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 110.0f));
+		m_assert(imgui_io.Fonts->AddFontFromFileTTF("assets\\fonts\\Roboto-Medium.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 110.0f));
 		uint8* font_atlas_image = nullptr;
 		int32 font_atlas_image_width = 0;
 		int32 font_atlas_image_height = 0;
-		ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
+		imgui_io.Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
 
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_info.imageType = VK_IMAGE_TYPE_2D;
@@ -144,105 +138,24 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_view_info.subresourceRange.levelCount = 1;
 		image_view_info.subresourceRange.layerCount = 1;
-		append_to_vulkan_image_region(vulkan, image_info, image_view_info, font_atlas_image, font_atlas_image_width * font_atlas_image_height * 4, 1, 4);
-
-		// VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-		// descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
-		// descriptor_set_allocate_info.descriptorSetCount = 1;
-		// descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
-		// m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.imgui_font_atlas_texture));
-		// VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_samplers[vulkan->images.imgui_font_atlas_image.mipmap_count], vulkan->images.imgui_font_atlas_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		// VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-		// write_descriptor_set.dstSet = vulkan->descriptors.imgui_font_atlas_texture;
-		// write_descriptor_set.dstBinding = 0;
-		// write_descriptor_set.descriptorCount = 1;
-		// write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		// write_descriptor_set.pImageInfo = &descriptor_image_info;
-		// vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-
-		// ImGui::GetIO().Fonts->SetTexID(vulkan->descriptors.imgui_font_atlas_texture);
+		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, font_atlas_image, font_atlas_image_width * font_atlas_image_height * 4, 1, 4);
+		editor->imgui_font_atlas_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[0]);
+		imgui_io.Fonts->SetTexID((ImTextureID)(intptr_t)editor->imgui_font_atlas_descriptor_index);
+		imgui_io.Fonts->ClearTexData();
 	}
-	{ // font
-		file_mapping font_file_mapping = {};
-		m_assert(open_file_mapping("assets\\fonts\\Roboto-Medium.ttf", &font_file_mapping));
-		m_scope_exit(close_file_mapping(font_file_mapping));
+	editor->camera.position = vec3{4, 8, 8};
+	editor->camera.view = vec3_normalize(-editor->camera.position);
+	editor->camera.up = vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view);
+	editor->camera.fovy = degree_to_radian(50);
+	editor->camera.aspect = (float)vulkan->swap_chain.image_width / (float)vulkan->swap_chain.image_height;
+	editor->camera.znear = 0.1f;
+	editor->camera.zfar = 1000;
+	editor->camera_pitch = asinf(editor->camera.view.y);
+	editor->camera_move_speed = 10;
 
-		m_assert(stbtt_InitFont(&editor->stbtt_font_info, font_file_mapping.ptr, 0));
-		editor->font_size = 128;
-		editor->font_atlas_width = 2048;
-		editor->font_atlas_height = 1024;
-		uint8 *font_atlas = (uint8 *)allocate_virtual_memory(editor->font_atlas_width * editor->font_atlas_height);
-		m_scope_exit(free_virtual_memory(font_atlas));
-		m_assert(stbtt_PackBegin(&editor->stbtt_pack_context, font_atlas, editor->font_atlas_width, editor->font_atlas_height, 0, 1, nullptr));
-		stbtt_PackSetOversampling(&editor->stbtt_pack_context, 2, 2);
-		m_assert(stbtt_PackFontRange(&editor->stbtt_pack_context, font_file_mapping.ptr, 0, editor->font_size, 32, 95, editor->stbtt_packed_chars));
-		stbtt_PackEnd(&editor->stbtt_pack_context);
+	editor->show_reference_grid = true;
 
-		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-		image_info.imageType = VK_IMAGE_TYPE_2D;
-		image_info.format = VK_FORMAT_R8_UNORM;
-		image_info.extent = {editor->font_atlas_width, editor->font_atlas_height, 1};
-		image_info.mipLevels = 1;
-		image_info.arrayLayers = 1;
-		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		image_view_info.format = image_info.format;
-		image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		image_view_info.subresourceRange.levelCount = 1;
-		image_view_info.subresourceRange.layerCount = 1;
-		append_to_vulkan_image_region(vulkan, image_info, image_view_info, font_atlas, editor->font_atlas_width * editor->font_atlas_height, 1, 1);
-
-		// VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-		// descriptor_set_allocate_info.descriptorPool = vulkan->descriptors.pool;
-		// descriptor_set_allocate_info.descriptorSetCount = 1;
-		// descriptor_set_allocate_info.pSetLayouts = &vulkan->descriptors.textures_descriptor_set_layouts[0];
-		// m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &descriptor_set_allocate_info, &vulkan->descriptors.font_atlas_texture));
-		// VkDescriptorImageInfo descriptor_image_info = {vulkan->samplers.mipmap_samplers[0], vulkan->images.font_atlas_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-		// VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-		// write_descriptor_set.dstSet = vulkan->descriptors.font_atlas_texture;
-		// write_descriptor_set.dstBinding = 0;
-		// write_descriptor_set.descriptorCount = 1;
-		// write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		// write_descriptor_set.pImageInfo = &descriptor_image_info;
-		// vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-	}
-	// { // geometry vertices
-	// 	round_up(&vulkan->buffers.common_vertex_buffer_offset, 12u);
-
-	// 	editor->bound_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
-	// 	vulkan_buffer_transfer(vulkan, vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, bound_vertices, sizeof(bound_vertices));
-	// 	vulkan->buffers.common_vertex_buffer_offset += sizeof(bound_vertices);
-
-	// 	editor->sphere_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
-	// 	vulkan_buffer_transfer(vulkan, vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, sphere_vertices, sizeof(sphere_vertices));
-	// 	vulkan->buffers.common_vertex_buffer_offset += sizeof(sphere_vertices);
-
-	// 	editor->cylinder_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
-	// 	vulkan_buffer_transfer(vulkan, vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, cylinder_vertices, sizeof(cylinder_vertices));
-	// 	vulkan->buffers.common_vertex_buffer_offset += sizeof(cylinder_vertices);
-
-	// 	editor->capsule_vertices_common_vertex_buffer_offset = vulkan->buffers.common_vertex_buffer_offset;
-	// 	vulkan_buffer_transfer(vulkan, vulkan->buffers.common_vertex_buffer, vulkan->buffers.common_vertex_buffer_offset, capsule_vertices, sizeof(capsule_vertices));
-	// 	vulkan->buffers.common_vertex_buffer_offset += sizeof(capsule_vertices);
-	// }
-	{ // misc
-		editor->camera.position = vec3{4, 8, 8};
-		editor->camera.view = vec3_normalize(-editor->camera.position);
-		editor->camera.up = vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view);
-		editor->camera.fovy = degree_to_radian(50);
-		editor->camera.aspect = (float)vulkan->swap_chain.image_width / (float)vulkan->swap_chain.image_height;
-		editor->camera.znear = 0.1f;
-		editor->camera.zfar = 1000;
-		editor->camera_pitch = asinf(editor->camera.view.y);
-		editor->camera_move_speed = 10;
-
-		editor->show_reference_grid = true;
-
-		editor->entity_index = UINT32_MAX;
-	}
+	editor->entity_index = UINT32_MAX;
 }
 
 struct read_editor_settings {
@@ -334,6 +247,13 @@ int main(int argc, char **argv) {
 	LARGE_INTEGER performance_counters[2] = {};
 	uint64 last_frame_time_microsec = 0;
 	double last_frame_time_sec = 0;
+
+	uint64 entity_components_memory_arena_size = 0;
+	uint64 main_thread_frame_memory_arena_size = 0;
+	uint64 render_thread_frame_memory_arena_size = 0;
+	uint64 vulkan_uniform_region_size = 0;
+	uint64 vulkan_dynamic_vertex_region_size = 0;
+
 	bool program_running = true;
 
 	show_window(&window);
@@ -901,30 +821,28 @@ int main(int argc, char **argv) {
 			ImGui::PopID();
 		}
 		{ // memory window
-			ImGui::SetNextWindowPos(ImVec2{ImGui::GetIO().DisplaySize.x * 0.9f, editor->menu_bar_height});
-			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.1f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.8f});
+			ImGui::SetNextWindowPos(ImVec2{ImGui::GetIO().DisplaySize.x * 0.8f, editor->menu_bar_height});
+			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.8f});
 			ImGui::PushID("memory_usage_window");
-			if (ImGui::Begin("Memory Usage##window", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
+			if (ImGui::Begin("Memory Usage##window", nullptr, ImGuiWindowFlags_NoCollapse)) {
 				auto imgui_render_memory = [](uint64 memory_size, uint64 memory_capacity, const char *memory_name) {
-					char overlay[32] = {};
-					if (memory_size < m_kilobytes(100)) {
-						snprintf(overlay, sizeof(overlay), "%lld bytes / %.1f mb", memory_size, (double)memory_capacity / m_megabytes(1));
-					}
-					else {
-						snprintf(overlay, sizeof(overlay), "%.1f mb / %.1f mb", (double)memory_size / m_megabytes(1), (double)memory_capacity / m_megabytes(1));
-					}
+					char overlay[64] = {};
+					snprintf(overlay, sizeof(overlay), "%s / %s", pretty_print_bytes(memory_size).data(), pretty_print_bytes(memory_capacity).data());
 					ImGui::ProgressBar((float)((double)memory_size / (double)memory_capacity), ImVec2{ImGui::GetWindowContentRegionWidth() * 0.5f, 0}, overlay);
 					ImGui::SameLine();
 					ImGui::Text(memory_name);
 				};
 				ImGui::Text("Memory Arenas");
 				memory_arena *entity_components_memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
-				imgui_render_memory(entity_components_memory_arena->size, entity_components_memory_arena->capacity, entity_components_memory_arena->name);
-				imgui_render_memory(level->assets_memory_arena.size, level->assets_memory_arena.capacity, level->assets_memory_arena.name);
+				imgui_render_memory(entity_components_memory_arena_size, entity_components_memory_arena->capacity, "Entity Component");
+				imgui_render_memory(level->assets_memory_arena.size, level->assets_memory_arena.capacity, "Assets");
+				imgui_render_memory(main_thread_frame_memory_arena_size, level->main_thread_frame_memory_arena.capacity, "Main Thread Frame");
+				imgui_render_memory(render_thread_frame_memory_arena_size, level->render_thread_frame_memory_arena.capacity, "Render Thread Frame");
 				ImGui::Text("Vulkan Memories");
 				imgui_render_memory(vulkan->memory_regions.image_region_size, vulkan->memory_regions.image_region_capacity, "Image Region");
 				imgui_render_memory(vulkan->memory_regions.vertex_region_size, vulkan->memory_regions.vertex_region_capacity, "Vertex Region");
-				imgui_render_memory(vulkan->memory_regions.uniform_region_sizes[vulkan->frame_index], vulkan->memory_regions.uniform_region_capacities[vulkan->frame_index], "Uniform Region");
+				imgui_render_memory(vulkan_uniform_region_size, vulkan->memory_regions.uniform_region_capacities[vulkan->frame_index], "Uniform Region");
+				imgui_render_memory(vulkan_dynamic_vertex_region_size, vulkan->memory_regions.dynamic_vertex_region_capacities[vulkan->frame_index], "Dynamic Vertex Region");
 			}
 			ImGui::End();
 			ImGui::PopID();
@@ -1272,180 +1190,181 @@ int main(int argc, char **argv) {
 		}
 		ImGui::Render();
 
-		// auto generate_render_data = [&] {
-		// 	editor->render_data = {};
-		// 	{ // lines
-		// 		round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], 16u);
-		// 		editor->render_data.lines_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
-		// 		struct line_point {
-		// 			vec3 position;
-		// 			u8vec4 color;
-		// 		};
-		// 		static_assert(sizeof(struct line_point) == 16, "");
-		// 		line_point *line_points = (struct line_point *)(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + editor->render_data.lines_frame_vertex_buffer_offset);
-		// 		if (editor->show_reference_grid) {
-		// 			u8vec4 color = u8vec4{200, 200, 200, 255};
-		// 			line_point horizontal_points[20];
-		// 			float horizontal_z = -4.5f;
-		// 			for (uint32 i = 0; i < m_countof(horizontal_points) / 2; i += 1) {
-		// 				horizontal_points[i * 2] = {{-4.5f, 0, horizontal_z}, color};
-		// 				horizontal_points[i * 2 + 1] = {{4.5f, 0, horizontal_z}, color};
-		// 				horizontal_z += 1;
-		// 			}
-		// 			line_point vertical_points[20];
-		// 			float vertical_x = -4.5f;
-		// 			for (uint32 i = 0; i < m_countof(vertical_points) / 2; i += 1) {
-		// 				vertical_points[i * 2] = {{vertical_x, 0, -4.5f}, color};
-		// 				vertical_points[i * 2 + 1] = {{vertical_x, 0, 4.5f}, color};
-		// 				vertical_x += 1;
-		// 			}
-		// 			memcpy(line_points, horizontal_points, sizeof(horizontal_points));
-		// 			memcpy(line_points + m_countof(horizontal_points), vertical_points, sizeof(vertical_points));
-		// 			line_points += m_countof(horizontal_points) + m_countof(vertical_points);
-		// 			editor->render_data.lines_vertex_count += m_countof(horizontal_points) + m_countof(vertical_points);
-		// 			vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(horizontal_points) + sizeof(vertical_points);
-		// 		}
-		// 	}
-		// 	{ // collision objects
-		// 		if (editor->show_collision_shape && editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
-		// 			entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
-		// 			if (entity_collision_component->shape == collision_shape_sphere) {
-		// 				editor->render_data.collision_sphere_count = 1;
-		// 				editor->render_data.collision_spheres = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_sphere_count);
+		auto generate_editor_render_data = [&] {
+			editor->render_data = {};
+			#if 0
+			{ // lines
+				round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], 16u);
+				editor->render_data.lines_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
+				struct line_point {
+					vec3 position;
+					u8vec4 color;
+				};
+				static_assert(sizeof(struct line_point) == 16, "");
+				line_point *line_points = (struct line_point *)(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + editor->render_data.lines_frame_vertex_buffer_offset);
+				if (editor->show_reference_grid) {
+					u8vec4 color = u8vec4{200, 200, 200, 255};
+					line_point horizontal_points[20];
+					float horizontal_z = -4.5f;
+					for (uint32 i = 0; i < m_countof(horizontal_points) / 2; i += 1) {
+						horizontal_points[i * 2] = {{-4.5f, 0, horizontal_z}, color};
+						horizontal_points[i * 2 + 1] = {{4.5f, 0, horizontal_z}, color};
+						horizontal_z += 1;
+					}
+					line_point vertical_points[20];
+					float vertical_x = -4.5f;
+					for (uint32 i = 0; i < m_countof(vertical_points) / 2; i += 1) {
+						vertical_points[i * 2] = {{vertical_x, 0, -4.5f}, color};
+						vertical_points[i * 2 + 1] = {{vertical_x, 0, 4.5f}, color};
+						vertical_x += 1;
+					}
+					memcpy(line_points, horizontal_points, sizeof(horizontal_points));
+					memcpy(line_points + m_countof(horizontal_points), vertical_points, sizeof(vertical_points));
+					line_points += m_countof(horizontal_points) + m_countof(vertical_points);
+					editor->render_data.lines_vertex_count += m_countof(horizontal_points) + m_countof(vertical_points);
+					vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(horizontal_points) + sizeof(vertical_points);
+				}
+			}
+			{ // collision objects
+				if (editor->show_collision_shape && editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
+					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
+					if (entity_collision_component->shape == collision_shape_sphere) {
+						editor->render_data.collision_sphere_count = 1;
+						editor->render_data.collision_spheres = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_sphere_count);
 
-		// 				auto sphere = entity_collision_component->sphere;
-		// 				transform transform = level->entity_transforms[editor->entity_index];
-		// 				editor->render_data.collision_spheres[0].transform = mat4_from_translate(transform.translate) * mat4_from_scale({sphere.radius, sphere.radius, sphere.radius});
-		// 				editor->render_data.collision_spheres[0].color = vec4{0, 1, 0, 0.25f};
-		// 			}
-		// 			if (entity_collision_component->shape == collision_shape_capsule) {
-		// 				editor->render_data.collision_capsule_count = 1;
-		// 				editor->render_data.collision_capsules = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_capsule_count);
+						auto sphere = entity_collision_component->sphere;
+						transform transform = level->entity_transforms[editor->entity_index];
+						editor->render_data.collision_spheres[0].transform = mat4_from_translate(transform.translate) * mat4_from_scale({sphere.radius, sphere.radius, sphere.radius});
+						editor->render_data.collision_spheres[0].color = vec4{0, 1, 0, 0.25f};
+					}
+					if (entity_collision_component->shape == collision_shape_capsule) {
+						editor->render_data.collision_capsule_count = 1;
+						editor->render_data.collision_capsules = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_capsule_count);
 
-		// 				transform transform = level->entity_transforms[editor->entity_index];
-		// 				capsule capsule = {};
-		// 				capsule.radius = entity_collision_component->capsule.radius;
-		// 				capsule.begin = {0, -entity_collision_component->capsule.height / 2, 0};
-		// 				capsule.end = {0, entity_collision_component->capsule.height / 2, 0};
-		// 				capsule.begin = transform.rotate * capsule.begin;
-		// 				capsule.end = transform.rotate * capsule.end;
-		// 				mat4 cylinder_scale_mat = mat4_from_scale({capsule.radius, entity_collision_component->capsule.height, capsule.radius});
-		// 				mat4 cylinder_rotate_mat = mat4_from_rotate(quat_from_between({0, 1, 0}, vec3_normalize(capsule.end - (capsule.begin + capsule.end) / 2)));
-		// 				mat4 cylinder_translate_mat = mat4_from_translate(transform.translate);
-		// 				mat4 sphere_scale_mat = mat4_from_scale({capsule.radius, capsule.radius, capsule.radius});
-		// 				mat4 sphere_translate_mats[2] = {mat4_from_translate(transform.translate + capsule.begin), mat4_from_translate(transform.translate + capsule.end)};
-		// 				editor->render_data.collision_capsules[0].transform = cylinder_translate_mat * cylinder_rotate_mat * cylinder_scale_mat;
-		// 				editor->render_data.collision_capsules[0].capsule_sphere_transforms[0] = sphere_translate_mats[0] * sphere_scale_mat;
-		// 				editor->render_data.collision_capsules[0].capsule_sphere_transforms[1] = sphere_translate_mats[1] * sphere_scale_mat;
-		// 				editor->render_data.collision_capsules[0].color = vec4{0, 1, 0, 0.25f};
-		// 			}
-		// 			if (entity_collision_component->shape == collision_shape_box) {
-		// 				editor->render_data.collision_bound_count = 1;
-		// 				editor->render_data.collision_bounds = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_bound_count);
+						transform transform = level->entity_transforms[editor->entity_index];
+						capsule capsule = {};
+						capsule.radius = entity_collision_component->capsule.radius;
+						capsule.begin = {0, -entity_collision_component->capsule.height / 2, 0};
+						capsule.end = {0, entity_collision_component->capsule.height / 2, 0};
+						capsule.begin = transform.rotate * capsule.begin;
+						capsule.end = transform.rotate * capsule.end;
+						mat4 cylinder_scale_mat = mat4_from_scale({capsule.radius, entity_collision_component->capsule.height, capsule.radius});
+						mat4 cylinder_rotate_mat = mat4_from_rotate(quat_from_between({0, 1, 0}, vec3_normalize(capsule.end - (capsule.begin + capsule.end) / 2)));
+						mat4 cylinder_translate_mat = mat4_from_translate(transform.translate);
+						mat4 sphere_scale_mat = mat4_from_scale({capsule.radius, capsule.radius, capsule.radius});
+						mat4 sphere_translate_mats[2] = {mat4_from_translate(transform.translate + capsule.begin), mat4_from_translate(transform.translate + capsule.end)};
+						editor->render_data.collision_capsules[0].transform = cylinder_translate_mat * cylinder_rotate_mat * cylinder_scale_mat;
+						editor->render_data.collision_capsules[0].capsule_sphere_transforms[0] = sphere_translate_mats[0] * sphere_scale_mat;
+						editor->render_data.collision_capsules[0].capsule_sphere_transforms[1] = sphere_translate_mats[1] * sphere_scale_mat;
+						editor->render_data.collision_capsules[0].color = vec4{0, 1, 0, 0.25f};
+					}
+					if (entity_collision_component->shape == collision_shape_box) {
+						editor->render_data.collision_bound_count = 1;
+						editor->render_data.collision_bounds = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_bound_count);
 
-		// 				transform transform = level->entity_transforms[editor->entity_index];
-		// 				auto box = entity_collision_component->box;
-		// 				editor->render_data.collision_bounds[0].transform = mat4_from_translate(transform.translate) * mat4_from_scale(box.size);
-		// 				editor->render_data.collision_bounds[0].color = vec4{0, 1, 0, 0.25f};
-		// 			}
-		// 		}
-		// 	}
-			// { // imgui
-			// 	round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(ImDrawVert));
-			// 	editor->render_data.imgui_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
-			// 	ImDrawData *imgui_draw_data = ImGui::GetDrawData();
-			// 	for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
-			// 		ImDrawList *dlist = imgui_draw_data->CmdLists[i];
-			// 		uint32 vertices_size = dlist->VtxBuffer.Size * sizeof(ImDrawVert);
-			// 		uint32 indices_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
-			// 		memcpy(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], dlist->VtxBuffer.Data, vertices_size);
-			// 		memcpy(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] + vertices_size, dlist->IdxBuffer.Data, indices_size);
-			// 		vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += round_up(vertices_size + indices_size, (uint32)sizeof(ImDrawVert));
-			// 	}
-			// }
-		// };
-  //  	auto extra_main_render_pass_render_commands = [&] {
-		// 	VkDeviceSize vertices_offset = 0;
-		// 	uint32 uniform_buffer_offsets[4] = {level->render_data.frame_uniform_buffer_offset, 0, 0, 0};
+						transform transform = level->entity_transforms[editor->entity_index];
+						auto box = entity_collision_component->box;
+						editor->render_data.collision_bounds[0].transform = mat4_from_translate(transform.translate) * mat4_from_scale(box.size);
+						editor->render_data.collision_bounds[0].color = vec4{0, 1, 0, 0.25f};
+					}
+				}
+			}
+			#endif
+      { // imgui
+      	ImDrawData *imgui_draw_data = ImGui::GetDrawData();
+      	for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
+      		ImDrawList *dlist = imgui_draw_data->CmdLists[i];
+      		uint32 offset = append_vulkan_dynamic_vertex_region(vulkan, dlist->VtxBuffer.Data, dlist->VtxBuffer.Size * sizeof(ImDrawVert), sizeof(ImDrawVert));
+      		append_vulkan_dynamic_vertex_region(vulkan, dlist->IdxBuffer.Data, dlist->IdxBuffer.Size * sizeof(ImDrawIdx), sizeof(ImDrawVert));
+      		if (i == 0) {
+      			editor->render_data.imgui_dynamic_vertex_region_buffer_offset = offset;
+      		}
+      	}
+      } 
+    };
+   	auto extra_color_render_pass_commands = [&] {
+   		#if 0
+			VkDeviceSize vertices_offset = 0;
+			uint32 uniform_buffer_offsets[4] = {level->render_data.frame_uniform_buffer_offset, 0, 0, 0};
+			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
+			if (editor->show_reference_grid) {
+				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline);
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
+				vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
+				vkCmdDraw(cmd_buffer, editor->render_data.lines_vertex_count, 1, editor->render_data.lines_frame_vertex_buffer_offset / 16, 0);
+			}
+			if (editor->render_data.collision_sphere_count + editor->render_data.collision_capsule_count + editor->render_data.collision_bound_count > 0) {
+				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.pipeline);
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.common_vertex_buffer.buffer, &vertices_offset);
+				vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
+				struct collision_object_push_consts {
+					mat4 transform;
+					vec4 color;
+				};
+				for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
+					collision_object_push_consts push_consts = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
+					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+				}
+				for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
+					collision_object_push_consts cylinder_push_consts = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(cylinder_push_consts), &cylinder_push_consts);
+					vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, editor->cylinder_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
 
-		// 	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
+					collision_object_push_consts sphere_1_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[0], editor->render_data.collision_capsules[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_1_push_consts), &sphere_1_push_consts);
+					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
 
-		// 	if (editor->show_reference_grid) {
-		// 		vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline);
-		// 		vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
-		// 		vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
-		// 		vkCmdDraw(cmd_buffer, editor->render_data.lines_vertex_count, 1, editor->render_data.lines_frame_vertex_buffer_offset / 16, 0);
-		// 	}
-
-		// 	if (editor->render_data.collision_sphere_count + editor->render_data.collision_capsule_count + editor->render_data.collision_bound_count > 0) {
-		// 		vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.pipeline);
-		// 		vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.common_vertex_buffer.buffer, &vertices_offset);
-		// 		vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
-		// 		struct collision_object_push_consts {
-		// 			mat4 transform;
-		// 			vec4 color;
-		// 		};
-		// 		for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
-		// 			collision_object_push_consts push_consts = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color};
-		// 			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-		// 			vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
-		// 		}
-		// 		for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
-		// 			collision_object_push_consts cylinder_push_consts = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color};
-		// 			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(cylinder_push_consts), &cylinder_push_consts);
-		// 			vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, editor->cylinder_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
-
-		// 			collision_object_push_consts sphere_1_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[0], editor->render_data.collision_capsules[i].color};
-		// 			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_1_push_consts), &sphere_1_push_consts);
-		// 			vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
-
-		// 			collision_object_push_consts sphere_2_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[1], editor->render_data.collision_capsules[i].color};
-		// 			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_2_push_consts), &sphere_2_push_consts);
-		// 			vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
-		// 		}
-		// 		for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
-		// 			collision_object_push_consts push_consts = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color};
-		// 			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-		// 			vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, editor->bound_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
-		// 		}
-		// 	}
-		// };
-  //  	auto extra_swap_chain_render_commands = [&] {
-		// 	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
-		// 	vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline.pipeline);
-		// 	VkDeviceSize vertices_offset = 0;
-		// 	vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
-		// 	vkCmdBindIndexBuffer(cmd_buffer, vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, vertices_offset, VK_INDEX_TYPE_UINT16);
-		// 	ImDrawData *imgui_draw_data = ImGui::GetDrawData();
-		// 	for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
-		// 		ImDrawList *dlist = imgui_draw_data->CmdLists[i];
-		// 		uint32 vertices_size = dlist->VtxBuffer.Size * sizeof(ImDrawVert);
-		// 		uint32 elements_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
-		// 		uint32 vertex_index = editor->render_data.imgui_frame_vertex_buffer_offset / sizeof(ImDrawVert);
-		// 		uint32 element_index = (editor->render_data.imgui_frame_vertex_buffer_offset + vertices_size) / sizeof(ImDrawIdx);
-		// 		for (int32 i = 0; i < dlist->CmdBuffer.Size; i += 1) {
-		// 		 	ImDrawCmd *dcmd = &dlist->CmdBuffer.Data[i];
-		// 			VkRect2D scissor = {{(int32)dcmd->ClipRect.x, (int32)dcmd->ClipRect.y}, {(uint32)(dcmd->ClipRect.z - dcmd->ClipRect.x), (uint32)(dcmd->ClipRect.w - dcmd->ClipRect.y)}};
-		// 			vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
-		// 			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline.layout, 0, 1, (VkDescriptorSet *)&dcmd->TextureId, 0, nullptr);
-		// 			struct {
-		// 				vec2 viewport;
-		// 				uint32 image_is_grayscale;
-		// 			} push_consts = {{(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height}, 0};
-		// 			if ((VkDescriptorSet)dcmd->TextureId != vulkan->descriptors.imgui_font_atlas_texture) {
-		// 				push_consts.image_is_grayscale = 1;
-		// 			}
-		// 			vkCmdPushConstants(cmd_buffer, vulkan->pipelines.imgui_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-		// 			vkCmdDrawIndexed(cmd_buffer, dcmd->ElemCount, 1, element_index, vertex_index, 0);
-		// 			element_index += dcmd->ElemCount;
-		// 		}
-		// 		editor->render_data.imgui_frame_vertex_buffer_offset += round_up(vertices_size + elements_size, (uint32)sizeof(ImDrawVert));
-		// 	}
-		// };
+					collision_object_push_consts sphere_2_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[1], editor->render_data.collision_capsules[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_2_push_consts), &sphere_2_push_consts);
+					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+				}
+				for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
+					collision_object_push_consts push_consts = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
+					vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, editor->bound_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+				}
+			}
+			#endif
+		};
+		auto extra_swap_chain_render_pass_commands = [&] {
+			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
+			ImDrawData *imgui_draw_data = ImGui::GetDrawData();
+			if (imgui_draw_data->CmdListsCount > 0) {
+				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline);
+				VkDeviceSize vertices_offset = 0;
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.dynamic_vertex_region_buffers[vulkan->frame_index], &vertices_offset);
+				vkCmdBindIndexBuffer(cmd_buffer, vulkan->memory_regions.dynamic_vertex_region_buffers[vulkan->frame_index], vertices_offset, VK_INDEX_TYPE_UINT16);
+				uint32 buffer_offset = editor->render_data.imgui_dynamic_vertex_region_buffer_offset;
+				for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
+					ImDrawList *dlist = imgui_draw_data->CmdLists[i];
+					uint32 vertices_size = dlist->VtxBuffer.Size * sizeof(ImDrawVert);
+					uint32 indices_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
+					uint32 vertex_index = buffer_offset / sizeof(ImDrawVert);
+					buffer_offset += vertices_size;
+					uint32 element_index = buffer_offset / sizeof(ImDrawIdx);
+					buffer_offset += round_up(indices_size, (uint32)sizeof(ImDrawVert));
+					for (int32 i = 0; i < dlist->CmdBuffer.Size; i += 1) {
+						ImDrawCmd *dcmd = &dlist->CmdBuffer.Data[i];
+						VkRect2D scissor = {{(int32)dcmd->ClipRect.x, (int32)dcmd->ClipRect.y}, {(uint32)(dcmd->ClipRect.z - dcmd->ClipRect.x), (uint32)(dcmd->ClipRect.w - dcmd->ClipRect.y)}};
+						vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
+						shader_imgui_push_constant pc = {};
+						pc.viewport = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
+						pc.texture_index = (uint32)(intptr_t)dcmd->TextureId;
+						pc.texture_is_grayscale = false;
+						vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+						vkCmdDrawIndexed(cmd_buffer, dcmd->ElemCount, 1, element_index, vertex_index, 0);
+						element_index += dcmd->ElemCount;
+					}
+				}
+			}
+		};
 		vulkan_begin_render(vulkan);
-		// level_generate_render_data(level, vulkan, editor->camera, generate_render_data);
-		// level_generate_render_commands(level, vulkan, editor->camera, extra_main_render_pass_render_commands, extra_swap_chain_render_commands);
+		level_generate_render_data(level, vulkan, editor->camera, generate_editor_render_data);
+		level_generate_render_commands(level, vulkan, editor->camera, extra_color_render_pass_commands, extra_swap_chain_render_pass_commands);
 		bool screen_shot = ImGui::IsKeyReleased(keycode_print_screen);
+		vulkan_uniform_region_size = vulkan->memory_regions.uniform_region_sizes[vulkan->frame_index];
+		vulkan_dynamic_vertex_region_size = vulkan->memory_regions.dynamic_vertex_region_sizes[vulkan->frame_index];
 		vulkan_end_render(vulkan, screen_shot);
 
 		{
@@ -1460,7 +1379,11 @@ int main(int argc, char **argv) {
 			}
 		}
 
+		entity_components_memory_arena_size = level->entity_components_memory_arenas[level->entity_components_memory_arena_index].size;
 		level_update_entity_components(level);
+
+		main_thread_frame_memory_arena_size = level->main_thread_frame_memory_arena.size;
+		render_thread_frame_memory_arena_size = level->render_thread_frame_memory_arena.size;
 		level->main_thread_frame_memory_arena.size = 0;
 		level->render_thread_frame_memory_arena.size = 0;
 	

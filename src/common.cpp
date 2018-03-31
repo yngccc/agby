@@ -4,17 +4,19 @@
 
 #pragma once
 
-#include <assert.h>
-#include <ctype.h>
-#include <inttypes.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <string.h>
 #define _USE_MATH_DEFINES
-#include <math.h>
-#include <float.h>
+#include <cassert>
+#include <cctype>
+#include <cinttypes>
+#include <cstdint>
+#include <cstdlib>
+#include <cstdio>
+#include <cstdarg>
+#include <cstring>
+#include <cmath>
+#include <cfloat>
+
+#include <array>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -346,6 +348,31 @@ void free_memory(memory_pool *memory_pool, void *block) {
 	*(void **)block = memory_pool->free_block;
 	memory_pool->free_block = block;
 	memory_pool->free_block_count += 1;
+}
+
+std::array<char, 16> pretty_print_bytes(uint64 bytes) {
+	const char* suffixes[7];
+	suffixes[0] = "B";
+	suffixes[1] = "KB";
+	suffixes[2] = "MB";
+	suffixes[3] = "GB";
+	suffixes[4] = "TB";
+	suffixes[5] = "PB";
+	suffixes[6] = "EB";
+
+  uint32 s = 0;
+  double count = (double)bytes;
+  while (count >= 1024 && s < 7) {
+  	s += 1;
+  	count /= 1024;
+  }
+  std::array<char, 16> str;
+  if (count - floor(count) == 0.0) {
+  	snprintf(str.data(), 16, "%d %s", (int32)count, suffixes[s]);
+  } else {
+  	snprintf(str.data(), 16, "%.1f %s", count, suffixes[s]);
+  }
+  return str;
 }
 
 // struct profiler_code_frame {

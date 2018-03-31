@@ -41,12 +41,19 @@ struct shader_model_push_constant {
   uint32 shadow_map_index;
 };
 
+struct shader_gaussian_blur_push_constant {
+  uint32 index;
+  float x_dir;
+  float y_dir;
+};
+
 struct shader_terrain_push_constant {
   uint32 height_map_index;
   uint32 diffuse_map_index;
 };
 
 struct shader_skybox_push_constant {
+  mat4 view_proj_mat;
   uint32 cube_map_index;
 };
 
@@ -84,6 +91,13 @@ struct shader_swap_chain_push_constant {
     uint shadow_map_index;                       \
   } pc;
 
+#define m_declare_gaussian_blur_push_constant    \
+  layout(push_constant) uniform push_constant {  \
+    uint index;                                  \
+    float x_dir;                                 \
+    float y_dir;                                 \
+  } pc;
+
 #define m_declare_terrain_push_constant          \
   layout(push_constant) uniform push_constant {  \
     uint height_map_index;                       \
@@ -92,6 +106,7 @@ struct shader_swap_chain_push_constant {
 
 #define m_declare_skybox_push_constant           \
   layout(push_constant) uniform push_constant {  \
+    mat4 view_proj_mat;                          \
     uint cube_map_index;                         \
   } pc;
 

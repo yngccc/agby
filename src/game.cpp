@@ -3,17 +3,17 @@
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"
-
-#define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-#include "../vendor/include/imgui/imgui_draw.cpp"
-#include "../vendor/include/imgui/imgui.cpp"
-
 #include "math.cpp"
 #include "vulkan.cpp"
 #include "gpk.cpp"
 #include "level.cpp"
 
 #include <atomic>
+
+#define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+#include "../vendor/include/imgui/imgui_draw.cpp"
+#include "../vendor/include/imgui/imgui.cpp"
+#undef snprintf
 
 struct render_thread_arg {
 	struct vulkan *vulkan;
@@ -37,33 +37,33 @@ void initialize_game(game *game, vulkan *vulkan) {
 		game->frame_done_flag = 0;
 	}
 	{ // imgui
-		ImGuiIO *imgui_io = &ImGui::GetIO();
-		imgui_io->KeyMap[ImGuiKey_Tab] = keycode_tab;
-		imgui_io->KeyMap[ImGuiKey_LeftArrow] = keycode_left;
-		imgui_io->KeyMap[ImGuiKey_RightArrow] = keycode_right;
-		imgui_io->KeyMap[ImGuiKey_UpArrow] = keycode_up;
-		imgui_io->KeyMap[ImGuiKey_DownArrow] = keycode_down;
-		imgui_io->KeyMap[ImGuiKey_PageUp] = keycode_page_up;
-		imgui_io->KeyMap[ImGuiKey_PageDown] = keycode_page_down;
-		imgui_io->KeyMap[ImGuiKey_Home] = keycode_home;
-		imgui_io->KeyMap[ImGuiKey_End] = keycode_end;
-		imgui_io->KeyMap[ImGuiKey_Backspace] = keycode_backspace;
-		imgui_io->KeyMap[ImGuiKey_Enter] = keycode_return;
-		imgui_io->KeyMap[ImGuiKey_Escape] = keycode_esc;
-		imgui_io->KeyMap[ImGuiKey_A] = 'A';
-		imgui_io->KeyMap[ImGuiKey_C] = 'C';
-		imgui_io->KeyMap[ImGuiKey_V] = 'V';
-		imgui_io->KeyMap[ImGuiKey_X] = 'X';
-		imgui_io->KeyMap[ImGuiKey_Y] = 'Y';
-		imgui_io->KeyMap[ImGuiKey_Z] = 'Z';
-		imgui_io->DisplaySize = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
-		imgui_io->MousePos = {-1, -1};
+		ImGuiIO &imgui_io = ImGui::GetIO();
+		imgui_io.KeyMap[ImGuiKey_Tab] = keycode_tab;
+		imgui_io.KeyMap[ImGuiKey_LeftArrow] = keycode_left;
+		imgui_io.KeyMap[ImGuiKey_RightArrow] = keycode_right;
+		imgui_io.KeyMap[ImGuiKey_UpArrow] = keycode_up;
+		imgui_io.KeyMap[ImGuiKey_DownArrow] = keycode_down;
+		imgui_io.KeyMap[ImGuiKey_PageUp] = keycode_page_up;
+		imgui_io.KeyMap[ImGuiKey_PageDown] = keycode_page_down;
+		imgui_io.KeyMap[ImGuiKey_Home] = keycode_home;
+		imgui_io.KeyMap[ImGuiKey_End] = keycode_end;
+		imgui_io.KeyMap[ImGuiKey_Backspace] = keycode_backspace;
+		imgui_io.KeyMap[ImGuiKey_Enter] = keycode_return;
+		imgui_io.KeyMap[ImGuiKey_Escape] = keycode_esc;
+		imgui_io.KeyMap[ImGuiKey_A] = 'A';
+		imgui_io.KeyMap[ImGuiKey_C] = 'C';
+		imgui_io.KeyMap[ImGuiKey_V] = 'V';
+		imgui_io.KeyMap[ImGuiKey_X] = 'X';
+		imgui_io.KeyMap[ImGuiKey_Y] = 'Y';
+		imgui_io.KeyMap[ImGuiKey_Z] = 'Z';
+		imgui_io.DisplaySize = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
+		imgui_io.MousePos = {-1, -1};
 
 		uint8* font_atlas_image = nullptr;
 		int32 font_atlas_image_width = 0;
 		int32 font_atlas_image_height = 0;
-		ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
-		ImGui::GetIO().Fonts->ClearTexData();
+		imgui_io.Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
+		imgui_io.Fonts->ClearTexData();
 	}
 	{ // player
 		game->player_camera_r = 8;
