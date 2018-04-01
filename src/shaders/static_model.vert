@@ -34,15 +34,17 @@ void main() {
   mat3 normal_mat = mat3(model_mat);
 
   vec4 position = model_mat * vec4(position_in, 1);
+  position_out = position.xyz;
+  gl_Position = m_level_view_proj_mat * position;
+
+  uv_out = uv_in;
+  shadow_map_coord_out = m_level_shadow_map_proj_mat * position;
+
   vec3 normal = normalize(normal_mat * normal_in);
   vec3 tangent = normalize(normal_mat * tangent_in);
   vec3 bitangent = normalize(cross(normal, tangent));
   mat3 inverse_tbn_mat = transpose(mat3(tangent, bitangent, normal));
 
-  gl_Position = m_level_view_proj_mat * position;
-  position_out = position.xyz;
-  shadow_map_coord_out = m_level_shadow_map_proj_mat * position;
-  uv_out = uv_in;
   tbn_position_out = inverse_tbn_mat * position.xyz;
   tbn_camera_position_out = inverse_tbn_mat * m_level_camera_position.xyz;
   tbn_directional_light_out = inverse_tbn_mat * m_level_directional_light_dir.xyz;

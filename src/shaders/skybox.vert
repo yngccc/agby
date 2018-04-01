@@ -8,7 +8,6 @@ out gl_PerVertex {
 
 layout(location = 0) out vec3 uv_out;
 
-m_declare_uniform_buffer
 m_declare_skybox_push_constant
 
 const vec3 face_vertices[6][6] = vec3[][](

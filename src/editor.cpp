@@ -132,6 +132,7 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		image_view_info.format = VK_FORMAT_R8G8B8A8_UNORM;

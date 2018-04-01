@@ -70,7 +70,7 @@ struct shader_swap_chain_push_constant {
 #else
 
 #define m_declare_uniform_buffer \
-  layout(set = 0, binding = 0) uniform uniform_buffer { mat4 ubuf[65536 / 64]; };
+  layout(std140, set = 0, binding = 0) uniform uniform_buffer { mat4 ubuf[65536 / 64]; };
 
 #define m_declare_2d_texture_array \
   layout(set = 1, binding = 0) uniform sampler2D textures[1024];

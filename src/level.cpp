@@ -348,6 +348,16 @@ void initialize_level(level *level, vulkan *vulkan) {
 		level->assets_memory_arena.capacity = m_megabytes(64);
 		level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
 		m_assert(level->assets_memory_arena.memory);
+
+		level->model_count = 0;
+		level->model_capacity = 1024;
+		level->models = allocate_memory<struct model>(&level->assets_memory_arena, level->model_capacity);
+		level->skybox_count = 0;
+		level->skybox_capacity = 16;
+		level->skyboxes = allocate_memory<struct skybox>(&level->assets_memory_arena, level->skybox_capacity);
+		level->terrain_count = 0;
+		level->terrain_capacity = 16;
+		level->terrains = allocate_memory<struct terrain>(&level->assets_memory_arena, level->terrain_capacity);
 	}
 	{ // font
 	}
@@ -405,6 +415,7 @@ void initialize_level(level *level, vulkan *vulkan) {
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		image_view_info.format = image_info.format;
@@ -816,6 +827,7 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		image_view_info.format = image_info.format;
@@ -829,10 +841,34 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 		gpk_model_material *gpk_model_material = ((struct gpk_model_material*)(gpk_file_mapping.ptr + gpk_model->material_offset)) + i;
 		model_material *model_material = &model->materials[i];
 		array_copy(model_material->name, gpk_model_material->name);
-		model_material->diffuse_map_descriptor_index = level->persistant_data.default_diffuse_map_descriptor_index;
-		model_material->metallic_map_descriptor_index = level->persistant_data.default_metallic_map_descriptor_index;
-		model_material->roughness_map_descriptor_index = level->persistant_data.default_roughness_map_descriptor_index;
-		model_material->normal_map_descriptor_index = level->persistant_data.default_normal_map_descriptor_index;
+		if (gpk_model_material->diffuse_image_index < gpk_model->image_count) {
+			uint32 image_index = model->images[gpk_model_material->diffuse_image_index].index;
+			vulkan_image &image = vulkan->memory_regions.image_region_images[image_index];
+			model_material->diffuse_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[image.mipmap_count]);
+		} else {
+			model_material->diffuse_map_descriptor_index = level->persistant_data.default_diffuse_map_descriptor_index;
+		}
+		if (gpk_model_material->metallic_image_index < gpk_model->image_count) {
+			uint32 image_index = model->images[gpk_model_material->metallic_image_index].index;
+			vulkan_image &image = vulkan->memory_regions.image_region_images[image_index];
+			model_material->metallic_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[image.mipmap_count]);
+		} else {
+			model_material->metallic_map_descriptor_index = level->persistant_data.default_metallic_map_descriptor_index;
+		}
+		if (gpk_model_material->roughness_image_index < gpk_model->image_count) {
+			uint32 image_index = model->images[gpk_model_material->roughness_image_index].index;
+			vulkan_image &image = vulkan->memory_regions.image_region_images[image_index];
+			model_material->roughness_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[image.mipmap_count]);
+		} else {
+			model_material->roughness_map_descriptor_index = level->persistant_data.default_roughness_map_descriptor_index;
+		}
+		if (gpk_model_material->normal_image_index < gpk_model->image_count) {
+			uint32 image_index = model->images[gpk_model_material->normal_image_index].index;
+			vulkan_image &image = vulkan->memory_regions.image_region_images[image_index];
+			model_material->normal_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[image.mipmap_count]);
+		} else {
+			model_material->normal_map_descriptor_index = level->persistant_data.default_normal_map_descriptor_index;
+		}
 		model_material->diffuse_factor = gpk_model_material->diffuse_factor;
 		model_material->metallic_factor = gpk_model_material->metallic_factor;
 		model_material->roughness_factor = gpk_model_material->roughness_factor;
@@ -862,6 +898,7 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *gpk_file) {
 	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 	image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 	image_view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 	image_view_info.format = image_info.format;
@@ -894,6 +931,7 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		image_view_info.format = image_info.format;
@@ -914,6 +952,7 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		image_view_info.format = image_info.format;
@@ -1548,12 +1587,15 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 							primitive_render_data->primitive_index = i;
 
 							model_mesh_primitive *primitive = &mesh->primitives[i];
-							model_material *material = &model.materials[primitive->material_index];
+							model_material *material = nullptr;
+							if (primitive->material_index < model.material_count) {
+								material = &model.materials[primitive->material_index];
+							}
 
 							shader_primitive_info primitive_info = {};
-							primitive_info.diffuse_factor = material->diffuse_factor;
-							primitive_info.metallic_factor = material->metallic_factor;
-							primitive_info.roughness_factor = material->roughness_factor;
+							primitive_info.diffuse_factor = material ? material->diffuse_factor : vec4{1, 1, 1, 1};
+							primitive_info.metallic_factor = material ? material->metallic_factor : 1;
+							primitive_info.roughness_factor = material ? material->roughness_factor: 1;
 							primitive_render_data->uniform_region_buffer_offset = append_vulkan_uniform_region(vulkan, &primitive_info, sizeof(primitive_info));
 						}
 					}
@@ -1584,27 +1626,27 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 			VkRect2D scissor = {{0, 0}, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].height};
 			vkCmdSetViewport(cmd_buffer, 0, 1, &viewport);
 			vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
-			// if (level->render_data.model_count > 0) {
-			// 	vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_shadow_map_pipeline.pipeline);
-			// 	VkDeviceSize vertex_buffer_offset = 0;
-			// 	vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.level_vertex_buffer.buffer, &vertex_buffer_offset);
-			// 	vkCmdBindIndexBuffer(cmd_buffer, vulkan->buffers.level_vertex_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-			// 	for (auto &model_render_data : make_range(level->render_data.models, level->render_data.model_count)) {
-			// 		model &model = level->models[model_render_data.model_index];
-			// 		for (auto &mesh_render_data : make_range(model_render_data.meshes, model_render_data.mesh_count)) {
-			// 			model_mesh &mesh = model.meshes[mesh_render_data.mesh_index];
-			// 			for (auto &primitive_render_data : make_range(mesh_render_data.primitives, mesh.primitive_count)) {
-			// 				model_mesh_primitive &primitive = mesh.primitives[primitive_render_data.primitive_index];
-			// 				uint32 offsets[4] = {
-			// 					level->render_data.frame_uniform_buffer_offset, model_render_data.frame_uniform_buffer_offset, 
-			// 					mesh_render_data.frame_uniform_buffer_offset, primitive_render_data.frame_uniform_buffer_offset
-			// 				};
-			// 				vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
-			// 				vkCmdDrawIndexed(cmd_buffer, primitive.index_count, 1, primitive.index_buffer_offset / sizeof(uint16), primitive.vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
-			// 			}
-			// 		}
-			// 	}
-			// }
+			if (level->render_data.model_count > 0) {
+				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.static_model_shadow_map_pipeline);
+				VkDeviceSize vertex_buffer_offset = 0;
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertex_buffer_offset);
+				vkCmdBindIndexBuffer(cmd_buffer, vulkan->memory_regions.vertex_region_buffer, 0, VK_INDEX_TYPE_UINT16);
+				for (auto &model_render_data : make_range(level->render_data.models, level->render_data.model_count)) {
+					model &model = level->models[model_render_data.model_index];
+					for (auto &mesh_render_data : make_range(model_render_data.meshes, model_render_data.mesh_count)) {
+						model_mesh &mesh = model.meshes[mesh_render_data.mesh_index];
+						for (auto &primitive_render_data : make_range(mesh_render_data.primitives, mesh.primitive_count)) {
+							model_mesh_primitive &primitive = mesh.primitives[primitive_render_data.primitive_index];
+							shader_model_push_constant pc = {};
+							pc.model_offset = model_render_data.uniform_region_buffer_offset;
+							pc.mesh_offset = mesh_render_data.uniform_region_buffer_offset;
+							pc.primitive_offset = primitive_render_data.uniform_region_buffer_offset;
+							vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+							vkCmdDrawIndexed(cmd_buffer, primitive.index_count, 1, primitive.index_buffer_offset / sizeof(uint16), primitive.vertex_buffer_offset / sizeof(struct gpk_model_vertex), 0);
+						}
+					}
+				}
+			}
 			vkCmdEndRenderPass(cmd_buffer);
 		}
 		{
@@ -1630,7 +1672,7 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 			VkClearValue clear_values[] = {{0, 0, 0, 0}};
 			VkRenderPassBeginInfo render_pass_begin_info = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
 			render_pass_begin_info.renderPass = vulkan->render_passes.shadow_map_render_passes[2];
-			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].framebuffer;
+			render_pass_begin_info.framebuffer = vulkan->framebuffers.shadow_map_blur_2_framebuffers[vulkan->frame_index].framebuffer;
 			render_pass_begin_info.renderArea.offset = {0, 0};
 			render_pass_begin_info.renderArea.extent = {vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].width, vulkan->framebuffers.shadow_map_framebuffers[vulkan->frame_index].height};
 			render_pass_begin_info.clearValueCount = m_countof(clear_values);
@@ -1675,10 +1717,10 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 						pc.model_offset = model_render_data.uniform_region_buffer_offset;
 						pc.mesh_offset = mesh_render_data.uniform_region_buffer_offset;
 						pc.primitive_offset = primitive_render_data.uniform_region_buffer_offset;
-						pc.diffuse_map_index = model.materials[primitive.material_index].diffuse_map_descriptor_index;
-						pc.metallic_map_index = model.materials[primitive.material_index].metallic_map_descriptor_index;
-						pc.roughness_map_index = model.materials[primitive.material_index].roughness_map_descriptor_index;
-						pc.normal_map_index = model.materials[primitive.material_index].normal_map_descriptor_index;
+						pc.diffuse_map_index = primitive.material_index < model.material_count ? model.materials[primitive.material_index].diffuse_map_descriptor_index : level->persistant_data.default_diffuse_map_descriptor_index;
+						pc.metallic_map_index = primitive.material_index < model.material_count ? model.materials[primitive.material_index].metallic_map_descriptor_index : level->persistant_data.default_metallic_map_descriptor_index;
+						pc.roughness_map_index = primitive.material_index < model.material_count ? model.materials[primitive.material_index].roughness_map_descriptor_index : level->persistant_data.default_roughness_map_descriptor_index;
+						pc.normal_map_index = primitive.material_index < model.material_count ? model.materials[primitive.material_index].normal_map_descriptor_index : level->persistant_data.default_normal_map_descriptor_index;
 						pc.height_map_index = level->persistant_data.default_height_map_descriptor_index;
 						pc.shadow_map_index = vulkan->framebuffers.shadow_map_blur_1_descriptor_indices[vulkan->frame_index];
 						vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
@@ -1687,18 +1729,17 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 				}
 			}
 		}
-		#if 0
 		if (level->terrain_index < level->terrain_count) {
 			terrain *terrain = &level->terrains[level->terrain_index];
-			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.pipeline);
+			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline);
 			VkDeviceSize vertex_buffer_offset = 0;
-			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.common_vertex_buffer.buffer, &vertex_buffer_offset);
-			uint32 offsets[4] = {level->render_data.frame_uniform_buffer_offset, 0, 0, 0};
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.layout, 0, 1, &(vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index]), m_countof(offsets), offsets);
-			vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline.layout, 1, 1, &terrain->textures_descriptor_set, 0, nullptr);
-			vkCmdDraw(cmd_buffer, 128 * 128 * 6, 1, level->terrain_common_vertex_buffer_offset / sizeof(struct terrain_vertex), 0);
+			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertex_buffer_offset);
+			shader_terrain_push_constant pc = {};
+			pc.height_map_index = level->persistant_data.default_height_map_descriptor_index;
+			pc.diffuse_map_index = level->persistant_data.default_diffuse_map_descriptor_index;
+		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+			vkCmdDraw(cmd_buffer, 128 * 128 * 6, 1, level->persistant_data.terrain_vertex_region_buffer_offset / sizeof(struct terrain_vertex), 0);
 		}
-		#endif
 		if (level->skybox_index < level->skybox_count) {
 		  skybox *skybox = &level->skyboxes[level->skybox_index];
 		  vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline);

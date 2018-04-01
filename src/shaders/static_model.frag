@@ -99,13 +99,14 @@ void main() {
   float metallic = texture(m_metallic_map, uv).x * m_primitive_metallic_factor;  
   float roughness = texture(m_roughness_map, uv).x * m_primitive_roughness_factor;
 
-  vec3 irradiance = diffuse * m_level_ambient_light_color.xyz;
-  irradiance += get_light_irradiance(normal, view, tbn_directional_light_in, m_level_directional_light_color.xyz, diffuse, metallic, roughness) * shadow_mapping();
+  vec3 ambient_light_irradiance = diffuse * m_level_ambient_light_color.xyz;
+  vec3 direct_light_irradiance = get_light_irradiance(normal, view, tbn_directional_light_in, m_level_directional_light_color.xyz, diffuse, metallic, roughness);
+  direct_light_irradiance *= shadow_mapping();
 
   // float attenuation = m_level_point_light_position.w;
   // vec3 direction = tbn_point_light_in - tbn_position_in;
   // vec3 light_color = m_level_point_light_color.xyz / pow(length(direction), attenuation);
   // brdf += cook_torrance_brdf(normal, view, normalize(direction), light_color, diffuse, metallic, roughness);
 
-  color_out = vec4(irradiance, 1);
+  color_out = vec4(ambient_light_irradiance + direct_light_irradiance, 1);
 }

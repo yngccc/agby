@@ -313,6 +313,12 @@ const char *vk_result_to_str(VkResult result) {
 
 VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT object_type, uint64_t object, 
 	                             size_t location, int32 message_code, const char *layer_prefix, const char *message, void *user_data) {
+	int32 ignore_list[] = {6, 61};
+	for (auto &code : ignore_list) {
+		if (message_code == code) {
+			return VK_FALSE;
+		}
+	}
 	if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
 		printf("vulkan error code %d: %s\n", message_code, message);
 	}
@@ -881,6 +887,9 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 	vulkan_memory_regions &regions = vulkan->memory_regions;
 	m_assert(regions.image_region_image_count < regions.image_region_image_capacity);
 
+	VkImageLayout layout = image_info.initialLayout;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
 	uint32 image_index = regions.image_region_image_count;
 	vulkan_image &image = regions.image_region_images[regions.image_region_image_count++];
 	m_vk_assert(vkCreateImage(vulkan->device.device, &image_info, nullptr, &image.image));
@@ -904,15 +913,12 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 	image.format_block_dimension = format_block_dimension;
 	image.format_block_size = format_block_size;
 
+	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.transfer_cmd_buffer;
+	VkCommandBufferBeginInfo cmd_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+	cmd_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkBeginCommandBuffer(cmd_buffer, &cmd_buffer_begin_info);
+
 	if (image_data && image_data_size > 0) {
-		m_assert(image_data_size < regions.staging_region_capacity);
-		memcpy(regions.staging_region_buffer_ptr, image_data, image_data_size);
-
-		VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.transfer_cmd_buffer;
-		VkCommandBufferBeginInfo cmd_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-		cmd_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-		vkBeginCommandBuffer(cmd_buffer, &cmd_buffer_begin_info);
-
 		VkImageMemoryBarrier image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
 		image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -922,6 +928,9 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 		image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
 		image_memory_barrier.subresourceRange.layerCount = image.layer_count;
 		vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
+
+		m_assert(image_data_size < regions.staging_region_capacity);
+		memcpy(regions.staging_region_buffer_ptr, image_data, image_data_size);
 
 		uint32 staging_buffer_offset = 0;
 		uint32 mipmap_width = image.width;
@@ -944,20 +953,31 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 		image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		image_memory_barrier.newLayout = layout;
 		image_memory_barrier.image = image.image;
 		image_memory_barrier.subresourceRange.aspectMask = image_view_info.subresourceRange.aspectMask;
 		image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
 		image_memory_barrier.subresourceRange.layerCount = image.layer_count;
 		vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
-		vkEndCommandBuffer(cmd_buffer);
-		VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-		submit_info.commandBufferCount = 1;
-		submit_info.pCommandBuffers = &cmd_buffer;
-		vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
-		vkQueueWaitIdle(vulkan->device.queue);
+	} else {
+		VkImageMemoryBarrier image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+		image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		image_memory_barrier.newLayout = layout;
+		image_memory_barrier.image = image.image;
+		image_memory_barrier.subresourceRange.aspectMask = image_view_info.subresourceRange.aspectMask;
+		image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
+		image_memory_barrier.subresourceRange.layerCount = image.layer_count;
+		vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
 	}
+
+	vkEndCommandBuffer(cmd_buffer);
+	VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &cmd_buffer;
+	vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(vulkan->device.queue);
+
 	return image_index;
 }
 
@@ -970,7 +990,7 @@ uint32 append_vulkan_uniform_region(vulkan *vulkan, const void *data, uint32 dat
 	memcpy(ptr + size, data, data_size);
 	uint32 offset = size;
 	size += data_size;
-	return offset;
+	return offset / 64;;
 }
 
 uint32 append_vulkan_dynamic_vertex_region(vulkan *vulkan, const void *data, uint32 data_size, uint32 alignment) {
@@ -1113,6 +1133,7 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 			image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 			image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 			image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 			image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			image_view_info.format = image_info.format;
@@ -1145,6 +1166,7 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 			image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 			image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 			image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 			image_view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 			image_view_info.format = image_info.format;
@@ -1254,9 +1276,9 @@ void initialize_vulkan_render_passes(vulkan *vulkan, VkSampleCountFlagBits sampl
 		VkSubpassDependency dependencies[1] = {};
 		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependencies[0].dstSubpass = 0;
-		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 		dependencies[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
 		VkRenderPassCreateInfo render_pass_create_info = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
@@ -1379,57 +1401,54 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 			framebuffer.sample_count = VK_SAMPLE_COUNT_1_BIT;
 			framebuffer.color_attachment_count = 1;
 			framebuffer.color_resolve_attachment_image_index = UINT32_MAX;
-			{
-				VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-				image_info.imageType = VK_IMAGE_TYPE_2D;
-				image_info.format = VK_FORMAT_R32G32_SFLOAT;
-				image_info.extent = {shadow_map_size, shadow_map_size, 1};
-				image_info.mipLevels = 1;
-				image_info.arrayLayers = 1;
-				image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-				image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-				image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-				image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-				image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-				image_view_info.format = image_info.format;
-				image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				image_view_info.subresourceRange.levelCount = 1;
-				image_view_info.subresourceRange.layerCount = 1;
-				framebuffer.color_attachment_image_indices[0] = append_vulkan_image_region(vulkan, image_info, image_view_info, nullptr, 0, 1, 8);
-			}
-			{
-				VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-				image_info.imageType = VK_IMAGE_TYPE_2D;
-				image_info.format = VK_FORMAT_D32_SFLOAT;
-				image_info.extent = {shadow_map_size, shadow_map_size, 1};
-				image_info.mipLevels = 1;
-				image_info.arrayLayers = 1;
-				image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-				image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-				image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-				image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-				image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-				image_view_info.format = image_info.format;
-				image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-				image_view_info.subresourceRange.levelCount = 1;
-				image_view_info.subresourceRange.layerCount = 1;
-				framebuffer.depth_stencil_attachment_image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, nullptr, 0, 1, 4);
-			}
-			{
-				vulkan_image &color_image = vulkan->memory_regions.image_region_images[framebuffer.color_attachment_image_indices[0]];
-				vulkan_image &depth_stencil_image = vulkan->memory_regions.image_region_images[framebuffer.depth_stencil_attachment_image_index];
-				VkImageView image_views[2] = {color_image.view, depth_stencil_image.view};
-				VkFramebufferCreateInfo framebuffer_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-				framebuffer_info.renderPass = vulkan->render_passes.shadow_map_render_passes[0];
-				framebuffer_info.attachmentCount = m_countof(image_views);
-				framebuffer_info.pAttachments = image_views;
-				framebuffer_info.width = shadow_map_size;
-				framebuffer_info.height = shadow_map_size;
-				framebuffer_info.layers = 1;
-				m_vk_assert(vkCreateFramebuffer(vulkan->device.device, &framebuffer_info, nullptr, &framebuffer.framebuffer));
-			}
+
+			VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+			image_info.imageType = VK_IMAGE_TYPE_2D;
+			image_info.format = VK_FORMAT_R32G32_SFLOAT;
+			image_info.extent = {shadow_map_size, shadow_map_size, 1};
+			image_info.mipLevels = 1;
+			image_info.arrayLayers = 1;
+			image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+			image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+			image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			image_info.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+			image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			image_view_info.format = image_info.format;
+			image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			image_view_info.subresourceRange.levelCount = 1;
+			image_view_info.subresourceRange.layerCount = 1;
+			framebuffer.color_attachment_image_indices[0] = append_vulkan_image_region(vulkan, image_info, image_view_info, nullptr, 0, 1, 8);
+
+			image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+			image_info.imageType = VK_IMAGE_TYPE_2D;
+			image_info.format = VK_FORMAT_D32_SFLOAT;
+			image_info.extent = {shadow_map_size, shadow_map_size, 1};
+			image_info.mipLevels = 1;
+			image_info.arrayLayers = 1;
+			image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+			image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+			image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+			image_info.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+			image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			image_view_info.format = image_info.format;
+			image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+			image_view_info.subresourceRange.levelCount = 1;
+			image_view_info.subresourceRange.layerCount = 1;
+			framebuffer.depth_stencil_attachment_image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, nullptr, 0, 1, 4);
+
+			vulkan_image &color_image = vulkan->memory_regions.image_region_images[framebuffer.color_attachment_image_indices[0]];
+			vulkan_image &depth_stencil_image = vulkan->memory_regions.image_region_images[framebuffer.depth_stencil_attachment_image_index];
+			VkImageView image_views[2] = {color_image.view, depth_stencil_image.view};
+			VkFramebufferCreateInfo framebuffer_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+			framebuffer_info.renderPass = vulkan->render_passes.shadow_map_render_passes[0];
+			framebuffer_info.attachmentCount = m_countof(image_views);
+			framebuffer_info.pAttachments = image_views;
+			framebuffer_info.width = shadow_map_size;
+			framebuffer_info.height = shadow_map_size;
+			framebuffer_info.layers = 1;
+			m_vk_assert(vkCreateFramebuffer(vulkan->device.device, &framebuffer_info, nullptr, &framebuffer.framebuffer));
 		}
 		for (uint32 i = 0; i < m_countof(vulkan->framebuffers.shadow_map_blur_1_framebuffers); i += 1) {
 			vulkan_framebuffer &framebuffer = vulkan->framebuffers.shadow_map_blur_1_framebuffers[i];
@@ -1440,37 +1459,35 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 			framebuffer.color_attachment_count = 1;
 			framebuffer.depth_stencil_attachment_image_index = UINT32_MAX;
 			framebuffer.color_resolve_attachment_image_index = UINT32_MAX;
-			{
-				VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-				image_info.imageType = VK_IMAGE_TYPE_2D;
-				image_info.format = VK_FORMAT_R32G32_SFLOAT;
-				image_info.extent = {shadow_map_size, shadow_map_size, 1};
-				image_info.mipLevels = 1;
-				image_info.arrayLayers = 1;
-				image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-				image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-				image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-				image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-				image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-				image_view_info.format = image_info.format;
-				image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				image_view_info.subresourceRange.levelCount = 1;
-				image_view_info.subresourceRange.layerCount = 1;
-				framebuffer.color_attachment_image_indices[0] = append_vulkan_image_region(vulkan, image_info, image_view_info, nullptr, 0, 1, 8);
-			}
-			{
-				vulkan_image &color_image = vulkan->memory_regions.image_region_images[framebuffer.color_attachment_image_indices[0]];
-				VkImageView image_views[1] = {color_image.view};
-				VkFramebufferCreateInfo framebuffer_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-				framebuffer_info.renderPass = vulkan->render_passes.shadow_map_render_passes[1];
-				framebuffer_info.attachmentCount = m_countof(image_views);
-				framebuffer_info.pAttachments = image_views;
-				framebuffer_info.width = shadow_map_size;
-				framebuffer_info.height = shadow_map_size;
-				framebuffer_info.layers = 1;
-				m_vk_assert(vkCreateFramebuffer(vulkan->device.device, &framebuffer_info, nullptr, &framebuffer.framebuffer));
-			}
+
+			VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+			image_info.imageType = VK_IMAGE_TYPE_2D;
+			image_info.format = VK_FORMAT_R32G32_SFLOAT;
+			image_info.extent = {shadow_map_size, shadow_map_size, 1};
+			image_info.mipLevels = 1;
+			image_info.arrayLayers = 1;
+			image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+			image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+			image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			image_info.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+			image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			image_view_info.format = image_info.format;
+			image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			image_view_info.subresourceRange.levelCount = 1;
+			image_view_info.subresourceRange.layerCount = 1;
+			framebuffer.color_attachment_image_indices[0] = append_vulkan_image_region(vulkan, image_info, image_view_info, nullptr, 0, 1, 8);
+
+			vulkan_image &color_image = vulkan->memory_regions.image_region_images[framebuffer.color_attachment_image_indices[0]];
+			VkImageView image_views[1] = {color_image.view};
+			VkFramebufferCreateInfo framebuffer_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+			framebuffer_info.renderPass = vulkan->render_passes.shadow_map_render_passes[1];
+			framebuffer_info.attachmentCount = m_countof(image_views);
+			framebuffer_info.pAttachments = image_views;
+			framebuffer_info.width = shadow_map_size;
+			framebuffer_info.height = shadow_map_size;
+			framebuffer_info.layers = 1;
+			m_vk_assert(vkCreateFramebuffer(vulkan->device.device, &framebuffer_info, nullptr, &framebuffer.framebuffer));
 		}
 		for (uint32 i = 0; i < m_countof(vulkan->framebuffers.shadow_map_blur_2_framebuffers); i += 1) {
 			vulkan_framebuffer &framebuffer = vulkan->framebuffers.shadow_map_blur_2_framebuffers[i];
@@ -1482,18 +1499,17 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 			framebuffer.depth_stencil_attachment_image_index = UINT32_MAX;
 			framebuffer.color_resolve_attachment_image_index = UINT32_MAX;
 			framebuffer.color_attachment_image_indices[0] = vulkan->framebuffers.shadow_map_framebuffers[i].color_attachment_image_indices[0];
-			{
-				vulkan_image &color_image = vulkan->memory_regions.image_region_images[framebuffer.color_attachment_image_indices[0]];
-				VkImageView image_views[1] = {color_image.view};
-				VkFramebufferCreateInfo framebuffer_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-				framebuffer_info.renderPass = vulkan->render_passes.shadow_map_render_passes[2];
-				framebuffer_info.attachmentCount = m_countof(image_views);
-				framebuffer_info.pAttachments = image_views;
-				framebuffer_info.width = shadow_map_size;
-				framebuffer_info.height = shadow_map_size;
-				framebuffer_info.layers = 1;
-				m_vk_assert(vkCreateFramebuffer(vulkan->device.device, &framebuffer_info, nullptr, &framebuffer.framebuffer));
-			}
+
+			vulkan_image &color_image = vulkan->memory_regions.image_region_images[framebuffer.color_attachment_image_indices[0]];
+			VkImageView image_views[1] = {color_image.view};
+			VkFramebufferCreateInfo framebuffer_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+			framebuffer_info.renderPass = vulkan->render_passes.shadow_map_render_passes[2];
+			framebuffer_info.attachmentCount = m_countof(image_views);
+			framebuffer_info.pAttachments = image_views;
+			framebuffer_info.width = shadow_map_size;
+			framebuffer_info.height = shadow_map_size;
+			framebuffer_info.layers = 1;
+			m_vk_assert(vkCreateFramebuffer(vulkan->device.device, &framebuffer_info, nullptr, &framebuffer.framebuffer));
 		}
 	}
 	{ // main
@@ -1514,7 +1530,7 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 				image_info.samples = sample_count;
 				image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 				image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-				image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				image_info.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 				VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 				image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 				image_view_info.format = image_info.format;
@@ -1533,7 +1549,7 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 				image_info.samples = sample_count;
 				image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 				image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-				image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				image_info.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 				VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 				image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 				image_view_info.format = image_info.format;
@@ -1552,7 +1568,7 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 				image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 				image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 				image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-				image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				image_info.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 				VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 				image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 				image_view_info.format = image_info.format;
