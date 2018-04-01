@@ -5,6 +5,8 @@
 #pragma once
 
 #define m_gpk_model_format_str "GPK_MODEL_FORMAT"
+#define m_gpk_skybox_format_str "GPK_SKYBOX_FORMAT"
+#define m_gpk_terrain_format_str "GPK_TERRAIN_FORMAT"
 
 struct gpk_model {
 	char format_str[32];
@@ -143,8 +145,6 @@ struct gpk_model_image {
   uint32 data_offset;
 };
 
-#define m_gpk_skybox_format_str "GPK_SKYBOX_FORMAT"
-
 struct gpk_skybox {
 	char format_str[32];
 	uint32 cubemap_offset;
@@ -157,8 +157,6 @@ struct gpk_skybox {
 	uint32 cubemap_format_block_dimension;
 	uint32 cubemap_format_block_size;
 };
-
-#define m_gpk_terrain_format_str "GPK_TERRAIN_FORMAT"
 
 struct gpk_terrain {
 	char format_str[32];

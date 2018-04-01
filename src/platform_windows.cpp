@@ -129,7 +129,7 @@ bool create_file_mapping(const char *file_name, uint64 file_size, file_mapping *
 	}
 	LARGE_INTEGER size;
 	size.QuadPart = file_size;
-	if (SetFilePointer(file_handle, size.LowPart, &size.HighPart, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+	if (!SetFilePointerEx(file_handle, size, nullptr, FILE_BEGIN)) {
 		CloseHandle(file_handle);
 		DeleteFile(file_name);
 		return false;
@@ -187,15 +187,34 @@ bool open_file_mapping(const char *file_name, file_mapping *file_mapping) {
 	return true;
 }
 
+void resize_file_mapping(file_mapping *file_mapping, uint64 file_size) {
+	m_assert(UnmapViewOfFile(file_mapping->ptr));
+	m_assert(CloseHandle(file_mapping->mapping_handle));
+
+	LARGE_INTEGER size;
+	size.QuadPart = file_size;
+	m_assert(SetFilePointerEx(file_mapping->file_handle, size, nullptr, FILE_BEGIN));
+	m_assert(SetEndOfFile(file_mapping->file_handle));
+
+	file_mapping->mapping_handle = CreateFileMappingA(file_mapping->file_handle, nullptr, PAGE_READWRITE, 0, 0, nullptr);
+	m_assert(file_mapping->mapping_handle);
+
+	file_mapping->ptr = (uint8 *)MapViewOfFile(file_mapping->mapping_handle, FILE_MAP_WRITE, 0, 0, 0);
+	m_assert(file_mapping->ptr);
+  
+  file_mapping->size = file_size;
+}
+
 void flush_file_mapping(file_mapping file_mapping) {
 	m_assert(FlushViewOfFile(file_mapping.ptr, 0));
 	m_assert(FlushFileBuffers(file_mapping.file_handle));
 }
 
-void close_file_mapping(file_mapping file_mapping) {
-	UnmapViewOfFile(file_mapping.ptr);
-	CloseHandle(file_mapping.mapping_handle);
-	CloseHandle(file_mapping.file_handle);
+void close_file_mapping(file_mapping *file_mapping) {
+	m_assert(UnmapViewOfFile(file_mapping->ptr));
+	m_assert(CloseHandle(file_mapping->mapping_handle));
+	m_assert(CloseHandle(file_mapping->file_handle));
+	*file_mapping = {};
 }
 
 bool open_file_dialog(char *file_name_buffer, uint32 file_name_buffer_size) {

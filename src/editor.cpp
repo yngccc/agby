@@ -8,11 +8,38 @@
 #include "gpk.cpp"
 #include "level.cpp"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "../vendor/include/stb/stb_image.h"
+
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "../vendor/include/imgui/imgui_draw.cpp"
 #include "../vendor/include/imgui/imgui.cpp"
 #include "../vendor/include/imgui/ImGuizmo.cpp"
 #undef snprintf
+
+struct imgui_error_popup {
+	bool error;
+	char msg[256];
+};
+
+void check_imgui_error_popup(imgui_error_popup *popup) {
+	if (popup->error) {
+		ImGui::OpenPopup("##error_popup_modal");
+	}
+	if (ImGui::BeginPopupModal("##error_popup_modal", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::Text("%s", popup->msg);
+		if (ImGui::Button("ok")) {
+			popup->error = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+}
+
+void open_imgui_error_popup(imgui_error_popup *popup, const char *msg) {
+	popup->error = true;
+	strcpy(popup->msg, msg);
+}
 
 enum selection_mode {
 	selection_mode_entity,
@@ -33,7 +60,8 @@ enum gizmo_mode {
 	gizmo_mode_collision_sphere_scale,
 	gizmo_mode_collision_capsule_scale,
 	gizmo_mode_collision_capsule_translate,
-	gizmo_mode_collision_box_scale
+	gizmo_mode_collision_box_scale,
+	gizmo_mode_terrain_brush
 };
 
 struct collision_shape_render_data {
@@ -146,7 +174,6 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 	}
 	editor->camera.position = vec3{4, 8, 8};
 	editor->camera.view = vec3_normalize(-editor->camera.position);
-	editor->camera.up = vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view);
 	editor->camera.fovy = degree_to_radian(50);
 	editor->camera.aspect = (float)vulkan->swap_chain.image_width / (float)vulkan->swap_chain.image_height;
 	editor->camera.znear = 0.1f;
@@ -166,10 +193,8 @@ struct read_editor_settings {
 			auto &camera = json["editor_settings"]["camera"];
 			std::array<float, 3> position = camera["position"];
 			std::array<float, 3> view = camera["view"];
-			std::array<float, 3> up = camera["up"];
 			editor->camera.position = {position[0], position[1], position[2]};
 			editor->camera.view = {view[0], view[1], view[2]};
-			editor->camera.up = {up[0], up[1], up[2]};
 			editor->camera.znear = camera["znear"];
 			editor->camera.zfar = camera["zfar"];
 			editor->camera_move_speed = camera["move_speed"];
@@ -185,7 +210,6 @@ struct write_editor_settings {
 			{"camera", {
 				{"position", {m_unpack3(editor->camera.position)}},
 				{"view", {m_unpack3(editor->camera.view)}},
-				{"up", {m_unpack3(editor->camera.up)}},
 				{"znear", editor->camera.znear},
 				{"zfar", editor->camera.zfar},
 				{"move_speed", editor->camera_move_speed}}
@@ -380,33 +404,29 @@ int main(int argc, char **argv) {
 						ImGui::OpenPopup("##new_entity_popup");
 					}
 					if (ImGui::BeginPopupModal("##new_entity_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-						static bool show_duplicate_name_error = false;
-						static char entity_name_buf[sizeof(entity_info::name)] = {};
-						ImGui::InputText("name##new_entity_popup_name", entity_name_buf, sizeof(entity_name_buf));
-						if (show_duplicate_name_error) {
-							ImGui::TextColored({1, 0, 0, 1}, "error: entity name already exist");
-						}
+						static imgui_error_popup error_popup = {};
+						check_imgui_error_popup(&error_popup);
+						static char entity_name[sizeof(entity_info::name)] = {};
+						ImGui::InputText("name##new_entity_popup_name", entity_name, sizeof(entity_name));
 						if (ImGui::Button("ok##new_entity_popup_ok")) {
-							if (strcmp(entity_name_buf, "")) {
+							if (strcmp(entity_name, "")) {
 								for (uint32 i = 0; i < level->entity_count; i += 1) {
-									if (!strcmp(level->entity_infos[i].name, entity_name_buf)) {
-										show_duplicate_name_error = true;
+									if (!strcmp(level->entity_infos[i].name, entity_name)) {
+										open_imgui_error_popup(&error_popup, "entity name already exist");
 										break;
 									}
 								}
-								if (!show_duplicate_name_error) {
+								if (!error_popup.error) {
 									entity_addition *entity_addition = allocate_memory<struct entity_addition>(&level->main_thread_frame_memory_arena, 1);
-									array_copy(entity_addition->info.name, entity_name_buf);
+									array_copy(entity_addition->info.name, entity_name);
 									entity_addition->transform = transform_identity();
 									list_prepend(&level->entity_addition, entity_addition);
-									show_duplicate_name_error = false;
 									ImGui::CloseCurrentPopup();
 								}
 							}
 						}
 						ImGui::SameLine();
 						if (ImGui::Button("cancel##new_entity_popup_cancel")) {
-							show_duplicate_name_error = false;
 							ImGui::CloseCurrentPopup();
 						}
 						ImGui::EndPopup();
@@ -581,11 +601,12 @@ int main(int argc, char **argv) {
 					ImGui::OpenPopup("##new_component_popup");
 				}
 				if (ImGui::BeginPopupModal("##new_component_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+					static imgui_error_popup error_popup = {};
+					check_imgui_error_popup(&error_popup);
 					static const char *component_types[] = {"render", "collision", "physics", "light"};
 					static const char *light_types[] = {"ambient", "directional", "point"};
 					static uint32 component_type_index = 0;
 					static uint32 light_type_index = 0;
-					static bool show_duplicate_component_error = false;
 					const char *component_combo_name = component_types[component_type_index];
 					if (ImGui::BeginCombo("component##new_component_popup_component_combo", component_combo_name)) {
 						for (uint32 i = 0; i < m_countof(component_types); i += 1) {
@@ -606,18 +627,14 @@ int main(int argc, char **argv) {
 							ImGui::EndCombo();
 						}
 					}
-					if (show_duplicate_component_error) {
-						ImGui::TextColored({1, 0, 0, 1}, "error: component already exist");
-					}
 					if (ImGui::Button("ok##new_component_popup_ok")) {
 						if ((component_type_index == 0 && entity_flags & entity_component_flag_render) ||
 								(component_type_index == 1 && entity_flags & entity_component_flag_collision) ||
 								(component_type_index == 2 && entity_flags & entity_component_flag_physics) ||
 								(component_type_index == 3 && entity_flags & entity_component_flag_light)) {
-							show_duplicate_component_error = true;
+							open_imgui_error_popup(&error_popup, "component already exist");
 						}
 						else {
-							show_duplicate_component_error = false;
 							if (component_type_index == 0) {
 								entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
 								new_render_component->model_index = UINT32_MAX;
@@ -653,7 +670,6 @@ int main(int argc, char **argv) {
 					}
 					ImGui::SameLine();
 					if (ImGui::Button("cancel##new_component_popup_cancel")) {
-						show_duplicate_component_error = false;
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::EndPopup();
@@ -662,20 +678,18 @@ int main(int argc, char **argv) {
 					ImGui::OpenPopup("##rename_popup");
 				}
 				if (ImGui::BeginPopupModal("##rename_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
-					static bool show_duplicate_name_error = false;
+					static imgui_error_popup error_popup = {};
+					check_imgui_error_popup(&error_popup);
 					static char name_buf[sizeof(entity_info::name)] = {};
 					ImGui::InputText("new name##rename_pop_up_new_name", name_buf, sizeof(name_buf));
-					if (show_duplicate_name_error) {
-						ImGui::TextColored({1, 0, 0, 1}, "error: entity name already exist");
-					}
 					if (ImGui::Button("ok##rename_popup_ok")) {
 						for (uint32 i = 0; i < level->entity_count; i += 1) {
 							if (!strcmp(level->entity_infos[i].name, name_buf)) {
-								show_duplicate_name_error = true;
+								open_imgui_error_popup(&error_popup, "entity name already exist");
 								break;
 							}
 						}
-						if (!show_duplicate_name_error) {
+						if (!error_popup.error) {
 							entity_info *new_entity_info = allocate_memory<struct entity_info>(&level->main_thread_frame_memory_arena, 1);
 							array_copy(new_entity_info->name, name_buf);
 							array_set(name_buf, '\0');
@@ -686,7 +700,6 @@ int main(int argc, char **argv) {
 					ImGui::SameLine();
 					if (ImGui::Button("cancel##rename_popup_cancel")) {
 						array_set(name_buf, '\0');
-						show_duplicate_name_error = false;
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::EndPopup();
@@ -733,85 +746,39 @@ int main(int argc, char **argv) {
 					ImGui::EndCombo();
 				}
 				if (level->terrain_index < level->terrain_count) {
+					static imgui_error_popup error_popup = {};
+					check_imgui_error_popup(&error_popup);
 					terrain *terrain = &level->terrains[level->terrain_index];
-					// if (height_map_image != terrain->height_map.image) {
-					// 	VkDescriptorImageInfo image_info = {vulkan->samplers.mipmap_samplers[0], terrain->height_map.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-					// 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-					// 	write_descriptor_set.dstSet = image_descriptor_sets[0];
-					// 	write_descriptor_set.dstBinding = 0;
-					// 	write_descriptor_set.descriptorCount = 1;
-					// 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-					// 	write_descriptor_set.pImageInfo = &image_info;
-					// 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-					// 	height_map_image = terrain->height_map.image;
-					// }
-					// if (diffuse_map_image != terrain->diffuse_map.image) {
-					// 	VkDescriptorImageInfo image_info = {vulkan->samplers.mipmap_samplers[0], terrain->diffuse_map.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-					// 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-					// 	write_descriptor_set.dstSet = image_descriptor_sets[1];
-					// 	write_descriptor_set.dstBinding = 0;
-					// 	write_descriptor_set.descriptorCount = 1;
-					// 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-					// 	write_descriptor_set.pImageInfo = &image_info;
-					// 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
-					// 	diffuse_map_image = terrain->diffuse_map.image;
-					// }
-					// ImGui::ImageButton(image_descriptor_sets[0], ImVec2{32, 32});
-					// ImGui::SameLine();
-					// ImGui::ImageButton(image_descriptor_sets[1], ImVec2{32, 32});
+					ImGui::ImageButton((ImTextureID)(intptr_t)terrain->height_map_descriptor_index, ImVec2{50, 50});
+					ImGui::SameLine();
+					ImGui::ImageButton((ImTextureID)(intptr_t)terrain->diffuse_map_descriptor_index, ImVec2{50, 50});
+					ImGui::Text("Height map");
+					ImGui::SameLine();
+					ImGui::Text("Diffuse map");
 				}
 				if (ImGui::Button("new##new_terrain")) {
 					ImGui::OpenPopup("##new_terrain_popup");
 				}
 				if (ImGui::BeginPopupModal("##new_terrain_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+					static imgui_error_popup error_popup = {};
+					check_imgui_error_popup(&error_popup);
 					static char gpk_file[256] = {};
-					static char error_string[256] = {};
-					static bool error = false;
 					ImGui::InputText("gpk file##gpk_file", gpk_file, sizeof(gpk_file));
 					ImGui::SameLine();
 					if (ImGui::Button("browse##browse_button")) {
 						open_file_dialog(gpk_file, sizeof(gpk_file));
 					}
-					if (error) {
-						ImGui::TextColored(ImVec4{1, 0, 0, 1}, "%s", error_string);
-					}
 					if (ImGui::Button("ok##ok")) {
 						if (!file_exists(gpk_file)) {
-							file_mapping gpk_file_mapping;
-							uint32 height_map_offset = round_up((uint32)sizeof(struct gpk_terrain), 16u);
-							uint32 height_map_size = 128 * 128 * 2;
-							uint32 diffuse_map_offset = round_up(height_map_offset + height_map_size, 16u);
-							uint32 diffuse_map_size = 128 * 128 * 4;
-							uint32 file_size = diffuse_map_offset + diffuse_map_size;
-							if (!create_file_mapping(gpk_file, file_size, &gpk_file_mapping)) {
-								error = true;
-								strcpy(error_string, "failed to create gpk file");
-							} else {
-								gpk_terrain *gpk_terrain = (struct gpk_terrain *)(gpk_file_mapping.ptr);
-								*gpk_terrain = {m_gpk_terrain_format_str};
-								gpk_terrain->height_map_offset = height_map_offset;
-								gpk_terrain->height_map_width = 128;
-								gpk_terrain->height_map_height = 128;
-								gpk_terrain->height_map_size = height_map_size;
-								gpk_terrain->diffuse_map_offset = diffuse_map_offset;
-								gpk_terrain->diffuse_map_width = 128;
-								gpk_terrain->diffuse_map_height = 128;
-								gpk_terrain->diffuse_map_size = diffuse_map_size;
-								memset(gpk_file_mapping.ptr + height_map_offset, 0, height_map_size);
-								memset(gpk_file_mapping.ptr + diffuse_map_offset, 255, diffuse_map_size);
-								flush_file_mapping(gpk_file_mapping);
-								close_file_mapping(gpk_file_mapping);
-							}
-						}
-						level_add_terrain(level, vulkan, gpk_file);
-						if (!error) {
+							open_imgui_error_popup(&error_popup, "cannot open gpk file");
+						} else {
+							level_add_terrain(level, vulkan, gpk_file);
 							array_set(gpk_file, '\0');
 							ImGui::CloseCurrentPopup();
 						}
 					}
 					ImGui::SameLine();
 					if (ImGui::Button("cancel##cancel")) {
-						error = false;
 						array_set(gpk_file, '\0');
 						ImGui::CloseCurrentPopup();
 					}
@@ -1012,6 +979,9 @@ int main(int argc, char **argv) {
 					}
 				}
 			}
+			if (editor->gizmo_mode == gizmo_mode_terrain_brush) {
+
+			}
 		}
 		{ // miscs
 			if (ImGui::GetIO().KeyAlt && ImGui::IsKeyPressed(keycode_f4)) {
@@ -1053,7 +1023,6 @@ int main(int argc, char **argv) {
 					editor->camera.view = vec3_normalize(mat3_from_mat4(rotate_mat) * editor->camera.view);
 					editor->camera_pitch += pitch;
 				}
-				editor->camera.up = vec3_normalize(vec3_cross(vec3_cross(editor->camera.view, vec3{0, 1, 0}), editor->camera.view));
 			}
 			{
 				static bool camera_move_speed_popup = false;
@@ -1101,7 +1070,7 @@ int main(int argc, char **argv) {
 					}
 					ImGui::Dummy(ImVec2{0, 10});
 					ImGui::TextColored(ImVec4{1, 1, 0, 1}, "gizmo mode");
-					ImGui::Separator();					
+					ImGui::Separator();
 					if (ImGui::MenuItem("transform translate##gizmo_mode_transform_translate", nullptr, editor->gizmo_mode == gizmo_mode_transform_translate)) {
 						editor->gizmo_mode = gizmo_mode_transform_translate;
 					}
@@ -1226,6 +1195,7 @@ int main(int argc, char **argv) {
 					vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(horizontal_points) + sizeof(vertical_points);
 				}
 			}
+			#endif
 			{ // collision objects
 				if (editor->show_collision_shape && editor->entity_index < level->entity_count && level->entity_flags[editor->entity_index] & entity_component_flag_collision) {
 					entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
@@ -1270,7 +1240,6 @@ int main(int argc, char **argv) {
 					}
 				}
 			}
-			#endif
       { // imgui
       	ImDrawData *imgui_draw_data = ImGui::GetDrawData();
       	for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
@@ -1284,49 +1253,49 @@ int main(int argc, char **argv) {
       } 
     };
    	auto extra_color_render_pass_commands = [&] {
-   		#if 0
-			VkDeviceSize vertices_offset = 0;
-			uint32 uniform_buffer_offsets[4] = {level->render_data.frame_uniform_buffer_offset, 0, 0, 0};
 			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
+   		#if 0
+			uint32 uniform_buffer_offsets[4] = {level->render_data.frame_uniform_buffer_offset, 0, 0, 0};
 			if (editor->show_reference_grid) {
 				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline);
 				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
 				vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.lines_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
 				vkCmdDraw(cmd_buffer, editor->render_data.lines_vertex_count, 1, editor->render_data.lines_frame_vertex_buffer_offset / 16, 0);
 			}
+			#endif
+			if (editor->gizmo_mode == gizmo_mode_terrain_brush) {
+				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.basic_color_vertex_pipeline);
+				VkDeviceSize offset = 0;
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &offset);
+			}
 			if (editor->render_data.collision_sphere_count + editor->render_data.collision_capsule_count + editor->render_data.collision_bound_count > 0) {
-				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.pipeline);
-				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->buffers.common_vertex_buffer.buffer, &vertices_offset);
-				vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.collision_shape_pipeline.layout, 0, 1, &vulkan->descriptors.frame_uniform_buffer_offsets[vulkan->frame_index], m_countof(uniform_buffer_offsets), uniform_buffer_offsets);
-				struct collision_object_push_consts {
-					mat4 transform;
-					vec4 color;
-				};
+				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.basic_color_vertex_pipeline);
+				VkDeviceSize vertices_offset = 0;
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertices_offset);
 				for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
-					collision_object_push_consts push_consts = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color};
-					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+					shader_basic_color_vertex_push_constant pc = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, level->persistant_data.sphere_vertex_region_buffer_offset / sizeof(vec3), 0);
 				}
 				for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
-					collision_object_push_consts cylinder_push_consts = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color};
-					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(cylinder_push_consts), &cylinder_push_consts);
-					vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, editor->cylinder_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+					shader_basic_color_vertex_push_constant pc = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+					vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, level->persistant_data.cylinder_vertex_region_buffer_offset / sizeof(vec3), 0);
 
-					collision_object_push_consts sphere_1_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[0], editor->render_data.collision_capsules[i].color};
-					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_1_push_consts), &sphere_1_push_consts);
-					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+					pc = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[0], editor->render_data.collision_capsules[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, level->persistant_data.sphere_vertex_region_buffer_offset / sizeof(vec3), 0);
 
-					collision_object_push_consts sphere_2_push_consts = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[1], editor->render_data.collision_capsules[i].color};
-					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sphere_2_push_consts), &sphere_2_push_consts);
-					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, editor->sphere_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+					pc = {editor->render_data.collision_capsules[i].capsule_sphere_transforms[1], editor->render_data.collision_capsules[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, level->persistant_data.sphere_vertex_region_buffer_offset / sizeof(vec3), 0);
 				}
 				for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
-					collision_object_push_consts push_consts = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color};
-					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.collision_shape_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-					vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, editor->bound_vertices_common_vertex_buffer_offset / sizeof(vec3), 0);
+					shader_basic_color_vertex_push_constant pc = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color};
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+					vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, level->persistant_data.bound_vertex_region_buffer_offset / sizeof(vec3), 0);
 				}
 			}
-			#endif
 		};
 		auto extra_swap_chain_render_pass_commands = [&] {
 			VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];

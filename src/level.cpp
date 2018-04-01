@@ -697,7 +697,7 @@ uint32 level_add_gpk_model(level *level, vulkan *vulkan, const char *gpk_file, b
 
 	file_mapping gpk_file_mapping = {};
 	m_assert(open_file_mapping(gpk_file, &gpk_file_mapping));
-	m_scope_exit(close_file_mapping(gpk_file_mapping));
+	m_scope_exit(close_file_mapping(&gpk_file_mapping));
 
 	model *model = &level->models[level->model_count];
 	gpk_model *gpk_model = (struct gpk_model *)gpk_file_mapping.ptr;
@@ -884,7 +884,7 @@ void level_add_skybox(level *level, vulkan *vulkan, const char *gpk_file) {
 
 	file_mapping gpk_file_mapping = {};
 	m_assert(open_file_mapping(gpk_file, &gpk_file_mapping));
-	m_scope_exit(close_file_mapping(gpk_file_mapping));
+	m_scope_exit(close_file_mapping(&gpk_file_mapping));
 	gpk_skybox *gpk_skybox = (struct gpk_skybox *)gpk_file_mapping.ptr;
 	m_assert(!strcmp(gpk_skybox->format_str, m_gpk_skybox_format_str));
 
@@ -918,13 +918,15 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 
 	file_mapping gpk_file_mapping = {};
 	m_assert(open_file_mapping(gpk_file, &gpk_file_mapping));
-	m_scope_exit(close_file_mapping(gpk_file_mapping));
+	m_scope_exit(close_file_mapping(&gpk_file_mapping));
 	gpk_terrain *gpk_terrain = (struct gpk_terrain *)gpk_file_mapping.ptr;
 	m_assert(!strcmp(gpk_terrain->format_str, m_gpk_terrain_format_str));
 	{
+		m_assert(gpk_terrain->height_map_width == gpk_terrain->height_map_height);
+		m_assert(is_pow_2(gpk_terrain->height_map_width));
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_info.imageType = VK_IMAGE_TYPE_2D;
-		image_info.format = VK_FORMAT_R16_UNORM;
+		image_info.format = VK_FORMAT_R8_UNORM;
 		image_info.extent = {gpk_terrain->height_map_width, gpk_terrain->height_map_height, 1};
 		image_info.mipLevels = 1;
 		image_info.arrayLayers = 1;
@@ -939,10 +941,12 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_view_info.subresourceRange.levelCount = 1;
 		image_view_info.subresourceRange.layerCount = 1;
 		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
-		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, height_map_ptr, gpk_terrain->height_map_size, 1, 2);
+		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, height_map_ptr, gpk_terrain->height_map_size, 1, 1);
 		terrain->height_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.terrain_texture_sampler);
 	}
 	{
+		m_assert(gpk_terrain->diffuse_map_width == gpk_terrain->diffuse_map_height);
+		m_assert(is_pow_2(gpk_terrain->diffuse_map_width));
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_info.imageType = VK_IMAGE_TYPE_2D;
 		image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -976,7 +980,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		printf("%s\n", e.what());
 		m_assert(false);
 	}
-	close_file_mapping(level_json_file_mapping);
+	close_file_mapping(&level_json_file_mapping);
 	{
 		level->render_data = {};
 		level->entity_components_memory_arenas[0].size = 0;
@@ -1360,7 +1364,7 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 	file_mapping file_mapping = {};
 	create_file_mapping(json_file_path, json_string.length(), &file_mapping);
 	memcpy(file_mapping.ptr, json_string.c_str(), json_string.length());
-	close_file_mapping(file_mapping);
+	close_file_mapping(&file_mapping);
 }
 
 camera level_get_player_camera(level *level, vulkan *vulkan, float r, float theta, float phi) {
@@ -1380,7 +1384,6 @@ camera level_get_player_camera(level *level, vulkan *vulkan, float r, float thet
 	camera camera = {};
 	camera.position = center + translate;
 	camera.view = vec3_normalize(-translate);
-	camera.up = vec3_cross(vec3_cross(camera.view, vec3{0, 1, 0}), camera.view);
 	camera.fovy = degree_to_radian(50);
 	camera.aspect = (float)vulkan->swap_chain.image_width / (float)vulkan->swap_chain.image_height;
 	camera.znear = 0.1f;
@@ -1436,7 +1439,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 
 	{ // level
 		ambient_light ambient_light = {{0, 0, 0}};
-		directional_light directional_light = {{0, 0, 0}, {1, 0, 0}};
+		directional_light directional_light = {{0, 0, 0}, {0, 1, 0}};
 		point_light point_light = {};
 		for (uint32 i = 0; i < level->light_component_count; i += 1) {
 			switch (level->light_components[i].light_type) {
@@ -1735,8 +1738,8 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 			VkDeviceSize vertex_buffer_offset = 0;
 			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertex_buffer_offset);
 			shader_terrain_push_constant pc = {};
-			pc.height_map_index = level->persistant_data.default_height_map_descriptor_index;
-			pc.diffuse_map_index = level->persistant_data.default_diffuse_map_descriptor_index;
+			pc.height_map_index = terrain->height_map_descriptor_index;
+			pc.diffuse_map_index = terrain->diffuse_map_descriptor_index;
 		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 			vkCmdDraw(cmd_buffer, 128 * 128 * 6, 1, level->persistant_data.terrain_vertex_region_buffer_offset / sizeof(struct terrain_vertex), 0);
 		}
@@ -1793,7 +1796,7 @@ uint32 font_atlas_descriptor_index;
 
 file_mapping font_file_mapping = {};
 m_assert(open_file_mapping("assets\\fonts\\Roboto-Medium.ttf", &font_file_mapping));
-m_scope_exit(close_file_mapping(font_file_mapping));
+m_scope_exit(close_file_mapping(&font_file_mapping));
 
 m_assert(stbtt_InitFont(&level->persistant_data.stbtt_font_info, font_file_mapping.ptr, 0));
 level->persistant_data.font_size = 128;

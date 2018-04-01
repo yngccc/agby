@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
 		printf("cannot open file %s", gpk_file);
 		return 1;
 	}
-	m_scope_exit(close_file_mapping(gpk_file_mapping));
+	m_scope_exit(close_file_mapping(&gpk_file_mapping));
 	gpk_model *gpk_model = (struct gpk_model *)gpk_file_mapping.ptr;
 	uint32 total_vertex_count = 0;
 	uint32 total_index_count = 0;
@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
 			info.codeSize = file_mapping.size;
 			info.pCode = (const uint32 *)file_mapping.ptr;
 			m_vk_assert(vkCreateShaderModule(vulkan_device.device, &info, nullptr, &shader_module));
-			close_file_mapping(file_mapping);
+			close_file_mapping(&file_mapping);
 			return shader_module;
 		};
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};

@@ -57,14 +57,23 @@ struct shader_skybox_push_constant {
   uint32 cube_map_index;
 };
 
-struct shader_imgui_push_constant {
-  vec2 viewport;
-  uint32 texture_index;
-  uint32 texture_is_grayscale;
+struct shader_lines_push_constant {
+
+};
+
+struct shader_basic_color_vertex_push_constant {
+  mat4 transform_mat;
+  vec4 color;
 };
 
 struct shader_swap_chain_push_constant {
   uint32 texture_index;
+};
+
+struct shader_imgui_push_constant {
+  vec2 viewport;
+  uint32 texture_index;
+  uint32 texture_is_grayscale;
 };
 
 #else
@@ -110,16 +119,22 @@ struct shader_swap_chain_push_constant {
     uint cube_map_index;                         \
   } pc;
 
-#define m_declare_imgui_push_constant           \
-  layout(push_constant) uniform push_constant { \
-    vec2 viewport;                              \
-    uint texture_index;                         \
-    uint texture_is_grayscale;                  \
+#define m_declare_basic_color_vertex_push_constant \
+  layout(push_constant) uniform push_constant {    \
+    mat4 transform_mat;                            \
+    vec4 color;                                    \
   } pc;
 
 #define m_declare_swap_chain_push_constant      \
   layout(push_constant) uniform push_constant { \
     uint texture_index;                         \
+  } pc;
+
+#define m_declare_imgui_push_constant           \
+  layout(push_constant) uniform push_constant { \
+    vec2 viewport;                              \
+    uint texture_index;                         \
+    uint texture_is_grayscale;                  \
   } pc;
 
 #define m_level_view_proj_mat           (ubuf[0])

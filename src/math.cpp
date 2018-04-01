@@ -297,7 +297,6 @@ struct transform {
 struct camera {
 	vec3 position;
 	vec3 view;
-	vec3 up;
 	float fovy;
 	float aspect;
 	float znear;
@@ -670,8 +669,13 @@ mat4 mat4_perspective_projection(float fovy, float aspect, float znear, float zf
 	return mat;
 }
 
-mat4 mat4_look_at(vec3 eye, vec3 center, vec3 up) {
+mat4 mat4_look_at(vec3 eye, vec3 center) {
+	vec3 up = {0, 1, 0};
 	vec3 f = vec3_normalize(center - eye);
+	if (f == up || f == -up) {
+		f.x -= 0.000001f;
+		f = vec3_normalize(f);
+	}
 	vec3 s = vec3_normalize(vec3_cross(f, up));
 	vec3 u = vec3_cross(s, f);
 	mat4 mat = {};
@@ -810,7 +814,7 @@ mat4 camera_projection_mat4(const camera &camera) {
 }
 
 mat4 camera_view_mat4(const camera &camera) {
-	return mat4_look_at(camera.position, camera.position + camera.view, camera.up);
+	return mat4_look_at(camera.position, camera.position + camera.view);
 }
 
 mat4 camera_view_projection_mat4(const camera &camera) {
@@ -869,7 +873,7 @@ mat4 camera_shadow_map_projection_mat4(const camera &camera, vec3 directional_li
 
 	// return mat4_orthographic_projection(bound_min.x, bound_max.x, bound_min.y, bound_max.y, -bound_max.z, -bound_min.z) * light_view_mat4;
 
-	mat4 light_view_mat4 = mat4_look_at(directional_light * 50, {0, 0, 0}, {0, 1, 0});
+	mat4 light_view_mat4 = mat4_look_at(directional_light * 50, {0, 0, 0});
 	return mat4_orthographic_projection(-50, 50, -50, 50, 0, 100) * light_view_mat4;
 }
 
