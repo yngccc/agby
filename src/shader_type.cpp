@@ -57,13 +57,10 @@ struct shader_skybox_push_constant {
   uint32 cube_map_index;
 };
 
-struct shader_lines_push_constant {
-
-};
-
-struct shader_basic_color_vertex_push_constant {
+struct shader_color_vertex_push_constant {
   mat4 transform_mat;
   vec4 color;
+  uint32 height_map_index;
 };
 
 struct shader_swap_chain_push_constant {
@@ -119,10 +116,11 @@ struct shader_imgui_push_constant {
     uint cube_map_index;                         \
   } pc;
 
-#define m_declare_basic_color_vertex_push_constant \
+#define m_declare_color_vertex_push_constant \
   layout(push_constant) uniform push_constant {    \
     mat4 transform_mat;                            \
     vec4 color;                                    \
+    uint height_map_index;                         \
   } pc;
 
 #define m_declare_swap_chain_push_constant      \
@@ -161,5 +159,7 @@ struct shader_imgui_push_constant {
 #define m_shadow_map (textures[pc.shadow_map_index])
 #define m_height_map (textures[pc.height_map_index])
 #define m_cube_map (cube_textures[pc.cube_map_index])
+
+#define m_terrain_max_height 16
 
 #endif

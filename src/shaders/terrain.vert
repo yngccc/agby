@@ -15,10 +15,8 @@ m_declare_uniform_buffer
 m_declare_2d_texture_array
 m_declare_terrain_push_constant
 
-const float max_height = 16;
-
 void main() {
-	float height = texture(m_height_map, uv_in).x * max_height;
+	float height = texture(m_height_map, uv_in).x * m_terrain_max_height;
 	vec3 position = position_in + vec3(0, height, 0);
 	gl_Position = m_level_view_proj_mat * vec4(position, 1);
 	uv_out = uv_in;

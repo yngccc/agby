@@ -269,6 +269,8 @@ struct level_persistant_data {
 	uint32 bound_vertex_region_buffer_offset;
 	uint32 sphere_vertex_region_buffer_offset;
 	uint32 cylinder_vertex_region_buffer_offset;
+	uint32 hollow_circle_vertex_region_buffer_offset;
+	uint32 torus_vertex_region_buffer_offset;
 	uint32 terrain_vertex_region_buffer_offset;
 
 	uint32 default_diffuse_map_descriptor_index;
@@ -365,6 +367,8 @@ void initialize_level(level *level, vulkan *vulkan) {
 		level->persistant_data.bound_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, bound_vertices, sizeof(bound_vertices), 12u);
 		level->persistant_data.sphere_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, sphere_vertices, sizeof(sphere_vertices), 12u);
 		level->persistant_data.cylinder_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, cylinder_vertices, sizeof(cylinder_vertices), 12u);
+		level->persistant_data.hollow_circle_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, hollow_circle_vertices, sizeof(hollow_circle_vertices), 12u);
+		level->persistant_data.torus_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, torus_vertices, sizeof(torus_vertices), 12u);
 
 		uint32 vertices_size = 128 * 128 * 6 * sizeof(struct terrain_vertex);
 		m_memory_arena_undo_allocations_at_scope_exit(&level->main_thread_frame_memory_arena);

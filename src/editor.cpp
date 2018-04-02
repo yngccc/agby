@@ -1119,14 +1119,17 @@ int main(int argc, char **argv) {
 			}
 			ImGui::PopID();
 		}
+		ray camera_ray = {};
+		{
+			vec3 window_pos = vec3{ImGui::GetMousePos().x, ImGui::GetIO().DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
+			vec4 viewport = vec4{0, 0, ImGui::GetIO().DisplaySize.x , ImGui::GetIO().DisplaySize.y};
+			vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
+			camera_ray = {editor->camera.position, vec3_normalize(mouse_world_position - editor->camera.position), editor->camera.zfar};
+		}
 		{ // selection
 			if (ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyShift && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
-				vec3 window_pos = vec3{ImGui::GetMousePos().x, ImGui::GetIO().DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
-				vec4 viewport = vec4{0, 0, ImGui::GetIO().DisplaySize.x , ImGui::GetIO().DisplaySize.y};
-				vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
-				ray ray = {editor->camera.position, vec3_normalize(mouse_world_position - editor->camera.position), editor->camera.zfar};
 				if (editor->selection_mode == selection_mode_entity) {
-					float entity_min_distance = ray.len;
+					float entity_min_distance = camera_ray.len;
 					uint32 entity_index = UINT32_MAX;
 					for (uint32 i = 0; i < level->entity_count; i += 1) {
 						if (level->entity_flags[i] & entity_component_flag_render) {
@@ -1134,11 +1137,11 @@ int main(int argc, char **argv) {
 							if (render_component->model_index < level->model_count) {
 								model *model = &level->models[render_component->model_index];
 								mat4 transform_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(render_component->adjustment_transform);
-								float model_min_distance = ray.len;
+								float model_min_distance = camera_ray.len;
 								traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
 									if (node->mesh_index < model->mesh_count) {
 										float distance = 0;
-										if (ray_intersect_mesh(ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {
+										if (ray_intersect_mesh(camera_ray, &model->meshes[node->mesh_index], transform_mat * global_transform_mat, &distance) && distance < model_min_distance) {
 											model_min_distance = distance;
 										}
 									}
@@ -1263,22 +1266,32 @@ int main(int argc, char **argv) {
 				vkCmdDraw(cmd_buffer, editor->render_data.lines_vertex_count, 1, editor->render_data.lines_frame_vertex_buffer_offset / 16, 0);
 			}
 			#endif
-			if (editor->gizmo_mode == gizmo_mode_terrain_brush) {
-				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.basic_color_vertex_pipeline);
-				VkDeviceSize offset = 0;
-				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &offset);
-			}
+			// if (editor->gizmo_mode == gizmo_mode_terrain_brush) {
+				vec3 intersection = {};
+				if (ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
+					vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.color_vertex_pipeline);
+					VkDeviceSize offset = 0;
+					vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &offset);
+					intersection.y += 0.0005f;
+					shader_color_vertex_push_constant pc = {mat4_from_translate(intersection), vec4{1, 0, 0, 1}, level->persistant_data.default_height_map_descriptor_index};
+					if (level->terrain_index < level->terrain_count) {
+						pc.height_map_index = level->terrains[level->terrain_index].height_map_descriptor_index;
+					}
+					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+					vkCmdDraw(cmd_buffer, m_countof(hollow_circle_vertices), 1, level->persistant_data.hollow_circle_vertex_region_buffer_offset / sizeof(vec3), 0);
+				}
+			// }
 			if (editor->render_data.collision_sphere_count + editor->render_data.collision_capsule_count + editor->render_data.collision_bound_count > 0) {
-				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.basic_color_vertex_pipeline);
+				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.color_vertex_pipeline);
 				VkDeviceSize vertices_offset = 0;
 				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertices_offset);
 				for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
-					shader_basic_color_vertex_push_constant pc = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color};
+					shader_color_vertex_push_constant pc = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color, level->persistant_data.default_height_map_descriptor_index};
 					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, level->persistant_data.sphere_vertex_region_buffer_offset / sizeof(vec3), 0);
 				}
 				for (uint32 i = 0; i < editor->render_data.collision_capsule_count; i += 1) {
-					shader_basic_color_vertex_push_constant pc = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color};
+					shader_color_vertex_push_constant pc = {editor->render_data.collision_capsules[i].transform, editor->render_data.collision_capsules[i].color, level->persistant_data.default_height_map_descriptor_index};
 					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 					vkCmdDraw(cmd_buffer, m_countof(cylinder_vertices), 1, level->persistant_data.cylinder_vertex_region_buffer_offset / sizeof(vec3), 0);
 
@@ -1291,7 +1304,7 @@ int main(int argc, char **argv) {
 					vkCmdDraw(cmd_buffer, m_countof(sphere_vertices), 1, level->persistant_data.sphere_vertex_region_buffer_offset / sizeof(vec3), 0);
 				}
 				for (uint32 i = 0; i < editor->render_data.collision_bound_count; i += 1) {
-					shader_basic_color_vertex_push_constant pc = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color};
+					shader_color_vertex_push_constant pc = {editor->render_data.collision_bounds[i].transform, editor->render_data.collision_bounds[i].color, level->persistant_data.default_height_map_descriptor_index};
 					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 					vkCmdDraw(cmd_buffer, m_countof(bound_vertices), 1, level->persistant_data.bound_vertex_region_buffer_offset / sizeof(vec3), 0);
 				}

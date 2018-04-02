@@ -255,7 +255,7 @@ struct vulkan_pipelines {
 	VkPipeline terrain_pipeline;
 	VkPipeline imgui_pipeline;
 	VkPipeline text_pipeline;
-	VkPipeline basic_color_vertex_pipeline;
+	VkPipeline color_vertex_pipeline;
 	VkPipeline swap_chain_pipeline;
 };
 
@@ -2178,13 +2178,13 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		create_info.renderPass = vulkan->render_passes.color_render_pass;
 		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &vulkan->pipelines.text_pipeline));
 	}
-	{ // basic color vertex
+	{ // color vertex
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
 		shader_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		shader_stages[0].module = shader_module_from_file("shaders\\collision_shape.vert.spv");
+		shader_stages[0].module = shader_module_from_file("shaders\\color_vertex.vert.spv");
 		shader_stages[0].pName = "main";
 		shader_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		shader_stages[1].module = shader_module_from_file("shaders\\collision_shape.frag.spv");
+		shader_stages[1].module = shader_module_from_file("shaders\\color_vertex.frag.spv");
 		shader_stages[1].pName = "main";
 
 		VkVertexInputBindingDescription vertex_input_bindings[] = {0, 12, VK_VERTEX_INPUT_RATE_VERTEX};
@@ -2251,7 +2251,7 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		create_info.pDynamicState = &dynamic_state;
 		create_info.layout = vulkan->pipelines.pipeline_layout;
 		create_info.renderPass = vulkan->render_passes.color_render_pass;
-		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &vulkan->pipelines.basic_color_vertex_pipeline));
+		m_vk_assert(vkCreateGraphicsPipelines(vulkan->device.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &vulkan->pipelines.color_vertex_pipeline));
 	}
 	{ // swap chain
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}, {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};

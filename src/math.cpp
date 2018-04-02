@@ -945,6 +945,15 @@ aabb aabb_expand(const aabb &bound1, const aabb &bound2) {
 	return bound;
 }
 
+bool ray_interect_plane(const ray &ray, const plane &plane, vec3 *intersection) {
+	float t = (plane.distance - vec3_dot(plane.normal, ray.origin)) / vec3_dot(plane.normal, ray.direction * ray.len);
+	if (t >= 0 && t <= 1) {
+		*intersection = ray.origin + ray.direction * ray.len * t;
+		return true;
+	}
+	return false;
+}
+
 bool ray_intersect_sphere(const ray &ray, const sphere &sphere, float *intersection = nullptr) {
 	vec3 m = ray.origin - sphere.center;
 	float b = vec3_dot(m, ray.direction);

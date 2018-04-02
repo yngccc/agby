@@ -1080,6 +1080,74 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 	printf("done importing gltf: \"%s\" %d\n", gltf_file.c_str(), current_offset);
 }
 
+void gltf_to_vertices(std::string gltf_file, std::string text_file) {
+	printf("begin importing gltf: \"%s\" \n", gltf_file.c_str());
+
+	tinygltf::Model gltf_model;
+	{
+		tinygltf::TinyGLTF gltf_loader;
+		std::string gltf_loader_err;
+		if (gltf_file.substr(gltf_file.find_last_of(".") + 1) == "gltf") {
+			bool gltf_load_success = gltf_loader.LoadASCIIFromFile(&gltf_model, &gltf_loader_err, gltf_file);
+			if (!gltf_loader_err.empty()) {
+				printf("%s load err:\n%s\n", gltf_file.c_str(), gltf_loader_err.c_str());
+			}
+			m_assert(gltf_load_success);
+		}
+		else if (gltf_file.substr(gltf_file.find_last_of(".") + 1) == "glb") {
+			bool gltf_load_success = gltf_loader.LoadBinaryFromFile(&gltf_model, &gltf_loader_err, gltf_file);
+			if (!gltf_loader_err.empty()) {
+				printf("%s load err:\n%s\n", gltf_file.c_str(), gltf_loader_err.c_str());
+			}
+			m_assert(gltf_load_success);
+		}
+		else {
+			m_assert(false);
+		}
+	}
+	m_assert(gltf_model.meshes.size() == 1);
+	auto &mesh = gltf_model.meshes[0];
+	m_assert(mesh.primitives.size() == 1);
+	auto &primitive = mesh.primitives[0];
+	m_assert(primitive.mode == TINYGLTF_MODE_TRIANGLES);
+
+	auto &position_accessor = gltf_model.accessors[primitive.attributes["POSITION"]];
+	m_assert(position_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+	m_assert(position_accessor.type == TINYGLTF_TYPE_VEC3);
+	auto &position_buffer_view = gltf_model.bufferViews[position_accessor.bufferView];
+	auto &position_buffer = gltf_model.buffers[position_buffer_view.buffer];
+	uint8 *position_data = position_buffer.data.data() + position_accessor.byteOffset + position_buffer_view.byteOffset;
+	uint64 position_stride = position_buffer_view.byteStride == 0 ? 12 : position_buffer_view.byteStride;
+
+	auto &index_accessor = gltf_model.accessors[primitive.indices];
+	m_assert(index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE || 
+		       index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT);
+	m_assert(index_accessor.type == TINYGLTF_TYPE_SCALAR);
+	auto &index_buffer_view = gltf_model.bufferViews[index_accessor.bufferView];
+	auto &index_buffer = gltf_model.buffers[index_buffer_view.buffer];
+	uint8 *index_data = index_buffer.data.data() + index_accessor.byteOffset + index_buffer_view.byteOffset;
+	uint64 index_stride = index_buffer_view.byteStride;
+	if (index_buffer_view.byteStride == 0) {
+		index_stride = index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE ? 1 : 2;
+	}
+
+	FILE *file = fopen(text_file.c_str(), "w");
+	m_assert(file);
+	fprintf(file, "{");
+	for (uint32 i = 0; i < index_accessor.count; i += 1) {
+		uint8 *index_ptr = index_data + index_stride * i;
+		uint16 index = index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE ? *index_ptr : *(uint16*)index_ptr;
+		vec3 position = *(vec3 *)(position_data + position_stride * index);
+		if (i % 3 == 0) {
+			fprintf(file, "\n");
+		}
+		fprintf(file, "{%.3ff, %.3ff, %.3ff}, ", m_unpack3(position));
+	}
+	fprintf(file, "}");
+	fclose(file);
+}
+
+
 struct import_json_schema {
 	bool force_import_all;
 	bool force_import_models;
@@ -1209,8 +1277,13 @@ int main(int argc, char **argv) {
 			else {
 				printf("error: expect -gltf-to-gpk gltf_file gpk_file");
 			}
-		}
-		else if (!strcmp(mode_str, "-skybox-to-gpk")) {
+		} else if (!strcmp(mode_str, "-gltf-to-vertices")) {
+			if (argc == 4) {
+				gltf_to_vertices(argv[2], argv[3]);
+			} else {
+				printf("error: expect -gltf-to-vertices gpk_file text_file");
+			}
+		} else if (!strcmp(mode_str, "-skybox-to-gpk")) {
 			if (argc == 4) {
 				skybox_to_gpk(argv[2], argv[3]);
 			}
@@ -1233,8 +1306,7 @@ int main(int argc, char **argv) {
 			else {
 				printf("error: expect -import-json json_file");
 			}
-		}
-		else {
+		} else {
 			printf("import.exe error: unknown first argument");
 		}
 	}
