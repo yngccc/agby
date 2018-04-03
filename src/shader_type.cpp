@@ -160,6 +160,6 @@ struct shader_imgui_push_constant {
 #define m_height_map (textures[pc.height_map_index])
 #define m_cube_map (cube_textures[pc.cube_map_index])
 
-#define m_terrain_max_height 16
+#define m_terrain_max_height 128
 
 #endif

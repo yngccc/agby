@@ -160,12 +160,12 @@ struct gpk_skybox {
 
 struct gpk_terrain {
 	char format_str[32];
-	uint32 height_map_offset;
 	uint32 height_map_width;
 	uint32 height_map_height;
 	uint32 height_map_size;
-	uint32 diffuse_map_offset;
+	uint32 height_map_offset;
 	uint32 diffuse_map_width;
 	uint32 diffuse_map_height;
 	uint32 diffuse_map_size;
+	uint32 diffuse_map_offset;
 };

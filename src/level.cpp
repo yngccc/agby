@@ -168,7 +168,8 @@ enum entity_component_flag {
 	entity_component_flag_render    = 1,
 	entity_component_flag_collision = 2,
 	entity_component_flag_physics   = 4,
-	entity_component_flag_light     = 8
+	entity_component_flag_light     = 8,
+	entity_component_flag_terrain   = 16
 };
 
 struct entity_render_component {
@@ -211,18 +212,25 @@ struct entity_light_component {
 	};
 };
 
+struct entity_terrain_component {
+	uint32 terrain_index;
+	transform transform;
+};
+
 struct entity_modification {
 	bool remove;
 	bool remove_render_component;
 	bool remove_collision_component;
 	bool remove_physics_component;
 	bool remove_light_component;
+	bool remove_terrain_component;
 	entity_info *info;
 	transform *transform;
 	entity_render_component *render_component;
 	entity_collision_component *collision_component;
 	entity_physics_component *physics_component;
 	entity_light_component *light_component;
+	entity_terrain_component *terrain_component;
 };
 
 struct entity_addition {
@@ -233,6 +241,7 @@ struct entity_addition {
 	entity_collision_component *collision_component;
 	entity_physics_component *physics_component;
 	entity_light_component *light_component;
+	entity_terrain_component *terrain_component;
 	entity_addition *next;
 };
 
@@ -254,9 +263,15 @@ struct model_render_data {
 	uint32 mesh_count;
 };
 
+struct terrain_render_data {
+	uint32 terrain_index;
+};
+
 struct level_render_data {
 	model_render_data *models;
 	uint32 model_count;
+	terrain_render_data *terrains;
+	uint32 terrain_count;
 };
 
 struct level_persistant_data {
@@ -290,10 +305,12 @@ struct level {
 	entity_collision_component *collision_components;
 	entity_light_component *light_components;
 	entity_physics_component *physics_components;
+	entity_terrain_component *terrain_components;
 	uint32 render_component_count;
 	uint32 collision_component_count;
 	uint32 light_component_count;
 	uint32 physics_component_count;
+	uint32 terrain_component_count;
 
 	entity_modification *entity_modifications;
 	entity_addition *entity_addition;
@@ -312,7 +329,6 @@ struct level {
 	terrain *terrains;
 	uint32 terrain_count;
 	uint32 terrain_capacity;
-	uint32 terrain_index;
 
 	level_render_data render_data;
 
@@ -505,6 +521,18 @@ entity_physics_component *entity_get_physics_component(level *level, uint32 enti
 	return &level->physics_components[index];
 }
 
+entity_terrain_component *entity_get_terrain_component(level *level, uint32 entity_index) {
+	m_assert(entity_index < level->entity_count);
+	m_assert(level->entity_flags[entity_index] & entity_component_flag_terrain);
+	uint32 index = 0;
+	for (uint32 i = 0; i < entity_index; i += 1) {
+		if (level->entity_flags[i] & entity_component_flag_terrain) {
+			index += 1;
+		}
+	}
+	return &level->terrain_components[index];
+}
+
 uint32 entity_component_get_entity_index(level *level, uint32 component_index, entity_component_flag entity_component_flag) {
 	uint32 index = 0;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
@@ -525,6 +553,7 @@ void level_update_entity_components(level *level) {
 	uint32 new_collision_component_count = level->collision_component_count;
 	uint32 new_physics_component_count = level->physics_component_count;
 	uint32 new_light_component_count = level->light_component_count;
+	uint32 new_terrain_component_count = level->terrain_component_count;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
 		entity_modification *mod = &level->entity_modifications[i];
 		uint32 entity_flag = level->entity_flags[i];
@@ -541,6 +570,9 @@ void level_update_entity_components(level *level) {
 			}
 			if (entity_flag & entity_component_flag_light) {
 				new_light_component_count -= 1;
+			}
+			if (entity_flag & entity_component_flag_terrain) {
+				new_terrain_component_count -= 1;
 			}
 		}
 		else {
@@ -568,6 +600,12 @@ void level_update_entity_components(level *level) {
 			else if (mod->light_component && !(entity_flag & entity_component_flag_light)) {
 				new_light_component_count += 1;
 			}
+			if (mod->remove_terrain_component) {
+				new_terrain_component_count -= 1;
+			}
+			else if (mod->terrain_component && !(entity_flag & entity_component_flag_terrain)) {
+				new_terrain_component_count += 1;
+			}
 		}
 	}
 	entity_addition *addition = level->entity_addition;
@@ -585,6 +623,9 @@ void level_update_entity_components(level *level) {
 		if (addition->light_component) {
 			new_light_component_count += 1;
 		}
+		if (addition->terrain_component) {
+			new_terrain_component_count += 1;
+		}
 		addition = addition->next;
 	}
 
@@ -600,12 +641,14 @@ void level_update_entity_components(level *level) {
 	entity_collision_component *new_collision_components = new_collision_component_count > 0 ? allocate_memory<entity_collision_component>(entity_components_memory_arena, new_collision_component_count) : nullptr;
 	entity_physics_component *new_physics_components = new_physics_component_count > 0 ? allocate_memory<entity_physics_component>(entity_components_memory_arena, new_physics_component_count) : nullptr;
 	entity_light_component *new_light_components = new_light_component_count > 0 ? allocate_memory<entity_light_component>(entity_components_memory_arena, new_light_component_count) : nullptr;
+	entity_terrain_component *new_terrain_components = new_terrain_component_count > 0 ? allocate_memory<entity_terrain_component>(entity_components_memory_arena, new_terrain_component_count) : nullptr;
 
 	uint32 entity_index = 0;
 	uint32 render_component_index = 0;
 	uint32 collision_component_index = 0;
 	uint32 physics_component_index = 0;
 	uint32 light_component_index = 0;
+	uint32 terrain_component_index = 0;
 	for (uint32 i = 0; i < level->entity_count; i += 1) {
 		entity_modification *mod = &level->entity_modifications[i];
 		if (!mod->remove) {
@@ -638,6 +681,13 @@ void level_update_entity_components(level *level) {
 				entity_flags |= entity_component_flag_light;
 				new_light_components[light_component_index++] = mod->light_component ? *mod->light_component : *entity_get_light_component(level, i);
 			}
+			if (mod->remove_terrain_component) {
+				entity_flags &= ~entity_component_flag_terrain;
+			}
+			else if (entity_flags & entity_component_flag_terrain || mod->terrain_component) {
+				entity_flags |= entity_component_flag_terrain;
+				new_terrain_components[terrain_component_index++] = mod->terrain_component ? *mod->terrain_component : *entity_get_terrain_component(level, i);
+			}
 			new_entity_flags[entity_index] = entity_flags;
 			new_entity_infos[entity_index] = mod->info ? *mod->info : level->entity_infos[i];
 			new_entity_transforms[entity_index] = mod->transform ? *mod->transform : level->entity_transforms[i];
@@ -661,6 +711,9 @@ void level_update_entity_components(level *level) {
 		if (addition->light_component) {
 			new_light_components[light_component_index++] = *addition->light_component;
 		}
+		if (addition->terrain_component) {
+			new_terrain_components[terrain_component_index++] = *addition->terrain_component;
+		}
 		entity_index += 1;
 		addition = addition->next;
 	}
@@ -677,16 +730,27 @@ void level_update_entity_components(level *level) {
 	level->collision_components = new_collision_components;
 	level->physics_components = new_physics_components;
 	level->light_components = new_light_components;
+	level->terrain_components = new_terrain_components;
 
 	level->render_component_count = new_render_component_count;
 	level->collision_component_count = new_collision_component_count;
 	level->physics_component_count = new_physics_component_count;
 	level->light_component_count = new_light_component_count;
+	level->terrain_component_count = new_terrain_component_count;
 }
 
 uint32 level_get_model_index(level *level, const char *gpk_file) {
 	for (uint32 i = 0; i < level->model_count; i += 1) {
 		if (!strcmp(level->models[i].gpk_file, gpk_file)) {
+			return i;
+		}
+	}
+	return UINT32_MAX;
+}
+
+uint32 level_get_terrain_index(level *level, const char *gpk_file) {
+	for (uint32 i = 0; i < level->terrain_count; i += 1) {
+		if (!strcmp(level->terrains[i].gpk_file, gpk_file)) {
 			return i;
 		}
 	}
@@ -930,7 +994,7 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		m_assert(is_pow_2(gpk_terrain->height_map_width));
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_info.imageType = VK_IMAGE_TYPE_2D;
-		image_info.format = VK_FORMAT_R8_UNORM;
+		image_info.format = VK_FORMAT_R16_UNORM;
 		image_info.extent = {gpk_terrain->height_map_width, gpk_terrain->height_map_height, 1};
 		image_info.mipLevels = 1;
 		image_info.arrayLayers = 1;
@@ -945,7 +1009,7 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_view_info.subresourceRange.levelCount = 1;
 		image_view_info.subresourceRange.layerCount = 1;
 		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
-		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, height_map_ptr, gpk_terrain->height_map_size, 1, 1);
+		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, height_map_ptr, gpk_terrain->height_map_size, 1, 2);
 		terrain->height_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.terrain_texture_sampler);
 	}
 	{
@@ -1016,7 +1080,6 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		for (auto &s : terrain_gpk_files) {
 			level_add_terrain(level, vulkan, s.c_str());
 		}
-		level->terrain_index = json["terrain_index"];
 	}
 	{ // entities
 		auto &entities_json = json["entities"];
@@ -1025,6 +1088,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		level->collision_component_count = 0;
 		level->physics_component_count = 0;
 		level->light_component_count = 0;
+		level->terrain_component_count = 0;
 		for (auto &entity : entities_json) {
 			if (entity.find("render_component") != entity.end()) {
 				level->render_component_count += 1;
@@ -1037,6 +1101,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			}
 			if (entity.find("light_component") != entity.end()) {
 				level->light_component_count += 1;
+			}
+			if (entity.find("terrain_component") != entity.end()) {
+				level->terrain_component_count += 1;
 			}
 		}
 
@@ -1059,6 +1126,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		}
 		if (level->light_component_count > 0) {
 			level->light_components = allocate_memory<entity_light_component>(memory_arena, level->light_component_count);
+		}
+		if (level->terrain_component_count > 0) {
+			level->terrain_components = allocate_memory<entity_terrain_component>(memory_arena, level->terrain_component_count);
 		}
 
 		auto read_entity_info = [](const nlohmann::json &json, entity_info *info) {
@@ -1146,11 +1216,23 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				m_assert(false);
 			}
 		};
+		auto read_terrain_component = [level, read_transform](const nlohmann::json &json, entity_terrain_component *terrain_component) {
+			std::string gpk_file = json["gpk_file"];
+			terrain_component->terrain_index = level_get_terrain_index(level, gpk_file.c_str());
+			auto transform_field = json.find("transform");
+			if (transform_field != json.end()) {
+				read_transform(*transform_field, &terrain_component->transform);
+			}
+			else {
+				terrain_component->transform = transform_identity();
+			}
+		};
 
 		uint32 render_component_index = 0;
 		uint32 collision_component_index = 0;
 		uint32 physics_component_index = 0;
 		uint32 light_component_index = 0;
+		uint32 terrain_component_index = 0;
 		for (uint32 i = 0; i < level->entity_count; i += 1) {
 			auto &entity_json = entities_json[i];
 			uint32 &entity_flags = level->entity_flags[i];
@@ -1179,6 +1261,11 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			if (light_component_field != entity_json.end()) {
 				entity_flags |= entity_component_flag_light;
 				read_light_component(*light_component_field, &level->light_components[light_component_index++]);
+			}
+			auto terrain_component_field = entity_json.find("terrain_component");
+			if (terrain_component_field != entity_json.end()) {
+				entity_flags |= entity_component_flag_terrain;
+				read_terrain_component(*terrain_component_field, &level->terrain_components[terrain_component_index++]);
 			}
 			if (collision_component_field != entity_json.end() && physics_component_field != entity_json.end()) {
 				entity_collision_component *collision_component = &level->collision_components[collision_component_index - 1];
@@ -1264,7 +1351,6 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 		for (uint32 i = 0; i < level->terrain_count; i += 1) {
 			terrains.push_back(level->terrains[i].gpk_file);
 		}
-		json["terrain_index"] = level->terrain_index;
 	}
 	{ // entities
 		auto &entities = json["entities"];
@@ -1349,6 +1435,18 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 						{"attenuation", light_component->point_light.attenuation}
 					};
 				}				
+			}
+			if (flags & entity_component_flag_terrain) {
+				entity_terrain_component *terrain_component = entity_get_terrain_component(level, i);
+				transform &tfm = terrain_component->transform;
+				entity_json["terrain_component"] = {
+					{"gpk_file", terrain_component->terrain_index < level->terrain_count ? level->terrains[terrain_component->terrain_index].gpk_file : ""},
+					{"transform", {
+						{"scale", {m_unpack3(tfm.scale)}}, 
+						{"rotate", {m_unpack4(tfm.rotate)}},
+						{"translate", {m_unpack3(tfm.translate)}}}
+					}
+				};
 			}
 			entities.push_back(entity_json);
 		}
@@ -1476,11 +1574,12 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 		if (level->render_component_count > 0) {
 			level->render_data.models = allocate_memory<struct model_render_data>(&level->render_thread_frame_memory_arena, level->render_component_count);
 			level->render_data.model_count = 0;
+			uint32 render_component_index = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
 				if (!(level->entity_flags[i] & entity_component_flag_render)) {
 					continue;
 				}
-				entity_render_component *render_component = entity_get_render_component(level, i);
+				entity_render_component *render_component = &level->render_components[render_component_index++];
 				if (render_component->model_index >= level->model_count || render_component->hide) {
 					continue;
 				}
@@ -1610,6 +1709,24 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 			}
 		}
 	}
+	{ // terrains
+		if (level->terrain_component_count > 0) {
+			level->render_data.terrains = allocate_memory<struct terrain_render_data>(&level->render_thread_frame_memory_arena, level->terrain_component_count);
+			level->render_data.terrain_count = 0;
+			uint32 terrain_component_index = 0;
+			for (uint32 i = 0; i < level->entity_count; i += 1) {
+				if (!(level->entity_flags[i] & entity_component_flag_terrain)) {
+					continue;
+				}
+				entity_terrain_component *terrain_component = &level->terrain_components[terrain_component_index++];
+				if (terrain_component->terrain_index >= level->terrain_count) {
+					continue;
+				}
+				terrain_render_data *terrain_render_data = &level->render_data.terrains[level->render_data.terrain_count++];
+				terrain_render_data->terrain_index = terrain_component->terrain_index;
+			}
+		}
+	}
 	generate_extra_render_data();
 }
 
@@ -1736,16 +1853,18 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 				}
 			}
 		}
-		if (level->terrain_index < level->terrain_count) {
-			terrain *terrain = &level->terrains[level->terrain_index];
+		if (level->render_data.terrain_count > 0) {
 			vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.terrain_pipeline);
 			VkDeviceSize vertex_buffer_offset = 0;
 			vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertex_buffer_offset);
-			shader_terrain_push_constant pc = {};
-			pc.height_map_index = terrain->height_map_descriptor_index;
-			pc.diffuse_map_index = terrain->diffuse_map_descriptor_index;
-		  vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
-			vkCmdDraw(cmd_buffer, 128 * 128 * 6, 1, level->persistant_data.terrain_vertex_region_buffer_offset / sizeof(struct terrain_vertex), 0);
+			for (uint32 i = 0; i < level->render_data.terrain_count; i += 1) {
+				terrain *terrain = &level->terrains[level->render_data.terrains[i].terrain_index];
+				shader_terrain_push_constant pc = {};
+				pc.height_map_index = terrain->height_map_descriptor_index;
+				pc.diffuse_map_index = terrain->diffuse_map_descriptor_index;
+				vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+				vkCmdDraw(cmd_buffer, 128 * 128 * 6, 1, level->persistant_data.terrain_vertex_region_buffer_offset / sizeof(struct terrain_vertex), 0);
+			}
 		}
 		if (level->skybox_index < level->skybox_count) {
 		  skybox *skybox = &level->skyboxes[level->skybox_index];
@@ -1789,96 +1908,3 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 	}
 }	
 
-#if 0
-stbtt_fontinfo stbtt_font_info;
-stbtt_pack_context stbtt_pack_context;
-stbtt_packedchar stbtt_packed_chars[95];
-float font_size;
-uint32 font_atlas_width;
-uint32 font_atlas_height;
-uint32 font_atlas_descriptor_index;
-
-file_mapping font_file_mapping = {};
-m_assert(open_file_mapping("assets\\fonts\\Roboto-Medium.ttf", &font_file_mapping));
-m_scope_exit(close_file_mapping(&font_file_mapping));
-
-m_assert(stbtt_InitFont(&level->persistant_data.stbtt_font_info, font_file_mapping.ptr, 0));
-level->persistant_data.font_size = 128;
-level->persistant_data.font_atlas_width = 2048;
-level->persistant_data.font_atlas_height = 1024;
-uint8 *font_atlas = (uint8 *)allocate_virtual_memory(level->persistant_data.font_atlas_width * level->persistant_data.font_atlas_height);
-m_scope_exit(free_virtual_memory(font_atlas));
-m_assert(stbtt_PackBegin(&level->persistant_data.stbtt_pack_context, font_atlas, level->persistant_data.font_atlas_width, level->persistant_data.font_atlas_height, 0, 1, nullptr));
-stbtt_PackSetOversampling(&level->persistant_data.stbtt_pack_context, 2, 2);
-m_assert(stbtt_PackFontRange(&level->persistant_data.stbtt_pack_context, font_file_mapping.ptr, 0, level->persistant_data.font_size, 32, 95, level->persistant_data.stbtt_packed_chars));
-stbtt_PackEnd(&level->persistant_data.stbtt_pack_context);
-
-VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-image_info.imageType = VK_IMAGE_TYPE_2D;
-image_info.format = VK_FORMAT_R8_UNORM;
-image_info.extent = {level->persistant_data.font_atlas_width, level->persistant_data.font_atlas_height, 1};
-image_info.mipLevels = 1;
-image_info.arrayLayers = 1;
-image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-image_view_info.format = image_info.format;
-image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-image_view_info.subresourceRange.levelCount = 1;
-image_view_info.subresourceRange.layerCount = 1;
-uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, font_atlas, level->persistant_data.font_atlas_width * level->persistant_data.font_atlas_height, 1, 1);
-level->persistant_data.font_atlas_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[0]);
-
-{ // texts
-	struct vertex {
-		vec4 position_uv;
-		u8vec4 color;
-		uint32 transform_mat_index;
-	};
-	static_assert(sizeof(struct vertex) == 24, "");
-	round_up(&vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index], (uint32)sizeof(struct vertex));
-	round_up(&vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index], 64u);
-	level->render_data.text_frame_vertex_buffer_offset = vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index];
-	level->render_data.text_frame_uniform_buffer_offset = vulkan->buffers.frame_uniform_buffer_offsets[vulkan->frame_index];
-	level->render_data.text_frame_vertex_count = 0;
-	level->render_data.text_frame_uniform_count = 0;
-	auto append_text_render_data = [level, vulkan, font, camera](const char *text, aa_bound bound) {
-		vec4 text_quad = {};
-		float xpos = 0;
-		float ypos = 0;
-		uint32 text_len = (uint32)strlen(text);
-		for (uint32 i = 0; i < text_len; i += 1) {
-			stbtt_aligned_quad quad = {};
-			stbtt_GetPackedQuad(font->stbtt_packed_chars, font->packed_bitmap_width, font->packed_bitmap_height, text[i] - ' ', &xpos, &ypos, &quad, 0);
-			quad.y0 = -quad.y0;
-			quad.y1 = -quad.y1;
-			text_quad.x0 = min(text_quad.x0, quad.x0);
-			text_quad.y0 = max(text_quad.y0, quad.y0);
-			text_quad.x1 = max(text_quad.x1, quad.x1);
-			text_quad.y1 = min(text_quad.y1, quad.y1);
-			vertex *vertices = (vertex *)(vulkan->buffers.frame_vertex_buffer_ptrs[vulkan->frame_index] + vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] + sizeof(struct vertex) * 6 * i);
-			vertices[0] = {{quad.x0, quad.y0, quad.s0, quad.t0}, {0, 255, 0, 0}, level->render_data.text_frame_uniform_count};
-			vertices[1] = {{quad.x0, quad.y1, quad.s0, quad.t1}, {0, 255, 0, 0}, level->render_data.text_frame_uniform_count};
-			vertices[2] = {{quad.x1, quad.y1, quad.s1, quad.t1}, {0, 255, 0, 0}, level->render_data.text_frame_uniform_count};
-			vertices[3] = vertices[0];
-			vertices[4] = vertices[2];
-			vertices[5] = {{quad.x1, quad.y0, quad.s1, quad.t0}, {0, 255, 0, 255}, level->render_data.text_frame_uniform_count};
-		}
-		vulkan->buffers.frame_vertex_buffer_offsets[vulkan->frame_index] += sizeof(struct vertex) * 6 * text_len;
-
-		vec2 text_quad_center = {};
-		text_quad_center.x = text_quad.x0 + (text_quad.x1 - text_quad.x0) / 2;
-		text_quad_center.y = text_quad.y0 + (text_quad.y1 - text_quad.y0) / 2;
-
-		float text_quad_scale = 1 / font->font_size;
-		float text_quad_height = text_quad.y0 - text_quad.y1;
-		vec3 text_quad_translate = {0, text_quad_height / 2 * text_quad_scale, 0};
-		text_quad_translate = text_quad_translate + aa_bound_center(bound);
-		text_quad_translate.y += (bound.max.y - bound.min.y) / 2;
-
-		mat4 transform_mat = mat4_vulkan_clip() * camera_view_projection_mat4(camera) * mat4_from_translation(text_quad_translate) * camera_billboard_mat4(camera) * mat4_from_scaling(text_quad_scale) * mat4_from_translation({(-text_quad_center).x, (-text_quad_center).y, 0});
-	};
-}
-#endif
