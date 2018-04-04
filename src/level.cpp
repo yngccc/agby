@@ -388,11 +388,11 @@ void initialize_level(level *level, vulkan *vulkan) {
 		level->persistant_data.hollow_circle_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, hollow_circle_vertices, sizeof(hollow_circle_vertices), 12u);
 		level->persistant_data.torus_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, torus_vertices, sizeof(torus_vertices), 12u);
 
-		uint32 vertices_size = 128 * 128 * 6 * sizeof(struct terrain_vertex);
+		uint32 vertices_size = level_terrain_resolution * level_terrain_resolution * 6 * sizeof(struct terrain_vertex);
 		m_memory_arena_undo_allocations_at_scope_exit(&level->main_thread_frame_memory_arena);
 		terrain_vertex *vertices = allocate_memory<terrain_vertex>(&level->main_thread_frame_memory_arena, 128 * 128 * 6);
-		const float dp = level_terrain_size / level_terrain_resolution;
-		const float duv = 1.0f / level_terrain_resolution;
+		const float dp = (float)level_terrain_size / (float)level_terrain_resolution;
+		const float duv = 1.0f / (float)level_terrain_resolution;
 		vec3 position = {-(int32)level_terrain_size / 2, 0, -(int32)level_terrain_size / 2};
 		vec2 uv = {0, 0};
 		terrain_vertex *vertices_ptr = vertices;
@@ -1002,7 +1002,7 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_info.arrayLayers = 1;
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -1025,7 +1025,7 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		image_info.arrayLayers = 1;
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		image_info.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		VkImageViewCreateInfo image_view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 		image_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;

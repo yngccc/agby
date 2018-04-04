@@ -11,11 +11,7 @@ m_declare_imgui_push_constant
 m_declare_2d_texture_array
 
 void main() {
-  if (pc.texture_is_grayscale > 0) {
-    color_out = vec4(texture(textures[pc.texture_index], uv_in).xxx, 1);
-  } else {
-    color_out = color_in * texture(textures[pc.texture_index], uv_in);
-  }
+	color_out = color_in * texture(textures[pc.texture_index], uv_in);
 }
 
 

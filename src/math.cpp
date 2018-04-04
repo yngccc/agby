@@ -8,8 +8,7 @@
 
 union vec2 {
 	struct { float x, y; };
-	struct { float r, g; };
-	struct { float s, t; };
+	struct { float u, v; };
 	struct { float width, height; };
 	struct { float min, max; };
 	float e[2];

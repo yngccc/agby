@@ -1235,28 +1235,41 @@ int main(int argc, char **argv) {
 				else if (editor->gizmo_mode == gizmo_mode_terrain_brush && entity_flags & entity_component_flag_terrain) {
 					entity_terrain_component *terrain_component = entity_get_terrain_component(level, editor->entity_index);
 					if (terrain_component->terrain_index < level->terrain_count) {
-						bool new_terrain_in_edit = true;
+						terrain_edit *terrain_edit = nullptr;
 						for (uint32 i = 0; i < editor->terrain_in_edit_count; i += 1) {
 							if (editor->terrain_in_edit[i].terrain_index == terrain_component->terrain_index) {
-								new_terrain_in_edit = false;
+								terrain_edit = &editor->terrain_in_edit[i];
 								break;
 							}
 						}
-						if (new_terrain_in_edit) {
-							if (editor->terrain_in_edit_count >= m_countof(editor::terrain_in_edit)) {
-								m_assert(false);
-							} else {
-								uint32 height_map_image_size = level_terrain_resolution * level_terrain_resolution * 2;
-								uint32 diffuse_map_image_size = level_terrain_resolution * level_terrain_resolution;
-								uint8 *height_map_image = new uint8[height_map_image_size];
-								uint8 *diffuse_map_image = new uint8[diffuse_map_image_size];
-								editor->terrain_in_edit[editor->terrain_in_edit_count++] = {terrain_component->terrain_index, height_map_image, diffuse_map_image};
+						if (!terrain_edit) {
+							m_assert(editor->terrain_in_edit_count < m_countof(editor::terrain_in_edit));
+							terrain_edit = &editor->terrain_in_edit[editor->terrain_in_edit_count++];
+							uint32 height_map_image_size = level_terrain_resolution * level_terrain_resolution * 2;
+							uint32 diffuse_map_image_size = level_terrain_resolution * level_terrain_resolution * 4;
+							uint8 *height_map_image_data = new uint8[height_map_image_size]();
+							uint8 *diffuse_map_image_data = new uint8[diffuse_map_image_size]();
+							*terrain_edit = {terrain_component->terrain_index, height_map_image_data, diffuse_map_image_data};
+							terrain *terrain = &level->terrains[terrain_component->terrain_index];
+							uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
+							uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
+							uint32 diffuse_map_index = image_indices[terrain->diffuse_map_descriptor_index];
+							retrieve_vulkan_image_region(vulkan, height_map_index, height_map_image_data, height_map_image_size);
+							retrieve_vulkan_image_region(vulkan, diffuse_map_index, diffuse_map_image_data, diffuse_map_image_size);
+						}
+						vec3 intersection = {};
+						if (ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
+							float bound = level_terrain_size / 2.0f;
+							if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
+								vec2 uv = {(intersection.x + bound) / level_terrain_size, (intersection.z + bound) / level_terrain_size};
+								int32 pixel_x = (int32)floorf((float)level_terrain_resolution * uv.u);
+								int32 pixel_y = (int32)floorf((float)level_terrain_resolution * uv.v);
+								uint16 *image = (uint16 *)terrain_edit->height_map_image;
+								image[level_terrain_resolution * pixel_y + pixel_x] += 10;
 								terrain *terrain = &level->terrains[terrain_component->terrain_index];
 								uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
 								uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
-								uint32 diffuse_map_index = image_indices[terrain->diffuse_map_descriptor_index];
-								retrieve_vulkan_image_region(vulkan, height_map_index, height_map_image, height_map_image_size);
-								retrieve_vulkan_image_region(vulkan, diffuse_map_index, diffuse_map_image, diffuse_map_image_size);
+								update_vulkan_image_region(vulkan, height_map_index, (uint8 *)image, level_terrain_resolution * level_terrain_resolution * 2);
 							}
 						}
 					}
@@ -1273,10 +1286,13 @@ int main(int argc, char **argv) {
 				if (terrain_component->terrain_index < level->terrain_count) {
 					vec3 intersection = {};
 					if (ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
-						intersection.y += 0.0005f;
-						editor->render_data.terrain_brush = true;
-						editor->render_data.terrain_brush_transform_mat = mat4_from_translate(intersection);
-						editor->render_data.terrain_brush_height_map_descriptor_index = level->terrains[terrain_component->terrain_index].height_map_descriptor_index;
+						float bound = level_terrain_size / 2.0f;
+						if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
+							intersection.y += 0.0005f;
+							editor->render_data.terrain_brush = true;
+							editor->render_data.terrain_brush_transform_mat = mat4_from_translate(intersection);
+							editor->render_data.terrain_brush_height_map_descriptor_index = level->terrains[terrain_component->terrain_index].height_map_descriptor_index;
+						}
 					}
 				}
 			}
@@ -1400,7 +1416,6 @@ int main(int argc, char **argv) {
 						shader_imgui_push_constant pc = {};
 						pc.viewport = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
 						pc.texture_index = (uint32)(intptr_t)dcmd->TextureId;
-						pc.texture_is_grayscale = false;
 						vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd_buffer, dcmd->ElemCount, 1, element_index, vertex_index, 0);
 						element_index += dcmd->ElemCount;

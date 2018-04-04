@@ -70,7 +70,6 @@ struct shader_swap_chain_push_constant {
 struct shader_imgui_push_constant {
   vec2 viewport;
   uint32 texture_index;
-  uint32 texture_is_grayscale;
 };
 
 #else
@@ -132,7 +131,6 @@ struct shader_imgui_push_constant {
   layout(push_constant) uniform push_constant { \
     vec2 viewport;                              \
     uint texture_index;                         \
-    uint texture_is_grayscale;                  \
   } pc;
 
 #define m_level_view_proj_mat           (ubuf[0])
