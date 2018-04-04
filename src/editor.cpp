@@ -120,8 +120,10 @@ struct editor {
 	gizmo_mode gizmo_mode;
 	
 	uint32 entity_index;
+
 	terrain_edit terrain_in_edit[16];
 	uint32 terrain_in_edit_count;
+	float terrain_brush_scale;
 
 	undoable undoables[256];
 	uint32 undoable_count;
@@ -196,6 +198,8 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 	editor->show_reference_grid = true;
 
 	editor->entity_index = UINT32_MAX;
+
+	editor->terrain_brush_scale = 1;
 }
 
 struct read_editor_settings {
@@ -1261,15 +1265,24 @@ int main(int argc, char **argv) {
 						if (ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
 							float bound = level_terrain_size / 2.0f;
 							if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
-								vec2 uv = {(intersection.x + bound) / level_terrain_size, (intersection.z + bound) / level_terrain_size};
-								int32 pixel_x = (int32)floorf((float)level_terrain_resolution * uv.u);
-								int32 pixel_y = (int32)floorf((float)level_terrain_resolution * uv.v);
-								uint16 *image = (uint16 *)terrain_edit->height_map_image;
-								image[level_terrain_resolution * pixel_y + pixel_x] += 10;
-								terrain *terrain = &level->terrains[terrain_component->terrain_index];
-								uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
-								uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
-								update_vulkan_image_region(vulkan, height_map_index, (uint8 *)image, level_terrain_resolution * level_terrain_resolution * 2);
+								if (ImGui::IsMouseDown(0)) {
+									vec2 uv = {(intersection.x + bound) / level_terrain_size, (intersection.z + bound) / level_terrain_size};
+									int32 pixel_x = (int32)floorf((float)level_terrain_resolution * uv.u);
+									int32 pixel_y = (int32)floorf((float)level_terrain_resolution * uv.v);
+									uint16 *image = (uint16 *)terrain_edit->height_map_image;
+									uint16 *pixel_height = &image[level_terrain_resolution * pixel_y + pixel_x];
+									uint32 delta_height = (uint32)(10000.0 * last_frame_time_sec);
+									uint32 new_height = (uint32)*pixel_height + delta_height;
+									if (new_height > UINT16_MAX) {
+									 new_height = UINT16_MAX;
+									}
+									*pixel_height = (uint16)new_height;
+									terrain *terrain = &level->terrains[terrain_component->terrain_index];
+									uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
+									uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
+									update_vulkan_image_region(vulkan, height_map_index, (uint8 *)image, level_terrain_resolution * level_terrain_resolution * 2);
+								}
+								editor->terrain_brush_scale = clamp(editor->terrain_brush_scale + ImGui::GetIO().MouseWheel * 0.1f, 0.5f, 5.0f);
 							}
 						}
 					}
@@ -1290,7 +1303,7 @@ int main(int argc, char **argv) {
 						if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
 							intersection.y += 0.0005f;
 							editor->render_data.terrain_brush = true;
-							editor->render_data.terrain_brush_transform_mat = mat4_from_translate(intersection);
+							editor->render_data.terrain_brush_transform_mat = mat4_from_translate(intersection) * mat4_from_scale(vec3{editor->terrain_brush_scale, 1, editor->terrain_brush_scale});
 							editor->render_data.terrain_brush_height_map_descriptor_index = level->terrains[terrain_component->terrain_index].height_map_descriptor_index;
 						}
 					}

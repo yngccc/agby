@@ -997,7 +997,7 @@ void retrieve_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8* ima
 	vkBeginCommandBuffer(cmd_buffer, &cmd_buffer_begin_info);
 
 	VkImageMemoryBarrier image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-	image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 	image_memory_barrier.oldLayout = image.layout;
 	image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	image_memory_barrier.image = image.image;
@@ -1024,7 +1024,7 @@ void retrieve_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8* ima
 	}
 
 	image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-	image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 	image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	image_memory_barrier.newLayout = image.layout;
 	image_memory_barrier.image = image.image;
@@ -1039,6 +1039,8 @@ void retrieve_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8* ima
 	submit_info.pCommandBuffers = &cmd_buffer;
 	vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
 	vkQueueWaitIdle(vulkan->device.queue);
+
+	memcpy(vulkan->memory_regions.staging_region_buffer_ptr, image_data, image_data_size);
 }
 
 void update_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8 *image_data, uint32 image_data_size) {
@@ -1047,6 +1049,8 @@ void update_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8 *image
 	vkGetImageMemoryRequirements(vulkan->device.device, image.image, &memory_requirements);
 	m_assert(memory_requirements.size == image_data_size);
 	m_assert(memory_requirements.size <= vulkan->memory_regions.staging_region_capacity);
+
+	memcpy(vulkan->memory_regions.staging_region_buffer_ptr, image_data, image_data_size);
 
 	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.transfer_cmd_buffer;
 	VkCommandBufferBeginInfo cmd_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -1063,8 +1067,6 @@ void update_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8 *image
 	image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
 	image_memory_barrier.subresourceRange.layerCount = image.layer_count;
 	vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
-
-	memcpy(vulkan->memory_regions.staging_region_buffer_ptr, image_data, image_data_size);
 
 	uint32 staging_buffer_offset = 0;
 	uint32 mipmap_width = image.width;
