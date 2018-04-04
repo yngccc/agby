@@ -15,6 +15,8 @@ const uint32 level_max_entity_count = 1024;
 const uint32 level_max_directional_light_count = 1;
 const uint32 level_max_point_light_count = 4;
 const uint32 level_max_spot_light_count = 4;
+const uint32 level_terrain_resolution = 128;
+const uint32 level_terrain_size = 64;
 
 struct model_scene {
 	uint32 node_indices[m_countof(gpk_model_scene::node_indices)];
@@ -389,13 +391,13 @@ void initialize_level(level *level, vulkan *vulkan) {
 		uint32 vertices_size = 128 * 128 * 6 * sizeof(struct terrain_vertex);
 		m_memory_arena_undo_allocations_at_scope_exit(&level->main_thread_frame_memory_arena);
 		terrain_vertex *vertices = allocate_memory<terrain_vertex>(&level->main_thread_frame_memory_arena, 128 * 128 * 6);
-		const float dp = 0.5f;
-		const float duv = 1.0f / 128.0f;
-		vec3 position = {-32, 0, -32};
+		const float dp = level_terrain_size / level_terrain_resolution;
+		const float duv = 1.0f / level_terrain_resolution;
+		vec3 position = {-(int32)level_terrain_size / 2, 0, -(int32)level_terrain_size / 2};
 		vec2 uv = {0, 0};
 		terrain_vertex *vertices_ptr = vertices;
-		for (uint32 i = 0; i < 128; i += 1) {
-			for (uint32 j = 0; j < 128; j += 1) {
+		for (uint32 i = 0; i < level_terrain_resolution; i += 1) {
+			for (uint32 j = 0; j < level_terrain_resolution; j += 1) {
 				vec3 pa = position;
 				vec3 pb = position; pb.z += dp;
 				vec3 pc = position; pc.x += dp;
@@ -1733,7 +1735,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 template <typename F0, typename F1>
 void level_generate_render_commands(level *level, vulkan *vulkan, const camera &camera, F0 extra_color_render_pass_commands, F1 extra_swap_chain_render_pass_command) {
 	VkCommandBuffer cmd_buffer = vulkan->cmd_buffers.graphic_cmd_buffers[vulkan->frame_index];
-	VkDescriptorSet descriptor_sets[2] = {vulkan->descriptors.uniform_buffers[vulkan->frame_index], vulkan->descriptors.combined_image_samplers};
+	VkDescriptorSet descriptor_sets[2] = {vulkan->descriptors.uniform_buffers[vulkan->frame_index], vulkan->descriptors.combined_image_samplers_descriptor_set};
 	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.pipeline_layout, 0, 2, descriptor_sets, 0, nullptr);
 	{ // shadow passes
 		{

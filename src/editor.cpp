@@ -92,6 +92,12 @@ struct undoable {
 	undoable_type shape;
 };
 
+struct terrain_edit {
+	uint32 terrain_index;
+	uint8 *height_map_image;
+	uint8 *diffuse_map_image;
+};
+
 struct editor {
 	editor_render_data render_data;
 
@@ -114,6 +120,8 @@ struct editor {
 	gizmo_mode gizmo_mode;
 	
 	uint32 entity_index;
+	terrain_edit terrain_in_edit[16];
+	uint32 terrain_in_edit_count;
 
 	undoable undoables[256];
 	uint32 undoable_count;
@@ -993,12 +1001,12 @@ int main(int argc, char **argv) {
 						if (!file_exists(gpk_file)) {
 							gpk_terrain terrain = {};
 							strcpy(terrain.format_str, m_gpk_terrain_format_str);
-							terrain.height_map_width = 128;
-							terrain.height_map_height = 128;
+							terrain.height_map_width = level_terrain_resolution;
+							terrain.height_map_height = level_terrain_resolution;
 							terrain.height_map_size = terrain.height_map_width * terrain.height_map_height * 2;
 							terrain.height_map_offset = round_up((uint32)sizeof(struct gpk_terrain), 16u);
-							terrain.diffuse_map_width = 128;
-							terrain.diffuse_map_height = 128;
+							terrain.diffuse_map_width = level_terrain_resolution;
+							terrain.diffuse_map_height = level_terrain_resolution;
 							terrain.diffuse_map_size = terrain.diffuse_map_width * terrain.diffuse_map_height * 4;
 							terrain.diffuse_map_offset = round_up(terrain.height_map_offset + terrain.height_map_size, 16u);
 							uint32 file_size = terrain.diffuse_map_offset + terrain.diffuse_map_size;
@@ -1010,7 +1018,7 @@ int main(int argc, char **argv) {
 								uint8 *height_map_ptr = gpk_file_mapping.ptr + terrain.height_map_offset;
 								memset(height_map_ptr, 0, terrain.height_map_size);
 								uint8 *diffuse_map_ptr = gpk_file_mapping.ptr + terrain.diffuse_map_offset;
-								memset(diffuse_map_ptr, 128, terrain.diffuse_map_size);
+								memset(diffuse_map_ptr, 255, terrain.diffuse_map_size);
 								flush_file_mapping(gpk_file_mapping);
 								close_file_mapping(&gpk_file_mapping);
 								level_add_terrain(level, vulkan, gpk_file);
@@ -1221,6 +1229,35 @@ int main(int argc, char **argv) {
 						}
 						if (!level->entity_modifications[editor->entity_index].collision_component) {
 							level->entity_modifications[editor->entity_index].collision_component = collision_component;
+						}
+					}
+				}
+				else if (editor->gizmo_mode == gizmo_mode_terrain_brush && entity_flags & entity_component_flag_terrain) {
+					entity_terrain_component *terrain_component = entity_get_terrain_component(level, editor->entity_index);
+					if (terrain_component->terrain_index < level->terrain_count) {
+						bool new_terrain_in_edit = true;
+						for (uint32 i = 0; i < editor->terrain_in_edit_count; i += 1) {
+							if (editor->terrain_in_edit[i].terrain_index == terrain_component->terrain_index) {
+								new_terrain_in_edit = false;
+								break;
+							}
+						}
+						if (new_terrain_in_edit) {
+							if (editor->terrain_in_edit_count >= m_countof(editor::terrain_in_edit)) {
+								m_assert(false);
+							} else {
+								uint32 height_map_image_size = level_terrain_resolution * level_terrain_resolution * 2;
+								uint32 diffuse_map_image_size = level_terrain_resolution * level_terrain_resolution;
+								uint8 *height_map_image = new uint8[height_map_image_size];
+								uint8 *diffuse_map_image = new uint8[diffuse_map_image_size];
+								editor->terrain_in_edit[editor->terrain_in_edit_count++] = {terrain_component->terrain_index, height_map_image, diffuse_map_image};
+								terrain *terrain = &level->terrains[terrain_component->terrain_index];
+								uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
+								uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
+								uint32 diffuse_map_index = image_indices[terrain->diffuse_map_descriptor_index];
+								retrieve_vulkan_image_region(vulkan, height_map_index, height_map_image, height_map_image_size);
+								retrieve_vulkan_image_region(vulkan, diffuse_map_index, diffuse_map_image, diffuse_map_image_size);
+							}
 						}
 					}
 				}

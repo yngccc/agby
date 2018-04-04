@@ -205,10 +205,12 @@ struct vulkan_descriptors {
 	VkDescriptorSet uniform_buffers[vulkan_buffering_count];
 	VkDescriptorSetLayout uniform_buffer_layout;
 
-	VkDescriptorSet combined_image_samplers;
+	VkDescriptorSet combined_image_samplers_descriptor_set;
 	VkDescriptorSetLayout combined_image_samplers_layout;
+	uint32 *combined_2d_image_sampler_image_indices;
 	uint32 combined_2d_image_sampler_count;
 	uint32 combined_2d_image_sampler_capacity;
+	uint32 *combined_cube_image_sampler_image_indices;
 	uint32 combined_cube_image_sampler_count;
 	uint32 combined_cube_image_sampler_capacity;
 
@@ -980,6 +982,12 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 	return image_index;
 }
 
+bool retrieve_vulkan_image_region(vulkan *vulkan, uint32 image-index, uint8* image_data, uint32 image_data_size) {
+	VkImage vk_image = vulkan->memory_regions.image_region_images[image_index].image;
+	
+	return true;
+}
+
 uint32 append_vulkan_uniform_region(vulkan *vulkan, const void *data, uint32 data_size) {
 	uint32 &size = vulkan->memory_regions.uniform_region_sizes[vulkan->frame_index];
 	uint8 *ptr = vulkan->memory_regions.uniform_region_buffer_ptrs[vulkan->frame_index];
@@ -1106,8 +1114,10 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 	{ // combined image samplers set
 		vulkan->descriptors.combined_2d_image_sampler_count = 0;
 		vulkan->descriptors.combined_2d_image_sampler_capacity = 1024;
+		vulkan->descriptors.combined_2d_image_sampler_image_indices = new uint32[1024]();
 		vulkan->descriptors.combined_cube_image_sampler_count = 0;
 		vulkan->descriptors.combined_cube_image_sampler_capacity = 128;
+		vulkan->descriptors.combined_cube_image_sampler_image_indices = new uint32[128]();
 		VkDescriptorSetLayoutBinding layout_bindings[2] = {
 			{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1024, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
 			{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 128, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}
@@ -1121,7 +1131,7 @@ void initialize_vulkan_descriptors(vulkan *vulkan) {
 		set_info.descriptorPool = vulkan->descriptors.pool;
 		set_info.descriptorSetCount = 1;
 		set_info.pSetLayouts = &vulkan->descriptors.combined_image_samplers_layout;
-		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &set_info, &vulkan->descriptors.combined_image_samplers));
+		m_vk_assert(vkAllocateDescriptorSets(vulkan->device.device, &set_info, &vulkan->descriptors.combined_image_samplers_descriptor_set));
 	}
 }
 
@@ -1129,13 +1139,14 @@ uint32 append_vulkan_combined_2d_image_samplers(vulkan *vulkan, uint32 image_ind
 	m_assert(vulkan->descriptors.combined_2d_image_sampler_count < vulkan->descriptors.combined_2d_image_sampler_capacity);
 	VkDescriptorImageInfo descriptor_image_info = {sampler, vulkan->memory_regions.image_region_images[image_index].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	write_descriptor_set.dstSet = vulkan->descriptors.combined_image_samplers;
+	write_descriptor_set.dstSet = vulkan->descriptors.combined_image_samplers_descriptor_set;
 	write_descriptor_set.dstBinding = 0;
 	write_descriptor_set.dstArrayElement = vulkan->descriptors.combined_2d_image_sampler_count;
 	write_descriptor_set.descriptorCount = 1;
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
+	vulkan->descriptors.combined_2d_image_sampler_image_indices[vulkan->descriptors.combined_2d_image_sampler_count] = image_index;
 	return vulkan->descriptors.combined_2d_image_sampler_count++;
 }
 
@@ -1143,26 +1154,28 @@ void update_vulkan_combined_2d_image_samplers(vulkan *vulkan, uint32 index, uint
 	m_assert(index < vulkan->descriptors.combined_2d_image_sampler_count);
 	VkDescriptorImageInfo descriptor_image_info = {sampler, vulkan->memory_regions.image_region_images[image_index].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	write_descriptor_set.dstSet = vulkan->descriptors.combined_image_samplers;
+	write_descriptor_set.dstSet = vulkan->descriptors.combined_image_samplers_descriptor_set;
 	write_descriptor_set.dstBinding = 0;
 	write_descriptor_set.dstArrayElement = index;
 	write_descriptor_set.descriptorCount = 1;
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
+	vulkan->descriptors.combined_2d_image_sampler_image_indices[index] = image_index;
 }
 
 uint32 append_vulkan_combined_cube_image_samplers(vulkan *vulkan, uint32 image_index, VkSampler sampler) {
 	m_assert(vulkan->descriptors.combined_cube_image_sampler_count < vulkan->descriptors.combined_cube_image_sampler_capacity);
 	VkDescriptorImageInfo descriptor_image_info = {sampler, vulkan->memory_regions.image_region_images[image_index].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 	VkWriteDescriptorSet write_descriptor_set = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-	write_descriptor_set.dstSet = vulkan->descriptors.combined_image_samplers;
+	write_descriptor_set.dstSet = vulkan->descriptors.combined_image_samplers_descriptor_set;
 	write_descriptor_set.dstBinding = 1;
 	write_descriptor_set.dstArrayElement = vulkan->descriptors.combined_cube_image_sampler_count;
 	write_descriptor_set.descriptorCount = 1;
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
+	vulkan->descriptors.combined_cube_image_sampler_image_indices[vulkan->descriptors.combined_cube_image_sampler_count] = image_index;
 	return vulkan->descriptors.combined_cube_image_sampler_count++;
 }
 

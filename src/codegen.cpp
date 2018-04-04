@@ -257,7 +257,7 @@ int main(int argc, char **argv) {
     char *src = (char *)malloc(m_megabytes(2));
     memcpy(src, src_file_mapping.ptr, src_file_mapping.size);
     src[src_file_mapping.size] = '\0';
-    close_file_mapping(src_file_mapping);
+    close_file_mapping(&src_file_mapping);
     parse_result *parse_result = (struct parse_result *)calloc(sizeof(struct parse_result), 1);
     parse(src, parse_result);
     // print_parse_result(parse_result);
@@ -270,5 +270,5 @@ int main(int argc, char **argv) {
   file_mapping code_gen_file_mapping = {};
   create_file_mapping(codegen_file_name, code_gen_src.len, &code_gen_file_mapping);
   memcpy(code_gen_file_mapping.ptr, code_gen_src.buf, code_gen_src.len);
-  close_file_mapping(code_gen_file_mapping);
+  close_file_mapping(&code_gen_file_mapping);
 } 
