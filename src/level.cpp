@@ -16,7 +16,7 @@ const uint32 level_max_directional_light_count = 1;
 const uint32 level_max_point_light_count = 4;
 const uint32 level_max_spot_light_count = 4;
 const uint32 level_terrain_resolution = 128;
-const uint32 level_terrain_size = 64;
+const float level_terrain_size = 64;
 
 struct model_scene {
 	uint32 node_indices[m_countof(gpk_model_scene::node_indices)];
@@ -391,9 +391,9 @@ void initialize_level(level *level, vulkan *vulkan) {
 		uint32 vertices_size = level_terrain_resolution * level_terrain_resolution * 6 * sizeof(struct terrain_vertex);
 		m_memory_arena_undo_allocations_at_scope_exit(&level->main_thread_frame_memory_arena);
 		terrain_vertex *vertices = allocate_memory<terrain_vertex>(&level->main_thread_frame_memory_arena, 128 * 128 * 6);
-		const float dp = (float)level_terrain_size / (float)level_terrain_resolution;
-		const float duv = 1.0f / (float)level_terrain_resolution;
-		vec3 position = {-(int32)level_terrain_size / 2, 0, -(int32)level_terrain_size / 2};
+		const float dp = level_terrain_size / level_terrain_resolution;
+		const float duv = 1.0f / level_terrain_resolution;
+		vec3 position = {-level_terrain_size / 2, 0, -level_terrain_size / 2};
 		vec2 uv = {0, 0};
 		terrain_vertex *vertices_ptr = vertices;
 		for (uint32 i = 0; i < level_terrain_resolution; i += 1) {

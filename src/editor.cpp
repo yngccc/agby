@@ -94,8 +94,8 @@ struct undoable {
 
 struct terrain_edit {
 	uint32 terrain_index;
-	uint8 *height_map_image;
-	uint8 *diffuse_map_image;
+	uint8 *height_map_image_data;
+	uint8 *diffuse_map_image_data;
 };
 
 struct editor {
@@ -123,7 +123,7 @@ struct editor {
 
 	terrain_edit terrain_in_edit[16];
 	uint32 terrain_in_edit_count;
-	float terrain_brush_scale;
+	float terrain_brush_radius;
 
 	undoable undoables[256];
 	uint32 undoable_count;
@@ -199,7 +199,7 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 
 	editor->entity_index = UINT32_MAX;
 
-	editor->terrain_brush_scale = 1;
+	editor->terrain_brush_radius = 1;
 }
 
 struct read_editor_settings {
@@ -257,6 +257,21 @@ bool ray_intersect_mesh(ray ray, model_mesh *mesh, mat4 transform, float *distan
 	}
 	else {
 		return false;
+	}
+}
+
+void save_terrain_in_edit(editor *editor, level *level, vulkan *vulkan) {
+	for (uint32 i = 0; i < editor->terrain_in_edit_count; i += 1) {
+		terrain_edit *terrain_edit = &editor->terrain_in_edit[i];
+		terrain *terrain = &level->terrains[terrain_edit->terrain_index];
+		file_mapping gpk_file_mapping;
+		m_assert(open_file_mapping(terrain->gpk_file, &gpk_file_mapping));
+		gpk_terrain *gpk_terrain = (struct gpk_terrain *)gpk_file_mapping.ptr;
+		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
+		uint8 *diffuse_map_ptr = gpk_file_mapping.ptr + gpk_terrain->diffuse_map_offset;
+		memcpy(height_map_ptr, terrain_edit->height_map_image_data, level_terrain_resolution * level_terrain_resolution * 2);
+		memcpy(diffuse_map_ptr, terrain_edit->diffuse_map_image_data, level_terrain_resolution * level_terrain_resolution * 4);
+		close_file_mapping(&gpk_file_mapping);
 	}
 }
 
@@ -563,6 +578,7 @@ int main(int argc, char **argv) {
 						if (save_file_dialog(editor->file_name, sizeof(editor->file_name))) {
 							set_exe_dir_as_current();
 							level_write_json(level, editor->file_name, write_editor_settings{editor});
+							save_terrain_in_edit(editor, level, vulkan);
 						}
 					}
 					ImGui::Separator();
@@ -1266,23 +1282,39 @@ int main(int argc, char **argv) {
 							float bound = level_terrain_size / 2.0f;
 							if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
 								if (ImGui::IsMouseDown(0)) {
-									vec2 uv = {(intersection.x + bound) / level_terrain_size, (intersection.z + bound) / level_terrain_size};
-									int32 pixel_x = (int32)floorf((float)level_terrain_resolution * uv.u);
-									int32 pixel_y = (int32)floorf((float)level_terrain_resolution * uv.v);
-									uint16 *image = (uint16 *)terrain_edit->height_map_image;
-									uint16 *pixel_height = &image[level_terrain_resolution * pixel_y + pixel_x];
-									uint32 delta_height = (uint32)(10000.0 * last_frame_time_sec);
-									uint32 new_height = (uint32)*pixel_height + delta_height;
-									if (new_height > UINT16_MAX) {
-									 new_height = UINT16_MAX;
+									// terrain brush
+									float pixel_uv_size = 1.0f / level_terrain_resolution;
+									float radius_uv_size = editor->terrain_brush_radius / level_terrain_size;
+									vec2 center_uv = {(intersection.x + bound) / level_terrain_size, (intersection.z + bound) / level_terrain_size};
+
+									vec2 min_uv = {min(center_uv.u - radius_uv_size, 0.0f), min(center_uv.v - radius_uv_size, 0.0f)};
+									vec2 max_uv = {max(center_uv.u + radius_uv_size, 1.0f), max(center_uv.v + radius_uv_size, 1.0f)};
+
+									uint32 begin_column = min((uint32)(level_terrain_resolution * min_uv.u), level_terrain_resolution - 1);
+									uint32 begin_row = min((uint32)(level_terrain_resolution * min_uv.v), level_terrain_resolution - 1);
+									uint32 end_column = min((uint32)(level_terrain_resolution * max_uv.u), level_terrain_resolution - 1);
+									uint32 end_row = min((uint32)(level_terrain_resolution * max_uv.v), level_terrain_resolution - 1);
+									vec2 current_uv = min_uv;
+
+									uint16 *image = (uint16 *)terrain_edit->height_map_image_data;
+									for (uint32 i = begin_row; i < end_row; i += 1) {
+										for (uint32 j = begin_column; j < end_column; j += 1) {
+											float distance_uv_size = vec2_len(current_uv - center_uv);
+											if (distance_uv_size <= radius_uv_size) {
+												float fade_factor = (radius_uv_size - distance_uv_size) / radius_uv_size;
+												image[level_terrain_resolution * i + j] += (uint32)(10000.0 * last_frame_time_sec * fade_factor);
+											}
+											current_uv.u += pixel_uv_size;
+										}
+										current_uv.v += pixel_uv_size;
+										current_uv.u = min_uv.u;
 									}
-									*pixel_height = (uint16)new_height;
 									terrain *terrain = &level->terrains[terrain_component->terrain_index];
 									uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
 									uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
 									update_vulkan_image_region(vulkan, height_map_index, (uint8 *)image, level_terrain_resolution * level_terrain_resolution * 2);
 								}
-								editor->terrain_brush_scale = clamp(editor->terrain_brush_scale + ImGui::GetIO().MouseWheel * 0.1f, 0.5f, 5.0f);
+								editor->terrain_brush_radius = clamp(editor->terrain_brush_radius + ImGui::GetIO().MouseWheel * 0.1f, 0.25f, 10.0f);
 							}
 						}
 					}
@@ -1303,7 +1335,7 @@ int main(int argc, char **argv) {
 						if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
 							intersection.y += 0.0005f;
 							editor->render_data.terrain_brush = true;
-							editor->render_data.terrain_brush_transform_mat = mat4_from_translate(intersection) * mat4_from_scale(vec3{editor->terrain_brush_scale, 1, editor->terrain_brush_scale});
+							editor->render_data.terrain_brush_transform_mat = mat4_from_translate(intersection) * mat4_from_scale(vec3{editor->terrain_brush_radius, 1, editor->terrain_brush_radius});
 							editor->render_data.terrain_brush_height_map_descriptor_index = level->terrains[terrain_component->terrain_index].height_map_descriptor_index;
 						}
 					}
