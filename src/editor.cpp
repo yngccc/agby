@@ -123,6 +123,7 @@ struct editor {
 
 	terrain_edit terrain_in_edit[16];
 	uint32 terrain_in_edit_count;
+	float terrain_brush_sharpness;
 	float terrain_brush_radius;
 
 	undoable undoables[256];
@@ -198,8 +199,8 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 	editor->show_reference_grid = true;
 
 	editor->entity_index = UINT32_MAX;
-
-	editor->terrain_brush_radius = 1;
+	editor->terrain_brush_sharpness = 1.0f;
+	editor->terrain_brush_radius = 1.0f;
 }
 
 struct read_editor_settings {
@@ -1253,6 +1254,11 @@ int main(int argc, char **argv) {
 					}
 				}
 				else if (editor->gizmo_mode == gizmo_mode_terrain_brush && entity_flags & entity_component_flag_terrain) {
+					if (ImGui::Begin("brush properties##terrain_brush_properties_window")) {
+						ImGui::SliderFloat("sharpness", &editor->terrain_brush_sharpness, 0.5f, 2.0f);
+						ImGui::SliderFloat("radius", &editor->terrain_brush_radius, 0.3f, 20.0f);
+					}
+					ImGui::End();
 					entity_terrain_component *terrain_component = entity_get_terrain_component(level, editor->entity_index);
 					if (terrain_component->terrain_index < level->terrain_count) {
 						terrain_edit *terrain_edit = nullptr;
@@ -1301,8 +1307,9 @@ int main(int argc, char **argv) {
 										for (uint32 j = begin_column; j < end_column; j += 1) {
 											float distance_uv_size = vec2_len(current_uv - center_uv);
 											if (distance_uv_size <= radius_uv_size) {
-												float fade_factor = (radius_uv_size - distance_uv_size) / radius_uv_size;
-												image[level_terrain_resolution * i + j] += (uint32)(10000.0 * last_frame_time_sec * fade_factor);
+												float distance = distance_uv_size / radius_uv_size * editor->terrain_brush_sharpness;
+												float fade_factor = expf(-0.5f * distance * distance) / sqrtf(2 * (float)M_PI);
+												image[level_terrain_resolution * i + j] += (uint32)(10000.0f * last_frame_time_sec * fade_factor);
 											}
 											current_uv.u += pixel_uv_size;
 										}
@@ -1314,7 +1321,7 @@ int main(int argc, char **argv) {
 									uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
 									update_vulkan_image_region(vulkan, height_map_index, (uint8 *)image, level_terrain_resolution * level_terrain_resolution * 2);
 								}
-								editor->terrain_brush_radius = clamp(editor->terrain_brush_radius + ImGui::GetIO().MouseWheel * 0.1f, 0.25f, 10.0f);
+								editor->terrain_brush_radius = clamp(editor->terrain_brush_radius + ImGui::GetIO().MouseWheel * 0.1f, 0.3f, 20.0f);
 							}
 						}
 					}
