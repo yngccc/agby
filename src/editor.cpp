@@ -160,7 +160,7 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		imgui_io.MousePos = {-1, -1};
 		imgui_io.FontGlobalScale = (float)vulkan->swap_chain.image_width / (float)GetSystemMetrics(SM_CXSCREEN);
 
-		m_assert(imgui_io.Fonts->AddFontFromFileTTF("assets\\fonts\\Roboto-Medium.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 110.0f));
+		imgui_io.Fonts->AddFontFromFileTTF("assets/fonts/OpenSans-Regular.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 100);
 		uint8* font_atlas_image = nullptr;
 		int32 font_atlas_image_width = 0;
 		int32 font_atlas_image_height = 0;
@@ -261,7 +261,7 @@ bool ray_intersect_mesh(ray ray, model_mesh *mesh, mat4 transform, float *distan
 	}
 }
 
-void save_terrain_in_edit(editor *editor, level *level, vulkan *vulkan) {
+void save_terrain_in_edit(editor *editor, level *level) {
 	for (uint32 i = 0; i < editor->terrain_in_edit_count; i += 1) {
 		terrain_edit *terrain_edit = &editor->terrain_in_edit[i];
 		terrain *terrain = &level->terrains[terrain_edit->terrain_index];
@@ -274,6 +274,17 @@ void save_terrain_in_edit(editor *editor, level *level, vulkan *vulkan) {
 		memcpy(diffuse_map_ptr, terrain_edit->diffuse_map_image_data, level_terrain_resolution * level_terrain_resolution * 4);
 		close_file_mapping(&gpk_file_mapping);
 	}
+}
+
+void save_editor_changes(editor *editor, level *level) {
+	if (!strcmp(level->json_file, "")) {
+		char temp_json_file[256];
+		m_assert(GetTempFileNameA("assets\\levels", "", 0, temp_json_file));
+		level_write_json(level, temp_json_file, write_editor_settings{editor});
+	} else {
+		level_write_json(level, level->json_file, write_editor_settings{editor});
+	}
+	save_terrain_in_edit(editor, level);
 }
 
 int main(int argc, char **argv) {
@@ -297,7 +308,6 @@ int main(int argc, char **argv) {
 
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
-	// level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", read_editor_settings{editor}, true);
 
 	LARGE_INTEGER performance_frequency = {};
 	QueryPerformanceFrequency(&performance_frequency);
@@ -311,11 +321,12 @@ int main(int argc, char **argv) {
 	uint64 vulkan_uniform_region_size = 0;
 	uint64 vulkan_dynamic_vertex_region_size = 0;
 
-	bool program_running = true;
+	bool editor_closing = false;
+	bool editor_closed = false;
 
 	show_window(&window);
 
-	while (program_running) {
+	while (!editor_closed) {
 		QueryPerformanceCounter(&performance_counters[0]);
 
 		ImGui::GetIO().DeltaTime = (float)last_frame_time_sec;
@@ -327,7 +338,7 @@ int main(int argc, char **argv) {
 				case window_message_type_destroy:
 				case window_message_type_close:
 				case window_message_type_quit: {
-					program_running = false;
+					editor_closing = true;
 				} break;
 				case window_message_type_key_down:
 				case window_message_type_key_up: {
@@ -377,7 +388,25 @@ int main(int argc, char **argv) {
 		ImGui::NewFrame();
 	  { // miscs
 	  	if (ImGui::GetIO().KeyAlt && ImGui::IsKeyPressed(keycode_f4)) {
-	  		program_running = false;
+	  		editor_closing = true;
+	  	}
+	  	if (editor_closing) {
+	  		editor_closing = false;
+	  		ImGui::OpenPopup("##editor_closing_popup");
+	  	}
+	  	if (ImGui::BeginPopupModal("##editor_closing_popup")) {
+	  		ImGui::Text("Exiting editor, save changes?");
+	  		if (ImGui::Button("Yes")) {
+	  			save_editor_changes(editor, level);
+	  			ImGui::CloseCurrentPopup();
+	  			editor_closed = true;
+	  		}
+	  		ImGui::SameLine();
+	  		if (ImGui::Button("No")) {
+	  			ImGui::CloseCurrentPopup();
+	  			editor_closed = true;
+	  		}
+	  		ImGui::EndPopup();
 	  	}
 	  }
 		{ // move camera
@@ -579,7 +608,7 @@ int main(int argc, char **argv) {
 						if (save_file_dialog(editor->file_name, sizeof(editor->file_name))) {
 							set_exe_dir_as_current();
 							level_write_json(level, editor->file_name, write_editor_settings{editor});
-							save_terrain_in_edit(editor, level, vulkan);
+							save_terrain_in_edit(editor, level);
 						}
 					}
 					ImGui::Separator();

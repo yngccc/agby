@@ -1228,23 +1228,27 @@ void import_json(std::string json_file) {
 	catch (nlohmann::json::exception &e) {
 		fatal("import.exe json exception:\n\n%s\n", e.what());
 	}
+	char drive_buf[32];
+	char dir_buf[256];
+	_splitpath(json_file.c_str(), drive_buf, dir_buf, nullptr, nullptr);
+	std::string dir = std::string(drive_buf) + dir_buf;
 	for (auto &m : import.models) {
 		if (m.import || import.force_import_all || import.force_import_models) {
-			std::string cmdl_str = std::string("import.exe -gltf-to-gpk ") + m.gltf_file + " " + m.gpk_file;
+			std::string cmdl_str = std::string("import.exe -gltf-to-gpk ") + dir + m.gltf_file + " " + m.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}
 	}
 	for (auto &s : import.skyboxes) {
 		if (s.import || import.force_import_all || import.force_import_skyboxes) {
-			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + s.dir + " " + s.gpk_file;
+			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + dir + s.dir + " " + s.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}
 	}
 	for (auto &s : import.terrains) {
 		if (s.import || import.force_import_all || import.force_import_terrains) {
-			std::string cmdl_str = std::string("import.exe -terrain-to-gpk ") + s.dir + " " + s.gpk_file;
+			std::string cmdl_str = std::string("import.exe -terrain-to-gpk ") + dir + s.dir + " " + s.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}

@@ -336,7 +336,7 @@ VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectT
 
 void initialize_vulkan_device(vulkan_device *vulkan_device) {
 	bool enable_validation_layer = true;
-	bool enable_renderdoc_layer = true;
+	bool enable_renderdoc_layer = false;
 	bool enable_nsight_layer = false;
 
 	struct memory_arena memory_arena = {};
@@ -355,7 +355,7 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		m_assert(vulkan_1_dll);
 		#define m_x(shape, name) name = (shape)GetProcAddress(vulkan_1_dll, #name); m_assert(name);
 		m_vulkan_procs
-		#undef m_x      
+		#undef m_x
 	}
 	{ // query/enable layers/extensions, create instance
 		uint32 layer_count = 0;
@@ -1040,7 +1040,7 @@ void retrieve_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8* ima
 	vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
 	vkQueueWaitIdle(vulkan->device.queue);
 
-	memcpy(vulkan->memory_regions.staging_region_buffer_ptr, image_data, image_data_size);
+	memcpy(image_data, vulkan->memory_regions.staging_region_buffer_ptr, image_data_size);
 }
 
 void update_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8 *image_data, uint32 image_data_size) {

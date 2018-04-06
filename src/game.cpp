@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
 
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
-	level_read_json(level, vulkan, "agby_assets\\levels\\level_save.json", [](nlohmann::json &json){}, false);
+	level_read_json(level, vulkan, "assets\\levels\\level_save.json", [](nlohmann::json &json){}, false);
 	game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
 
 	btDiscreteDynamicsWorld *bt_world = nullptr;

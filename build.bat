@@ -58,7 +58,9 @@ copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >NUL
 
 if not exist "assets" mkdir "assets"
 pushd "assets"
-xcopy /e /i /y ..\agby_assets\fonts fonts >NUL
+if not exist "models" mkdir "models"
+if not exist "skyboxes" mkdir "skyboxes"
+if not exist "terrains" mkdir "terrains"
 popd
 
 popd
