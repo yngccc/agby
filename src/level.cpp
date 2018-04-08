@@ -8,6 +8,7 @@
 
 #include "../vendor/include/bullet/btBulletCollisionCommon.h"
 #include "../vendor/include/bullet/btBulletDynamicsCommon.h"
+#include "../vendor/include/bullet/BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h"
 
 #include "geometry.cpp"
 
@@ -132,6 +133,7 @@ static_assert(sizeof(struct terrain_vertex) == 20, "");
 struct terrain {
 	uint32 height_map_descriptor_index;
 	uint32 diffuse_map_descriptor_index;
+	btHeightfieldTerrainShape *bt_terrain_shape;
 	char gpk_file[128];
 };
 
@@ -159,7 +161,8 @@ struct point_light {
 enum collision_shape {
 	collision_shape_sphere,
 	collision_shape_capsule,
-	collision_shape_box
+	collision_shape_box,
+	collision_shape_terrain
 };
 
 struct entity_info {
@@ -194,6 +197,9 @@ struct entity_collision_component {
 		struct {
 			vec3 size;
 		} box;
+		struct {
+			uint32 terrain_index;
+		};
 	};
 	btCollisionObject *bt_collision_object;
 };
@@ -996,7 +1002,7 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		m_assert(is_pow_2(gpk_terrain->height_map_width));
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_info.imageType = VK_IMAGE_TYPE_2D;
-		image_info.format = VK_FORMAT_R16_UNORM;
+		image_info.format = VK_FORMAT_R16_SNORM;
 		image_info.extent = {gpk_terrain->height_map_width, gpk_terrain->height_map_height, 1};
 		image_info.mipLevels = 1;
 		image_info.arrayLayers = 1;
@@ -1036,6 +1042,10 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 		uint8 *diffuse_map_ptr = gpk_file_mapping.ptr + gpk_terrain->diffuse_map_offset;
 		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, diffuse_map_ptr, gpk_terrain->diffuse_map_size, 1, 4);
 		terrain->diffuse_map_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.terrain_texture_sampler);
+	}
+	{
+		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
+		terrain->bt_terrain_shape = new btHeightfieldTerrainShape(level_terrain_resolution, level_terrain_resolution, height_map_ptr, terrain_height_map_scale, -terrain_height_map_scale, terrain_height_map_scale, 1, PHY_SHORT, false);
 	}
 }
 
@@ -1134,7 +1144,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		}
 
 		auto read_entity_info = [](const nlohmann::json &json, entity_info *info) {
-			std::string name = json["name"];
+			const std::string &name = json["name"];
 			m_assert(name.length() < sizeof(info->name));
 			strcpy(info->name, name.c_str());
 		};
@@ -1147,7 +1157,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			transform->translate = {translate[0], translate[1], translate[2]};
 		};
     auto read_render_component = [level, read_transform](const nlohmann::json &json, entity_render_component *render_component) {
-			std::string gpk_file = json["gpk_file"];
+			const std::string &gpk_file = json["gpk_file"];
 			render_component->model_index = level_get_model_index(level, gpk_file.c_str());
 			auto adjustment_transform_field = json.find("adjustment_transform");
 			if (adjustment_transform_field != json.end()) {
@@ -1157,8 +1167,8 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				render_component->adjustment_transform = transform_identity();
 			}
 		};
-    auto read_collision_component = [](const nlohmann::json &json, entity_collision_component *collision_component) {
-			std::string shape = json["shape"];
+    auto read_collision_component = [level](const nlohmann::json &json, entity_collision_component *collision_component) {
+			const std::string &shape = json["shape"];
 			if (shape == "sphere") {
 				collision_component->shape = collision_shape_sphere;
 				collision_component->sphere.radius = json["radius"];
@@ -1172,6 +1182,18 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				collision_component->shape = collision_shape_box;
 				std::array<float, 3> size = json["size"];
 				collision_component->box.size = {size[0], size[1], size[2]};
+			}
+			else if (shape == "terrain") {
+				collision_component->shape = collision_shape_terrain;
+				collision_component->terrain_index = UINT32_MAX;
+				const std::string &gpk_file = json["gpk_file"];
+				for (uint32 i = 0; i < level->terrain_count; i += 1) {
+					if (!strcmp(gpk_file.c_str(), level->terrains[i].gpk_file)) {
+						collision_component->terrain_index = i;
+						break;
+					}
+				}
+				m_assert(collision_component->terrain_index != UINT32_MAX);
 			}
 			else {
 				m_assert(false);
@@ -1193,7 +1215,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			}
 		};
 		auto read_light_component = [](const nlohmann::json &json, entity_light_component *light_component) {
-			std::string light_type = json["light_type"];
+			const std::string &light_type = json["light_type"];
 			if (light_type == "ambient") {
 				light_component->light_type = light_type_ambient;
 				std::array<float, 3> color = json["color"];
@@ -1219,7 +1241,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			}
 		};
 		auto read_terrain_component = [level, read_transform](const nlohmann::json &json, entity_terrain_component *terrain_component) {
-			std::string gpk_file = json["gpk_file"];
+			const std::string &gpk_file = json["gpk_file"];
 			terrain_component->terrain_index = level_get_terrain_index(level, gpk_file.c_str());
 			auto transform_field = json.find("transform");
 			if (transform_field != json.end()) {
@@ -1269,28 +1291,23 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				entity_flags |= entity_component_flag_terrain;
 				read_terrain_component(*terrain_component_field, &level->terrain_components[terrain_component_index++]);
 			}
-			if (collision_component_field != entity_json.end() && physics_component_field != entity_json.end()) {
+			if (collision_component_field != entity_json.end()) {
 				entity_collision_component *collision_component = &level->collision_components[collision_component_index - 1];
-				entity_physics_component *physics_component = &level->physics_components[physics_component_index - 1];
-				btRigidBody *rigid_body = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(physics_component->mass, nullptr, nullptr));
-				if (collision_component->shape == collision_shape_sphere) {
-					rigid_body->setCollisionShape(new btSphereShape(collision_component->sphere.radius));
+				btCollisionObject *collision_object = nullptr;
+				if (physics_component_field != entity_json.end()) {
+					entity_physics_component *physics_component = &level->physics_components[physics_component_index - 1];
+					btRigidBody *rigid_body = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(physics_component->mass, nullptr, nullptr));
+					rigid_body->setLinearVelocity(btVector3(physics_component->velocity.x, physics_component->velocity.y, physics_component->velocity.z));
+					physics_component->bt_rigid_body = rigid_body;
+					collision_object = rigid_body;
 				}
-				else if (collision_component->shape == collision_shape_capsule) {
-					rigid_body->setCollisionShape(new btCapsuleShape(collision_component->capsule.radius, collision_component->capsule.height));
-				}
-				else if (collision_component->shape == collision_shape_box) {
-					rigid_body->setCollisionShape(new btBoxShape(btVector3(collision_component->box.size.x / 2, collision_component->box.size.y / 2, collision_component->box.size.z / 2)));
+				else {
+					collision_object = new btCollisionObject();
+					collision_component->bt_collision_object = collision_object;
 				}
 				btQuaternion rotate(entity_transform.rotate.x, entity_transform.rotate.y, entity_transform.rotate.z, entity_transform.rotate.w);
 				btVector3 translate(entity_transform.translate.x, entity_transform.translate.y, entity_transform.translate.z);
-				rigid_body->setWorldTransform(btTransform(rotate, translate));
-				rigid_body->setLinearVelocity(btVector3(physics_component->velocity.x, physics_component->velocity.y, physics_component->velocity.z));
-				physics_component->bt_rigid_body = rigid_body;
-			}
-			else if (collision_component_field != entity_json.end()) {
-				entity_collision_component *collision_component = &level->collision_components[collision_component_index - 1];
-				btCollisionObject *collision_object = new btCollisionObject();
+				collision_object->setWorldTransform(btTransform(rotate, translate));
 				if (collision_component->shape == collision_shape_sphere) {
 					collision_object->setCollisionShape(new btSphereShape(collision_component->sphere.radius));
 				}
@@ -1300,14 +1317,14 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 				else if (collision_component->shape == collision_shape_box) {
 					collision_object->setCollisionShape(new btBoxShape(btVector3(collision_component->box.size.x / 2, collision_component->box.size.y / 2, collision_component->box.size.z / 2)));
 				}
-				btQuaternion rotate(entity_transform.rotate.x, entity_transform.rotate.y, entity_transform.rotate.z, entity_transform.rotate.w);
-				btVector3 translate(entity_transform.translate.x, entity_transform.translate.y, entity_transform.translate.z);
-				collision_object->setWorldTransform(btTransform(rotate, translate));
-				collision_component->bt_collision_object = collision_object;
+				else if (collision_component->shape == collision_shape_terrain) {
+					m_assert(collision_component->terrain_index < level->terrain_count);
+					collision_object->setCollisionShape(level->terrains[collision_component->terrain_index].bt_terrain_shape);
+				}
 			}
 			else if (physics_component_field != entity_json.end()) {
 				entity_physics_component *physics_component = &level->physics_components[physics_component_index - 1];
-				btRigidBody *rigid_body = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(physics_component->mass, nullptr, new btEmptyShape()));
+				btRigidBody *rigid_body = new btRigidBody(btRigidBody::btRigidBodyConstructionInfo(physics_component->mass, nullptr, nullptr));
 				btQuaternion rotate(entity_transform.rotate.x, entity_transform.rotate.y, entity_transform.rotate.z, entity_transform.rotate.w);
 				btVector3 translate(entity_transform.translate.x, entity_transform.translate.y, entity_transform.translate.z);
 				rigid_body->setWorldTransform(btTransform(rotate, translate));
@@ -1321,7 +1338,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		auto &player = json["player"];
 		auto entity_name = player.find("entity_name");
 		if (entity_name != player.end()) {
-			std::string player_entity_name = *entity_name;
+			const std::string &player_entity_name = *entity_name;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
 				if (!strcmp(player_entity_name.c_str(), level->entity_infos[i].name)) {
 					level->player_entity_index = i;
@@ -1400,6 +1417,12 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 					entity_json["collision_component"] = {
 						{"shape", "box"},
 						{"size", {m_unpack3(collision_component->box.size)}}
+					};
+				}
+				else if (collision_component->shape == collision_shape_terrain) {
+					entity_json["collision_component"] = {
+						{"shape", "terrain"},
+						{"gpk_file", level->terrains[collision_component->terrain_index].gpk_file}
 					};
 				}
 				else {

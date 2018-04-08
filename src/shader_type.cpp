@@ -52,6 +52,8 @@ struct shader_terrain_push_constant {
   uint32 diffuse_map_index;
 };
 
+const float terrain_height_map_scale = 256;
+
 struct shader_skybox_push_constant {
   mat4 view_proj_mat;
   uint32 cube_map_index;
@@ -158,6 +160,6 @@ struct shader_imgui_push_constant {
 #define m_height_map (textures[pc.height_map_index])
 #define m_cube_map (cube_textures[pc.cube_map_index])
 
-#define m_terrain_max_height 128
+#define m_terrain_scale 256
 
 #endif

@@ -18,10 +18,6 @@
 #define m_line_end "\r\n"
 #define m_path_sep '\\'
 
-#define m_last_err_str(str_buf)     \
-  char str_buf[512];                \
-  FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), str_buf, sizeof(str_buf), nullptr);
-
 void fatal(const char* fmt, ...) {
 	if (IsDebuggerPresent()) {
 		__debugbreak();
@@ -37,6 +33,12 @@ void fatal(const char* fmt, ...) {
 		WTSSendMessageA(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, error, sizeof(error) - 1, buffer, (DWORD)strlen(buffer), MB_OK, 0, &response, FALSE);
 		ExitProcess(1);
 	}
+}
+
+std::array<char, 256> get_last_error_string() {
+  std::array<char, 256> str_buf;
+  FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), &str_buf[0], (DWORD)str_buf.max_size(), nullptr);
+  return str_buf;
 }
 
 void show_console() {
@@ -224,6 +226,7 @@ bool open_file_dialog(char *file_name_buffer, uint32 file_name_buffer_size) {
 	open_file_name.lpstrFile = file_name_buffer;
 	open_file_name.nMaxFile = file_name_buffer_size;
 	BOOL b = GetOpenFileNameA(&open_file_name);
+	set_exe_dir_as_current();
 	return b;
 }
 

@@ -20,7 +20,7 @@ void main() {
 	float u = (x + 32) / 64;
 	float v = (z + 32) / 64;
 	float height = texture(m_height_map, vec2(u, v)).x;
-	position.y += height * m_terrain_max_height;
+	position.y += height * m_terrain_scale;
 
   gl_Position = m_level_view_proj_mat * position;
 }

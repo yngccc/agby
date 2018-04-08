@@ -101,6 +101,7 @@ struct terrain_edit {
 struct editor {
 	editor_render_data render_data;
 
+	ImGuiContext *imgui_context;
 	uint32 imgui_font_atlas_descriptor_index;
 	
 	camera camera;
@@ -109,8 +110,16 @@ struct editor {
 	bool camera_moving;
 
 	float menu_bar_height;
-	float entity_window_height;
-	float skybox_window_height;
+	ImVec2 entity_window_pos;
+	ImVec2 entity_window_size;
+	ImVec2 skybox_window_pos;
+	ImVec2 skybox_window_size;
+	ImVec2 terrain_window_pos;
+	ImVec2 terrain_window_size;
+	ImVec2 memory_window_pos;
+	ImVec2 memory_window_size;
+	ImVec2 terrain_brush_window_pos;
+	ImVec2 terrain_brush_window_size;
 
 	bool show_reference_grid;
 	bool show_collision_shape;
@@ -134,6 +143,7 @@ struct editor {
 
 void initialize_editor(editor *editor, vulkan *vulkan) {
 	{ // imgui
+		editor->imgui_context = ImGui::CreateContext();
 		ImGui::StyleColorsDark();
 		ImGuiIO &imgui_io = ImGui::GetIO();
 		imgui_io.KeyMap[ImGuiKey_Tab] = keycode_tab;
@@ -276,15 +286,18 @@ void save_terrain_in_edit(editor *editor, level *level) {
 	}
 }
 
-void save_editor_changes(editor *editor, level *level) {
+bool save_editor_changes(editor *editor, level *level) {
 	if (!strcmp(level->json_file, "")) {
-		char temp_json_file[256];
-		m_assert(GetTempFileNameA("assets\\levels", "", 0, temp_json_file));
-		level_write_json(level, temp_json_file, write_editor_settings{editor});
+		char json_file[256] = "assets\\levels\\level_save.json";
+		if (!open_file_dialog(json_file, sizeof(json_file))) {
+			return false;
+		}
+		level_write_json(level, json_file, write_editor_settings{editor});
 	} else {
 		level_write_json(level, level->json_file, write_editor_settings{editor});
 	}
 	save_terrain_in_edit(editor, level);
+	return true;
 }
 
 int main(int argc, char **argv) {
@@ -397,14 +410,25 @@ int main(int argc, char **argv) {
 	  	if (ImGui::BeginPopupModal("##editor_closing_popup")) {
 	  		ImGui::Text("Exiting editor, save changes?");
 	  		if (ImGui::Button("Yes")) {
-	  			save_editor_changes(editor, level);
-	  			ImGui::CloseCurrentPopup();
-	  			editor_closed = true;
+	  			if (!save_editor_changes(editor, level)) {
+	  				ImGui::OpenPopup("##save_editor_changes_failed_popup");
+	  			}
+	  			else {
+	  				ImGui::CloseCurrentPopup();
+	  				editor_closed = true;
+	  			}
 	  		}
 	  		ImGui::SameLine();
 	  		if (ImGui::Button("No")) {
 	  			ImGui::CloseCurrentPopup();
 	  			editor_closed = true;
+	  		}
+	  		if (ImGui::BeginPopupModal("##save_editor_changes_failed_popup")) {
+	  			ImGui::Text("failed to save editor changes");
+	  			if (ImGui::Button("Ok")) {
+	  				ImGui::CloseCurrentPopup();
+	  			}
+	  			ImGui::EndPopup();
 	  		}
 	  		ImGui::EndPopup();
 	  	}
@@ -600,13 +624,11 @@ int main(int argc, char **argv) {
 					}
 					if (ImGui::MenuItem("Open Level##open_level")) {
 						if (open_file_dialog(editor->file_name, sizeof(editor->file_name))) {
-							set_exe_dir_as_current();
 							level_read_json(level, vulkan, editor->file_name, read_editor_settings{editor}, true);
 						}
 					}
 					if (ImGui::MenuItem("Save Level##save_level")) {
 						if (save_file_dialog(editor->file_name, sizeof(editor->file_name))) {
-							set_exe_dir_as_current();
 							level_write_json(level, editor->file_name, write_editor_settings{editor});
 							save_terrain_in_edit(editor, level);
 						}
@@ -631,7 +653,8 @@ int main(int argc, char **argv) {
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f});
 			ImGui::PushID("entitiy_window");
 			if (ImGui::Begin("Entity##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
-				editor->entity_window_height = ImGui::GetWindowHeight();
+				editor->entity_window_pos = ImGui::GetWindowPos();
+				editor->entity_window_size = ImGui::GetWindowSize();
 				{ // entity list
 					const char *entity_combo_name = editor->entity_index < level->entity_count ? level->entity_infos[editor->entity_index].name : nullptr;
 					if (ImGui::BeginCombo("##entities_combo", entity_combo_name)) {
@@ -747,24 +770,27 @@ int main(int argc, char **argv) {
 							auto *sphere = &collision_component->sphere;
 							ImGui::Text("sphere:");
 							ImGui::InputFloat("radius##sphere_radius_field", &sphere->radius, 3);
-						}
+						} 
 						else if (collision_component->shape == collision_shape_capsule) {
 							auto *capsule = &collision_component->capsule;
 							ImGui::Text("capsule:");
 							ImGui::InputFloat("height##capsule_height_field", &capsule->height, 3);
 							ImGui::InputFloat("radius##capsule_radius_field", &capsule->radius, 3);
-						}
+						} 
 						else if (collision_component->shape == collision_shape_box) {
 							auto *box = &collision_component->box;
 							ImGui::Text("box:");
 							ImGui::InputFloat3("size##box_size", box->size.e, 3);
+						} 
+						else if (collision_component->shape == collision_shape_terrain) {
+							ImGui::Text("terrain height map:");
 						}
 						if (ImGui::Button("change##change_collision_shape_button")) {
 							ImGui::OpenPopup("##change_collision_shape_popup");
 						}
 						if (ImGui::BeginPopupModal("##change_collision_shape_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 							static uint32 shape_index = UINT32_MAX;
-							const char *shape_strings[] = {"sphere", "capsule", "box"};
+							const char *shape_strings[] = {"sphere", "capsule", "box", "terrain height map"};
 							const char *shape_str = shape_index < m_countof(shape_strings) ? shape_strings[shape_index] : nullptr;
 							if (ImGui::BeginCombo("shapes##change_collision_shape_combo", shape_str)) {
 								for (uint32 i = 0; i < m_countof(shape_strings); i += 1) {
@@ -991,11 +1017,12 @@ int main(int argc, char **argv) {
 			ImGui::PopID();
 		}
 		{ // skyboxes window
-			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height + editor->entity_window_height});
+			ImGui::SetNextWindowPos(ImVec2{0, editor->entity_window_pos.y + editor->entity_window_size.y});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.2f});
 			ImGui::PushID("skyboxes_window");
 			if (ImGui::Begin("Skyboxes##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
-				editor->skybox_window_height = ImGui::GetWindowHeight();
+				editor->skybox_window_pos = ImGui::GetWindowPos();
+				editor->skybox_window_size = ImGui::GetWindowSize();
 				const char *skybox_combo_name = (level->skybox_index < level->skybox_count) ? level->skyboxes[level->skybox_index].gpk_file : nullptr;
 				if (ImGui::BeginCombo("skyboxes##skyboxes_combo", skybox_combo_name)) {
 					for (uint32 i = 0; i < level->skybox_count; i += 1) {
@@ -1010,10 +1037,12 @@ int main(int argc, char **argv) {
 			ImGui::PopID();
 		}
 		{ // terrains window
-			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height + editor->entity_window_height + editor->skybox_window_height});
+			ImGui::SetNextWindowPos(ImVec2{0, editor->skybox_window_pos.y + editor->skybox_window_size.y});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.4f});
 			ImGui::PushID("terrains_window");
 			if (ImGui::Begin("Terrains##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
+				editor->terrain_window_pos = ImGui::GetWindowPos();
+				editor->terrain_window_size = ImGui::GetWindowSize();
 				static uint32 terrain_index = 0;
 				const char *terrain_combo_name = (terrain_index < level->terrain_count) ? level->terrains[terrain_index].gpk_file : nullptr;
 				if (ImGui::BeginCombo("terrains##terraines_combo", terrain_combo_name)) {
@@ -1097,6 +1126,8 @@ int main(int argc, char **argv) {
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.8f});
 			ImGui::PushID("memory_usage_window");
 			if (ImGui::Begin("Memory Usage##window", nullptr, ImGuiWindowFlags_NoCollapse)) {
+				editor->memory_window_pos = ImGui::GetWindowPos();
+				editor->memory_window_size = ImGui::GetWindowSize();
 				auto imgui_render_memory = [](uint64 memory_size, uint64 memory_capacity, const char *memory_name) {
 					char overlay[64] = {};
 					snprintf(overlay, sizeof(overlay), "%s / %s", pretty_print_bytes(memory_size).data(), pretty_print_bytes(memory_capacity).data());
@@ -1283,11 +1314,17 @@ int main(int argc, char **argv) {
 					}
 				}
 				else if (editor->gizmo_mode == gizmo_mode_terrain_brush && entity_flags & entity_component_flag_terrain) {
-					if (ImGui::Begin("brush properties##terrain_brush_properties_window")) {
+					ImGui::SetNextWindowPos(ImVec2{editor->entity_window_pos.x + editor->entity_window_size.x, editor->entity_window_pos.y});
+					ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.2f});
+					ImGui::PushID("brush_properties_window");
+					if (ImGui::Begin("brush properties##window")) {
+						editor->terrain_brush_window_pos = ImGui::GetWindowPos();
+						editor->terrain_brush_window_size = ImGui::GetWindowSize();
 						ImGui::SliderFloat("sharpness", &editor->terrain_brush_sharpness, 0.5f, 2.0f);
 						ImGui::SliderFloat("radius", &editor->terrain_brush_radius, 0.3f, 20.0f);
 					}
 					ImGui::End();
+					ImGui::PopID();
 					entity_terrain_component *terrain_component = entity_get_terrain_component(level, editor->entity_index);
 					if (terrain_component->terrain_index < level->terrain_count) {
 						terrain_edit *terrain_edit = nullptr;
@@ -1536,5 +1573,5 @@ int main(int argc, char **argv) {
 		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;
 		last_frame_time_sec = (double)last_frame_time_microsec / 1000000;
 	}
-	ImGui::Shutdown();
+	ImGui::DestroyContext(editor->imgui_context);
 }

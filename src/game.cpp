@@ -24,7 +24,9 @@ struct render_thread_arg {
 struct game {
 	std::atomic<uint32> render_done_flag;
 	std::atomic<uint32> frame_done_flag;
-	
+
+	ImGuiContext *imgui_context;
+
 	camera player_camera;
 	float player_camera_r;
 	float player_camera_theta;
@@ -37,6 +39,7 @@ void initialize_game(game *game, vulkan *vulkan) {
 		game->frame_done_flag = 0;
 	}
 	{ // imgui
+		game->imgui_context = ImGui::CreateContext();
 		ImGuiIO &imgui_io = ImGui::GetIO();
 		imgui_io.KeyMap[ImGuiKey_Tab] = keycode_tab;
 		imgui_io.KeyMap[ImGuiKey_LeftArrow] = keycode_left;
@@ -317,4 +320,5 @@ int main(int argc, char **argv) {
 		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;
 		last_frame_time_sec = (double)last_frame_time_microsec / 1000000;
 	}
+	ImGui::DestroyContext(game->imgui_context);
 }
