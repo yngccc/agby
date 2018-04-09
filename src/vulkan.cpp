@@ -119,8 +119,12 @@ const uint32 vulkan_buffering_count = 2;
 struct vulkan_device {
 	VkDevice device;
 	VkInstance instance;
-	VkQueue queue;
-	uint32 queue_family_index;
+	VkQueue graphic_queue;
+	VkQueue compute_queue;
+	VkQueue transfer_queue;
+	uint32 graphic_queue_family;
+	uint32 compute_queue_family;
+	uint32 transfer_queue_family;
 	VkPhysicalDevice physical_device;
 	VkPhysicalDeviceProperties physical_device_properties;
 	VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
@@ -139,14 +143,17 @@ struct vulkan_swap_chain {
 
 struct vulkan_cmd_buffers {
 	VkCommandBuffer graphic_cmd_buffers[vulkan_buffering_count];
+	VkCommandBuffer compute_cmd_buffer;
 	VkCommandBuffer transfer_cmd_buffer;
-	VkCommandPool cmd_pool;
+	VkCommandPool graphic_cmd_pool;
+	VkCommandPool compute_cmd_pool;
+	VkCommandPool transfer_cmd_pool;
 };
 
 struct vulkan_syncs {
 	VkSemaphore swap_chain_image_acquire_semaphores[vulkan_buffering_count];
-	VkSemaphore queue_submit_semaphores[vulkan_buffering_count];
-	VkFence queue_submit_fences[vulkan_buffering_count];
+	VkSemaphore graphic_queue_submit_semaphores[vulkan_buffering_count];
+	VkFence graphic_queue_submit_fences[vulkan_buffering_count];
 };
 
 struct vulkan_image {
@@ -489,40 +496,98 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		m_assert(vulkan_device->physical_device);
 	}
 	{ // create device, graphic/compute/transfer queues
-		uint32 queue_families_count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(vulkan_device->physical_device, &queue_families_count, nullptr);
-		VkQueueFamilyProperties *queue_familiy_properties = allocate_memory<VkQueueFamilyProperties>(&memory_arena, queue_families_count);
-		vkGetPhysicalDeviceQueueFamilyProperties(vulkan_device->physical_device, &queue_families_count, queue_familiy_properties);
-		for (uint32 i = 0; i < queue_families_count; i += 1) {
-			string_catf(&info_str, "Queue familiy %d properties: %d queues, ", i, queue_familiy_properties[i].queueCount);
-			if (queue_familiy_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+		uint32 queue_family_count = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(vulkan_device->physical_device, &queue_family_count, nullptr);
+		VkQueueFamilyProperties *queue_family_properties = allocate_memory<VkQueueFamilyProperties>(&memory_arena, queue_family_count);
+		vkGetPhysicalDeviceQueueFamilyProperties(vulkan_device->physical_device, &queue_family_count, queue_family_properties);
+		for (uint32 i = 0; i < queue_family_count; i += 1) {
+			string_catf(&info_str, "Queue familiy %d properties: %d queues, ", i, queue_family_properties[i].queueCount);
+			if (queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
 				string_catf(&info_str, "\"graphic\" ");
 			}
-			if (queue_familiy_properties[i].queueFlags & VK_QUEUE_TRANSFER_BIT) {
+			if (queue_family_properties[i].queueFlags & VK_QUEUE_TRANSFER_BIT) {
 				string_catf(&info_str, "\"transfer\" ");
 			}
-			if (queue_familiy_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+			if (queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
 				string_catf(&info_str, "\"compute\" ");
 			}
-			if (queue_familiy_properties[i].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) {
+			if (queue_family_properties[i].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) {
 				string_catf(&info_str, "\"sparse binding\" ");
 			}
 			string_catf(&info_str, "\n");
 		}
-		vulkan_device->queue_family_index = -1;
-		for (uint32 i = 0; i < queue_families_count; i += 1) {
-			if ((queue_familiy_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && (queue_familiy_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
-				vulkan_device->queue_family_index = i;
+		vulkan_device->graphic_queue_family = UINT32_MAX;
+		vulkan_device->compute_queue_family = UINT32_MAX;
+		vulkan_device->transfer_queue_family = UINT32_MAX;
+		for (uint32 i = 0; i < queue_family_count; i += 1) {
+			VkQueueFamilyProperties *properties = &queue_family_properties[i];
+			if (properties->queueFlags & VK_QUEUE_GRAPHICS_BIT && properties->queueCount > 0) {
+				vulkan_device->graphic_queue_family = i;
+				properties->queueCount -= 1;
+			}
+			if (properties->queueFlags & VK_QUEUE_COMPUTE_BIT && properties->queueCount > 0) {
+				vulkan_device->compute_queue_family = i;
+				properties->queueCount -= 1;
+			}
+		}
+		for (uint32 i = 0; i < queue_family_count; i += 1) {
+			VkQueueFamilyProperties *properties = &queue_family_properties[i];
+			if (properties->queueFlags == VK_QUEUE_TRANSFER_BIT && properties->queueCount > 0) {
+				vulkan_device->transfer_queue_family = i;
+				properties->queueCount -= 1;
 				break;
 			}
 		}
-		m_assert(vulkan_device->queue_family_index != -1);
+		if (vulkan_device->transfer_queue_family == UINT32_MAX) {
+			for (uint32 i = 0; i < queue_family_count; i += 1) {
+				VkQueueFamilyProperties *properties = &queue_family_properties[i];
+				if (properties->queueFlags & VK_QUEUE_TRANSFER_BIT && properties->queueCount > 0) {
+					vulkan_device->transfer_queue_family = i;
+					properties->queueCount -= 1;
+					break;
+				}
+			}
+		}
+		m_assert(vulkan_device->graphic_queue_family != UINT32_MAX);
+		m_assert(vulkan_device->compute_queue_family != UINT32_MAX);
+		m_assert(vulkan_device->transfer_queue_family != UINT32_MAX);
 
-		float queue_priority = 1;
-		VkDeviceQueueCreateInfo queue_create_info = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-		queue_create_info.queueFamilyIndex = vulkan_device->queue_family_index;
-		queue_create_info.queueCount = 1;
-		queue_create_info.pQueuePriorities = &queue_priority;
+		float queue_priorities[3] = {1, 1, 1};
+		uint32 queue_info_count = 1;
+		uint32 graphic_queue_index = 0;
+		uint32 compute_queue_index = 0;
+		uint32 transfer_queue_index = 0;
+		VkDeviceQueueCreateInfo queue_infos[3] = {};
+		queue_infos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queue_infos[0].queueFamilyIndex = vulkan_device->graphic_queue_family;
+		queue_infos[0].queueCount = 1;
+		queue_infos[0].pQueuePriorities = queue_priorities;
+		if (vulkan_device->compute_queue_family == vulkan_device->graphic_queue_family) {
+			queue_infos[0].queueCount += 1;
+			compute_queue_index = 1;
+		}
+		else {
+			queue_infos[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			queue_infos[1].queueFamilyIndex = vulkan_device->compute_queue_family;
+			queue_infos[1].queueCount = 1;
+			queue_infos[1].pQueuePriorities = queue_priorities;
+			queue_info_count += 1;
+		}
+		if (vulkan_device->transfer_queue_family == vulkan_device->graphic_queue_family) {
+			queue_infos[0].queueCount += 1;
+			transfer_queue_index = compute_queue_index + 1;
+		}
+		else if (vulkan_device->transfer_queue_family == vulkan_device->compute_queue_family) {
+			queue_infos[1].queueCount += 1;
+			transfer_queue_index = compute_queue_index + 1;
+		}
+		else {
+			queue_infos[queue_info_count].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			queue_infos[queue_info_count].queueFamilyIndex = vulkan_device->transfer_queue_family;
+			queue_infos[queue_info_count].queueCount = 1;
+			queue_infos[queue_info_count].pQueuePriorities = queue_priorities;
+			queue_info_count += 1;
+		}
 
 		const char *device_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
@@ -535,8 +600,8 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		device_features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
 
 		VkDeviceCreateInfo device_info = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-		device_info.queueCreateInfoCount = 1;
-		device_info.pQueueCreateInfos = &queue_create_info;
+		device_info.queueCreateInfoCount = queue_info_count;
+		device_info.pQueueCreateInfos = queue_infos;
 		device_info.enabledExtensionCount = m_countof(device_extensions);
 		device_info.ppEnabledExtensionNames = device_extensions;
 		device_info.pEnabledFeatures = &device_features;
@@ -544,7 +609,9 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		#define m_x(shape, name) name = (shape)vkGetDeviceProcAddr(vulkan_device->device, #name); m_assert(name);
 		m_vulkan_device_procs
 		#undef m_x
-		vkGetDeviceQueue(vulkan_device->device, vulkan_device->queue_family_index, 0, &vulkan_device->queue);
+		vkGetDeviceQueue(vulkan_device->device, vulkan_device->graphic_queue_family, graphic_queue_index, &vulkan_device->graphic_queue);
+		vkGetDeviceQueue(vulkan_device->device, vulkan_device->compute_queue_family, compute_queue_index, &vulkan_device->compute_queue);
+		vkGetDeviceQueue(vulkan_device->device, vulkan_device->transfer_queue_family, transfer_queue_index, &vulkan_device->transfer_queue);
 	}
 }
 
@@ -566,7 +633,7 @@ void initialize_vulkan_swap_chain(vulkan *vulkan, window window, bool vsync_on) 
 		surface_create_info.hwnd = window.handle;
 		m_vk_assert(vkCreateWin32SurfaceKHR(vulkan->device.instance, &surface_create_info, nullptr, &vulkan->swap_chain.surface));
 		VkBool32 physical_device_surface_support = VK_FALSE;
-		m_vk_assert(vkGetPhysicalDeviceSurfaceSupportKHR(vulkan->device.physical_device, vulkan->device.queue_family_index, vulkan->swap_chain.surface, &physical_device_surface_support));
+		m_vk_assert(vkGetPhysicalDeviceSurfaceSupportKHR(vulkan->device.physical_device, vulkan->device.graphic_queue_family, vulkan->swap_chain.surface, &physical_device_surface_support));
 		m_assert(physical_device_surface_support);
 	}
 	{ // check surface capabilities
@@ -720,14 +787,24 @@ void resize_vulkan_swap_chain(vulkan *vulkan, uint32 new_width, uint32 new_heigh
 void initialize_vulkan_cmd_buffers(vulkan *vulkan) {
 	VkCommandPoolCreateInfo cmd_pool_info = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
 	cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	cmd_pool_info.queueFamilyIndex = vulkan->device.queue_family_index;
-	m_vk_assert(vkCreateCommandPool(vulkan->device.device, &cmd_pool_info, nullptr, &vulkan->cmd_buffers.cmd_pool));
+	cmd_pool_info.queueFamilyIndex = vulkan->device.graphic_queue_family;
+	m_vk_assert(vkCreateCommandPool(vulkan->device.device, &cmd_pool_info, nullptr, &vulkan->cmd_buffers.graphic_cmd_pool));
+	cmd_pool_info.queueFamilyIndex = vulkan->device.compute_queue_family;
+	m_vk_assert(vkCreateCommandPool(vulkan->device.device, &cmd_pool_info, nullptr, &vulkan->cmd_buffers.compute_cmd_pool));
+	cmd_pool_info.queueFamilyIndex = vulkan->device.transfer_queue_family;
+	m_vk_assert(vkCreateCommandPool(vulkan->device.device, &cmd_pool_info, nullptr, &vulkan->cmd_buffers.transfer_cmd_pool));
 
 	VkCommandBufferAllocateInfo cmd_buffer_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-	cmd_buffer_info.commandPool = vulkan->cmd_buffers.cmd_pool;
+	cmd_buffer_info.commandPool = vulkan->cmd_buffers.graphic_cmd_pool;
 	cmd_buffer_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	cmd_buffer_info.commandBufferCount = vulkan_buffering_count;
 	m_vk_assert(vkAllocateCommandBuffers(vulkan->device.device, &cmd_buffer_info, vulkan->cmd_buffers.graphic_cmd_buffers));
+
+	cmd_buffer_info.commandPool = vulkan->cmd_buffers.compute_cmd_pool;
+	cmd_buffer_info.commandBufferCount = 1;
+	m_vk_assert(vkAllocateCommandBuffers(vulkan->device.device, &cmd_buffer_info, &vulkan->cmd_buffers.compute_cmd_buffer));
+
+	cmd_buffer_info.commandPool = vulkan->cmd_buffers.transfer_cmd_pool;
 	cmd_buffer_info.commandBufferCount = 1;
 	m_vk_assert(vkAllocateCommandBuffers(vulkan->device.device, &cmd_buffer_info, &vulkan->cmd_buffers.transfer_cmd_buffer));
 }
@@ -736,10 +813,10 @@ void initialize_vulkan_syncs(vulkan *vulkan) {
 	VkSemaphoreCreateInfo semaphore_create_info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 	for (uint32 i = 0; i < vulkan_buffering_count; i += 1) {
 		m_vk_assert(vkCreateSemaphore(vulkan->device.device, &semaphore_create_info, nullptr, &vulkan->syncs.swap_chain_image_acquire_semaphores[i]));
-		m_vk_assert(vkCreateSemaphore(vulkan->device.device, &semaphore_create_info, nullptr, &vulkan->syncs.queue_submit_semaphores[i]));
+		m_vk_assert(vkCreateSemaphore(vulkan->device.device, &semaphore_create_info, nullptr, &vulkan->syncs.graphic_queue_submit_semaphores[i]));
 		VkFenceCreateInfo fence_create_info = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
 		fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-		m_vk_assert(vkCreateFence(vulkan->device.device, &fence_create_info, nullptr, &vulkan->syncs.queue_submit_fences[i]));
+		m_vk_assert(vkCreateFence(vulkan->device.device, &fence_create_info, nullptr, &vulkan->syncs.graphic_queue_submit_fences[i]));
 	}
 }
 
@@ -876,8 +953,8 @@ uint32 append_vulkan_vertex_region(vulkan *vulkan, const void *data, uint32 data
 		VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
 		submit_info.commandBufferCount = 1;
 		submit_info.pCommandBuffers = &cmd_buffer;
-		vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
-		vkQueueWaitIdle(vulkan->device.queue);
+		vkQueueSubmit(vulkan->device.transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+		vkQueueWaitIdle(vulkan->device.transfer_queue);
 
 		data_size_remain -= copy_size;
 		data = (uint8 *)data + copy_size;
@@ -929,6 +1006,8 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		image_memory_barrier.image = image.image;
+		image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		image_memory_barrier.subresourceRange.aspectMask = image_view_info.subresourceRange.aspectMask;
 		image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
 		image_memory_barrier.subresourceRange.layerCount = image.layer_count;
@@ -954,20 +1033,18 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 			mipmap_height = max(mipmap_height / 2, image.format_block_dimension);
 		}
 
-		image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
 		image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		image_memory_barrier.dstAccessMask = 0;
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		image_memory_barrier.newLayout = layout;
-		image_memory_barrier.image = image.image;
-		image_memory_barrier.subresourceRange.aspectMask = image_view_info.subresourceRange.aspectMask;
-		image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
-		image_memory_barrier.subresourceRange.layerCount = image.layer_count;
 		vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
 	} else {
 		VkImageMemoryBarrier image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		image_memory_barrier.newLayout = layout;
 		image_memory_barrier.image = image.image;
+		image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		image_memory_barrier.subresourceRange.aspectMask = image_view_info.subresourceRange.aspectMask;
 		image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
 		image_memory_barrier.subresourceRange.layerCount = image.layer_count;
@@ -978,8 +1055,8 @@ uint32 append_vulkan_image_region(vulkan *vulkan, VkImageCreateInfo image_info, 
 	VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &cmd_buffer;
-	vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(vulkan->device.queue);
+	vkQueueSubmit(vulkan->device.transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(vulkan->device.transfer_queue);
 
 	return image_index;
 }
@@ -1001,6 +1078,8 @@ void retrieve_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8* ima
 	image_memory_barrier.oldLayout = image.layout;
 	image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	image_memory_barrier.image = image.image;
+	image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	image_memory_barrier.subresourceRange.aspectMask = image.aspect_flags;
 	image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
 	image_memory_barrier.subresourceRange.layerCount = image.layer_count;
@@ -1023,22 +1102,18 @@ void retrieve_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8* ima
 		mipmap_height = max(mipmap_height / 2, image.format_block_dimension);
 	}
 
-	image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
 	image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	image_memory_barrier.dstAccessMask = 0;
 	image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	image_memory_barrier.newLayout = image.layout;
-	image_memory_barrier.image = image.image;
-	image_memory_barrier.subresourceRange.aspectMask = image.aspect_flags;
-	image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
-	image_memory_barrier.subresourceRange.layerCount = image.layer_count;
 	vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
 
 	vkEndCommandBuffer(cmd_buffer);
 	VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &cmd_buffer;
-	vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(vulkan->device.queue);
+	vkQueueSubmit(vulkan->device.transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(vulkan->device.transfer_queue);
 
 	memcpy(image_data, vulkan->memory_regions.staging_region_buffer_ptr, image_data_size);
 }
@@ -1063,6 +1138,8 @@ void update_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8 *image
 	image_memory_barrier.oldLayout = image.layout;
 	image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	image_memory_barrier.image = image.image;
+	image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	image_memory_barrier.subresourceRange.aspectMask = image.aspect_flags;
 	image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
 	image_memory_barrier.subresourceRange.layerCount = image.layer_count;
@@ -1085,23 +1162,18 @@ void update_vulkan_image_region(vulkan *vulkan, uint32 image_index, uint8 *image
 		mipmap_height = max(mipmap_height / 2, image.format_block_dimension);
 	}
 
-	image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
 	image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 	image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 	image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	image_memory_barrier.newLayout = image.layout;
-	image_memory_barrier.image = image.image;
-	image_memory_barrier.subresourceRange.aspectMask = image.aspect_flags;
-	image_memory_barrier.subresourceRange.levelCount = image.mipmap_count;
-	image_memory_barrier.subresourceRange.layerCount = image.layer_count;
 	vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
 
 	vkEndCommandBuffer(cmd_buffer);
 	VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &cmd_buffer;
-	vkQueueSubmit(vulkan->device.queue, 1, &submit_info, VK_NULL_HANDLE);
-	vkQueueWaitIdle(vulkan->device.queue);
+	vkQueueSubmit(vulkan->device.transfer_queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(vulkan->device.transfer_queue);
 }
 
 uint32 append_vulkan_uniform_region(vulkan *vulkan, const void *data, uint32 data_size) {
@@ -1261,6 +1333,9 @@ uint32 append_vulkan_combined_2d_image_samplers(vulkan *vulkan, uint32 image_ind
 	write_descriptor_set.descriptorCount = 1;
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
+	for (auto &fence : vulkan->syncs.graphic_queue_submit_fences) {
+		vkWaitForFences(vulkan->device.device, 1, &fence, VK_TRUE, UINT64_MAX);
+	}
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
 	vulkan->descriptors.combined_2d_image_sampler_image_indices[vulkan->descriptors.combined_2d_image_sampler_count] = image_index;
 	return vulkan->descriptors.combined_2d_image_sampler_count++;
@@ -1276,6 +1351,9 @@ void update_vulkan_combined_2d_image_samplers(vulkan *vulkan, uint32 index, uint
 	write_descriptor_set.descriptorCount = 1;
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
+	for (auto &fence : vulkan->syncs.graphic_queue_submit_fences) {
+		vkWaitForFences(vulkan->device.device, 1, &fence, VK_TRUE, UINT64_MAX);
+	}
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
 	vulkan->descriptors.combined_2d_image_sampler_image_indices[index] = image_index;
 }
@@ -1290,6 +1368,9 @@ uint32 append_vulkan_combined_cube_image_samplers(vulkan *vulkan, uint32 image_i
 	write_descriptor_set.descriptorCount = 1;
 	write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	write_descriptor_set.pImageInfo = &descriptor_image_info;
+	for (auto &fence : vulkan->syncs.graphic_queue_submit_fences) {
+		vkWaitForFences(vulkan->device.device, 1, &fence, VK_TRUE, UINT64_MAX);
+	}
 	vkUpdateDescriptorSets(vulkan->device.device, 1, &write_descriptor_set, 0, nullptr);
 	vulkan->descriptors.combined_cube_image_sampler_image_indices[vulkan->descriptors.combined_cube_image_sampler_count] = image_index;
 	return vulkan->descriptors.combined_cube_image_sampler_count++;
@@ -2463,10 +2544,10 @@ void initialize_vulkan(vulkan *vulkan, const window &window) {
 }
 
 void vulkan_begin_render(vulkan *vulkan) {
-	vkWaitForFences(vulkan->device.device, 1, &vulkan->syncs.queue_submit_fences[vulkan->frame_index], VK_TRUE, UINT64_MAX);
-	vkResetFences(vulkan->device.device, 1, &vulkan->syncs.queue_submit_fences[vulkan->frame_index]);
-
 	m_vk_assert(vkAcquireNextImageKHR(vulkan->device.device, vulkan->swap_chain.swap_chain, 0, vulkan->syncs.swap_chain_image_acquire_semaphores[vulkan->frame_index], VK_NULL_HANDLE, &vulkan->swap_chain_image_index));
+
+	vkWaitForFences(vulkan->device.device, 1, &vulkan->syncs.graphic_queue_submit_fences[vulkan->frame_index], VK_TRUE, UINT64_MAX);
+	vkResetFences(vulkan->device.device, 1, &vulkan->syncs.graphic_queue_submit_fences[vulkan->frame_index]);
 
 	VkCommandBufferBeginInfo cmd_buffer_begin_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
 	cmd_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -2483,6 +2564,8 @@ void vulkan_end_render(vulkan *vulkan, bool screen_shot = false) {
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 		image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		image_memory_barrier.image = vulkan->swap_chain.images[vulkan->frame_index];
+		image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_memory_barrier.subresourceRange.levelCount = 1;
 		image_memory_barrier.subresourceRange.layerCount = 1;
@@ -2495,13 +2578,10 @@ void vulkan_end_render(vulkan *vulkan, bool screen_shot = false) {
 		image_copy.imageExtent = {vulkan->swap_chain.image_width, vulkan->swap_chain.image_height, 1};
 		vkCmdCopyImageToBuffer(cmd_buffer, vulkan->swap_chain.images[vulkan->frame_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vulkan->memory_regions.staging_region_buffer, 1, &image_copy);
 
-		image_memory_barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+		image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		image_memory_barrier.dstAccessMask = 0;
 		image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		image_memory_barrier.image = vulkan->swap_chain.images[vulkan->frame_index];
-		image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		image_memory_barrier.subresourceRange.levelCount = 1;
-		image_memory_barrier.subresourceRange.layerCount = 1;
 		vkCmdPipelineBarrier(cmd_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &image_memory_barrier);
 	}
 	m_vk_assert(vkEndCommandBuffer(cmd_buffer));
@@ -2514,22 +2594,22 @@ void vulkan_end_render(vulkan *vulkan, bool screen_shot = false) {
 	queue_submit_info.commandBufferCount = 1;
 	queue_submit_info.pCommandBuffers = &cmd_buffer;
 	queue_submit_info.signalSemaphoreCount = 1;
-	queue_submit_info.pSignalSemaphores = &vulkan->syncs.queue_submit_semaphores[vulkan->frame_index];
-	m_vk_assert(vkQueueSubmit(vulkan->device.queue, 1, &queue_submit_info, vulkan->syncs.queue_submit_fences[vulkan->frame_index]));
+	queue_submit_info.pSignalSemaphores = &vulkan->syncs.graphic_queue_submit_semaphores[vulkan->frame_index];
+	m_vk_assert(vkQueueSubmit(vulkan->device.graphic_queue, 1, &queue_submit_info, vulkan->syncs.graphic_queue_submit_fences[vulkan->frame_index]));
 
 	if (screen_shot) {
-		vkWaitForFences(vulkan->device.device, 1, &vulkan->syncs.queue_submit_fences[vulkan->frame_index], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(vulkan->device.device, 1, &vulkan->syncs.graphic_queue_submit_fences[vulkan->frame_index], VK_TRUE, UINT64_MAX);
 		flip_rgba_image(vulkan->memory_regions.staging_region_buffer_ptr, vulkan->swap_chain.image_width, vulkan->swap_chain.image_height);
 		rgba_image_to_bmp_file("screen_shot.bmp", vulkan->memory_regions.staging_region_buffer_ptr, vulkan->swap_chain.image_width, vulkan->swap_chain.image_height);
 	}
 
 	VkPresentInfoKHR device_queue_present_info = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
 	device_queue_present_info.waitSemaphoreCount = 1;
-	device_queue_present_info.pWaitSemaphores = &vulkan->syncs.queue_submit_semaphores[vulkan->frame_index];
+	device_queue_present_info.pWaitSemaphores = &vulkan->syncs.graphic_queue_submit_semaphores[vulkan->frame_index];
 	device_queue_present_info.swapchainCount = 1;
 	device_queue_present_info.pSwapchains = &vulkan->swap_chain.swap_chain;
 	device_queue_present_info.pImageIndices = &vulkan->swap_chain_image_index;
-	m_vk_assert(vkQueuePresentKHR(vulkan->device.queue, &device_queue_present_info));
+	m_vk_assert(vkQueuePresentKHR(vulkan->device.graphic_queue, &device_queue_present_info));
 
 	vulkan->frame_index = (vulkan->frame_index + 1) % vulkan_buffering_count;
 }

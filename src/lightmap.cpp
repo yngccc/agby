@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
 	{
 		VkCommandPoolCreateInfo cmd_pool_info = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
 		cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		cmd_pool_info.queueFamilyIndex = vulkan_device.queue_family_index;
+		cmd_pool_info.queueFamilyIndex = vulkan_device.graphic_queue_family;
 		m_vk_assert(vkCreateCommandPool(vulkan_device.device, &cmd_pool_info, nullptr, &vulkan_cmd_pool));
 
 		VkCommandBufferAllocateInfo cmd_buffer_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
@@ -310,7 +310,7 @@ int main(int argc, char **argv) {
 		VkSubmitInfo queue_submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
 		queue_submit_info.commandBufferCount = 1;
 		queue_submit_info.pCommandBuffers = &vulkan_cmd_buffer;
-		m_vk_assert(vkQueueSubmit(vulkan_device.queue, 1, &queue_submit_info, vulkan_fence));
+		m_vk_assert(vkQueueSubmit(vulkan_device.graphic_queue, 1, &queue_submit_info, vulkan_fence));
 
 		vkWaitForFences(vulkan_device.device, 1, &vulkan_fence, VK_TRUE, UINT64_MAX);
 		uint8 *staging_memory_ptr = nullptr;
