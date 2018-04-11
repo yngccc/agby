@@ -1561,10 +1561,11 @@ int main(int argc, char **argv) {
 		}
 
 		level_entity_memory_arena_size = level->entity_memory_arenas[level->entity_memory_arena_index].size;
-		level_update_entity_components(level);
-
 		level_frame_memory_arena_size = level->frame_memory_arena.size;
 		vulkan_frame_memory_arena_size = vulkan->frame_memory_arena.size;
+
+		level_update_entity_components(level);
+
 		level->frame_memory_arena.size = 0;
 		vulkan->frame_memory_arena.size = 0;
 	

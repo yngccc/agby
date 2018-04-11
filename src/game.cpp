@@ -96,16 +96,23 @@ int main(int argc, char **argv) {
 
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
-	level_read_json(level, vulkan, "assets\\levels\\level_save.json", [](nlohmann::json &json){}, false);
+	level_read_json(level, vulkan, "assets\\levels\\level_save_2.json", [](nlohmann::json &json){}, false);
 	game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
 
 	btDiscreteDynamicsWorld *bt_world = nullptr;
 	{
-		auto *bt_collision_config = new btDefaultCollisionConfiguration();
-		auto *bt_dispatcher = new btCollisionDispatcher(bt_collision_config);
-		auto *bt_overlapping_pair_cache = new btDbvtBroadphase();
-		auto *bt_solver = new btSequentialImpulseConstraintSolver();
-		bt_world = new btDiscreteDynamicsWorld(bt_dispatcher, bt_overlapping_pair_cache, bt_solver, bt_collision_config);
+		auto *bt_collision_config = allocate_memory<btDefaultCollisionConfiguration>(&general_memory_arena, 1);
+		auto *bt_dispatcher = allocate_memory<btCollisionDispatcher>(&general_memory_arena, 1);
+		auto *bt_overlapping_pair_cache = allocate_memory<btDbvtBroadphase>(&general_memory_arena, 1);
+		auto *bt_solver = allocate_memory<btSequentialImpulseConstraintSolver>(&general_memory_arena, 1);
+		bt_world = allocate_memory<btDiscreteDynamicsWorld>(&general_memory_arena, 1);
+
+		new(bt_collision_config) btDefaultCollisionConfiguration();
+		new(bt_dispatcher) btCollisionDispatcher(bt_collision_config);
+		new(bt_overlapping_pair_cache) btDbvtBroadphase();
+		new(bt_solver) btSequentialImpulseConstraintSolver();
+		new(bt_world) btDiscreteDynamicsWorld(bt_dispatcher, bt_overlapping_pair_cache, bt_solver, bt_collision_config);
+
 		bt_world->setGravity({0, -9, 0});
 
 		for (uint32 i = 0; i < level->collision_component_count; i += 1) {
@@ -231,7 +238,7 @@ int main(int argc, char **argv) {
 		{ // player movement
 			entity_physics_component *physics_component = entity_get_physics_component(level, level->player_entity_index);
 			btVector3 linear_velocity = physics_component->bt_rigid_body->getLinearVelocity();
-			bool falling = fabsf(linear_velocity.y()) > 0.0001f;
+			bool falling = fabsf(linear_velocity.y()) > 0.1f;
 
 			vec3 camera_vec = vec3_normalize(vec3{game->player_camera.view.x, 0, game->player_camera.view.z});
 			vec3 move_vec = {0, 0, 0};
@@ -258,7 +265,7 @@ int main(int argc, char **argv) {
 				}
 			}
 			if (!falling && ImGui::IsKeyPressed(' ')) {
-				physics_component->bt_rigid_body->setLinearVelocity(linear_velocity + btVector3(0, 5, 0));
+				physics_component->bt_rigid_body->setLinearVelocity(linear_velocity + btVector3(0, 10, 0));
 			}
 		}
 		{ // physics simulation

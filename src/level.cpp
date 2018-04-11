@@ -133,6 +133,7 @@ static_assert(sizeof(struct terrain_vertex) == 20, "");
 struct terrain {
 	uint32 height_map_descriptor_index;
 	uint32 diffuse_map_descriptor_index;
+	uint8 *height_map_data;
 	btHeightfieldTerrainShape *bt_terrain_shape;
 	char gpk_file[128];
 };
@@ -378,8 +379,6 @@ void initialize_level(level *level, vulkan *vulkan) {
 		level->terrain_count = 0;
 		level->terrain_capacity = 16;
 		level->terrains = allocate_memory<struct terrain>(&level->assets_memory_arena, level->terrain_capacity);
-	}
-	{ // font
 	}
 	{ // vertices
 		level->persistant_data.bound_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, bound_vertices, sizeof(bound_vertices), 12u);
@@ -1039,7 +1038,11 @@ void level_add_terrain(level *level, vulkan *vulkan, const char *gpk_file) {
 	}
 	{
 		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
-		terrain->bt_terrain_shape = new btHeightfieldTerrainShape(level_terrain_resolution, level_terrain_resolution, height_map_ptr, terrain_height_map_scale, -terrain_height_map_scale, terrain_height_map_scale, 1, PHY_SHORT, false);
+		terrain->height_map_data = allocate_memory<uint8>(&level->assets_memory_arena, gpk_terrain->height_map_size);
+		memcpy(terrain->height_map_data, height_map_ptr, gpk_terrain->height_map_size);
+		terrain->bt_terrain_shape = new btHeightfieldTerrainShape(level_terrain_resolution, level_terrain_resolution, terrain->height_map_data, terrain_height_map_scale / (float)INT16_MAX, -terrain_height_map_scale, terrain_height_map_scale, 1, PHY_SHORT, false);
+		float scaling = level_terrain_size / level_terrain_resolution;
+		terrain->bt_terrain_shape->setLocalScaling(btVector3(scaling, 1, scaling));
 	}
 }
 
