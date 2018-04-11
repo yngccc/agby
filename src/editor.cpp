@@ -328,9 +328,9 @@ int main(int argc, char **argv) {
 	uint64 last_frame_time_microsec = 0;
 	double last_frame_time_sec = 0;
 
-	uint64 entity_components_memory_arena_size = 0;
-	uint64 main_thread_frame_memory_arena_size = 0;
-	uint64 render_thread_frame_memory_arena_size = 0;
+	uint64 level_entity_memory_arena_size = 0;
+	uint64 level_frame_memory_arena_size = 0;
+	uint64 vulkan_frame_memory_arena_size = 0;
 	uint64 vulkan_uniform_region_size = 0;
 	uint64 vulkan_dynamic_vertex_region_size = 0;
 
@@ -688,7 +688,7 @@ int main(int argc, char **argv) {
 									}
 								}
 								if (!error_popup.error) {
-									entity_addition *entity_addition = allocate_memory<struct entity_addition>(&level->main_thread_frame_memory_arena, 1);
+									entity_addition *entity_addition = allocate_memory<struct entity_addition>(&level->frame_memory_arena, 1);
 									array_copy(entity_addition->info.name, entity_name);
 									entity_addition->transform = transform_identity();
 									list_prepend(&level->entity_addition, entity_addition);
@@ -709,7 +709,7 @@ int main(int argc, char **argv) {
 					ImGui::PushID("basic_properties");
 					if (ImGui::CollapsingHeader("Basic Properties"), ImGuiTreeNodeFlags_DefaultOpen) {
 						transform *old_transform = &level->entity_transforms[editor->entity_index];
-						transform *transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
+						transform *transform = allocate_memory<struct transform>(&level->frame_memory_arena, 1);
 						memcpy(transform, old_transform, sizeof(struct transform));
 						ImGui::InputFloat3("translate##transform_translate_field", transform->translate.e, 3);
 						ImGui::InputFloat4("rotate##transform_rotate_field", transform->rotate.e, 3);
@@ -729,7 +729,7 @@ int main(int argc, char **argv) {
 					ImGui::PushID("render_component");
 					if (ImGui::CollapsingHeader("Render Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_render_component *old_render_component = entity_get_render_component(level, editor->entity_index);
-						entity_render_component *render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_render_component *render_component = allocate_memory<struct entity_render_component>(&level->frame_memory_arena, 1);
 						memcpy(render_component, old_render_component, sizeof(struct entity_render_component));
 						const char *model_file_combo_name = (render_component->model_index < level->model_count) ? level->models[render_component->model_index].gpk_file : nullptr;
 						if (ImGui::BeginCombo("models##models_combo", model_file_combo_name)) {
@@ -764,7 +764,7 @@ int main(int argc, char **argv) {
 					ImGui::PushID("collision_component");
 					if (ImGui::CollapsingHeader("Collision Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
-						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->frame_memory_arena, 1);
 						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
 						if (collision_component->shape == collision_shape_sphere) {
 							auto *sphere = &collision_component->sphere;
@@ -827,7 +827,7 @@ int main(int argc, char **argv) {
 					ImGui::PushID("physics_component");
 					if (ImGui::CollapsingHeader("Physics Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_physics_component *old_physics_component = entity_get_physics_component(level, editor->entity_index);
-						entity_physics_component *physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_physics_component *physics_component = allocate_memory<struct entity_physics_component>(&level->frame_memory_arena, 1);
 						memcpy(physics_component, old_physics_component, sizeof(struct entity_physics_component));
 						ImGui::InputFloat3("velocity##velocity_field", physics_component->velocity.e);
 						ImGui::InputFloat("mass##mass_field", &physics_component->mass);
@@ -845,7 +845,7 @@ int main(int argc, char **argv) {
 					ImGui::PushID("light_component");
 					if (ImGui::CollapsingHeader("Light Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_light_component *old_light_component = entity_get_light_component(level, editor->entity_index);
-						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->frame_memory_arena, 1);
 						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
 						if (light_component->light_type == light_type_ambient) {
 							ImGui::ColorEdit3("color##ambient_light_color", light_component->ambient_light.color.e);
@@ -874,7 +874,7 @@ int main(int argc, char **argv) {
 					ImGui::PushID("terrain_component");
 					if (ImGui::CollapsingHeader("Terrain Component"), ImGuiTreeNodeFlags_DefaultOpen) {
 						entity_terrain_component *old_terrain_component = entity_get_terrain_component(level, editor->entity_index);
-						entity_terrain_component *terrain_component = allocate_memory<struct entity_terrain_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_terrain_component *terrain_component = allocate_memory<struct entity_terrain_component>(&level->frame_memory_arena, 1);
 						memcpy(terrain_component, old_terrain_component, sizeof(struct entity_terrain_component));
 						const char *terrain_file_combo_name = (terrain_component->terrain_index < level->terrain_count) ? level->terrains[terrain_component->terrain_index].gpk_file : nullptr;
 						if (ImGui::BeginCombo("terrains##terrains_combo", terrain_file_combo_name)) {
@@ -936,21 +936,21 @@ int main(int argc, char **argv) {
 						}
 						else {
 							if (component_type_index == 0) {
-								entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->frame_memory_arena, 1);
 								new_render_component->model_index = UINT32_MAX;
 								new_render_component->adjustment_transform = transform_identity();
 								level->entity_modifications[editor->entity_index].render_component = new_render_component;
 							}
 							else if (component_type_index == 1) {
-								entity_collision_component *new_collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_collision_component *new_collision_component = allocate_memory<struct entity_collision_component>(&level->frame_memory_arena, 1);
 								level->entity_modifications[editor->entity_index].collision_component = new_collision_component;
 							}
 							else if (component_type_index == 2) {
-								entity_physics_component *new_physics_component = allocate_memory<struct entity_physics_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_physics_component *new_physics_component = allocate_memory<struct entity_physics_component>(&level->frame_memory_arena, 1);
 								level->entity_modifications[editor->entity_index].physics_component = new_physics_component;
 							}
 							else if (component_type_index == 3) {
-								entity_light_component *new_light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_light_component *new_light_component = allocate_memory<struct entity_light_component>(&level->frame_memory_arena, 1);
 								if (light_type_index == 0) {
 									new_light_component->light_type = {light_type_ambient};
 									new_light_component->ambient_light = ambient_light{{0.1f, 0.1f, 0.1f}};
@@ -965,7 +965,7 @@ int main(int argc, char **argv) {
 								}
 								level->entity_modifications[editor->entity_index].light_component = new_light_component;
 							} else if (component_type_index == 4) {
-								entity_terrain_component *new_terrain_component = allocate_memory<struct entity_terrain_component>(&level->main_thread_frame_memory_arena, 1);
+								entity_terrain_component *new_terrain_component = allocate_memory<struct entity_terrain_component>(&level->frame_memory_arena, 1);
 								new_terrain_component->terrain_index = UINT32_MAX;
 								level->entity_modifications[editor->entity_index].terrain_component = new_terrain_component;
 							}
@@ -994,7 +994,7 @@ int main(int argc, char **argv) {
 							}
 						}
 						if (!error_popup.error) {
-							entity_info *new_entity_info = allocate_memory<struct entity_info>(&level->main_thread_frame_memory_arena, 1);
+							entity_info *new_entity_info = allocate_memory<struct entity_info>(&level->frame_memory_arena, 1);
 							array_copy(new_entity_info->name, name_buf);
 							array_set(name_buf, '\0');
 							level->entity_modifications[editor->entity_index].info = new_entity_info;
@@ -1136,11 +1136,10 @@ int main(int argc, char **argv) {
 					ImGui::Text(memory_name);
 				};
 				ImGui::Text("Memory Arenas");
-				memory_arena *entity_components_memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
-				imgui_render_memory(entity_components_memory_arena_size, entity_components_memory_arena->capacity, "Entity Component");
-				imgui_render_memory(level->assets_memory_arena.size, level->assets_memory_arena.capacity, "Assets");
-				imgui_render_memory(main_thread_frame_memory_arena_size, level->main_thread_frame_memory_arena.capacity, "Main Thread Frame");
-				imgui_render_memory(render_thread_frame_memory_arena_size, level->render_thread_frame_memory_arena.capacity, "Render Thread Frame");
+				imgui_render_memory(level_entity_memory_arena_size, level->entity_memory_arenas[0].capacity, "Level Entity");
+				imgui_render_memory(level->assets_memory_arena.size, level->assets_memory_arena.capacity, "Level Assets");
+				imgui_render_memory(level_frame_memory_arena_size, level->frame_memory_arena.capacity, "Level Frame");
+				imgui_render_memory(vulkan_frame_memory_arena_size, vulkan->frame_memory_arena.capacity, "Vulkan Frame");
 				ImGui::Text("Vulkan Memories");
 				imgui_render_memory(vulkan->memory_regions.image_region_size, vulkan->memory_regions.image_region_capacity, "Image Region");
 				imgui_render_memory(vulkan->memory_regions.vertex_region_size, vulkan->memory_regions.vertex_region_capacity, "Vertex Region");
@@ -1165,7 +1164,7 @@ int main(int argc, char **argv) {
 					}
 					mat4 transform_mat = mat4_from_translate(entity_transform.translate + adjustment_transform.translate);
 					if (editor->transform_mode == transform_mode_entity) {
-						transform *new_entity_transform = allocate_memory<struct transform>(&level->main_thread_frame_memory_arena, 1);
+						transform *new_entity_transform = allocate_memory<struct transform>(&level->frame_memory_arena, 1);
 						*new_entity_transform = entity_transform;
 						ImGuizmo::BeginFrame();
 						if (imguizmo_op == ImGuizmo::TRANSLATE) {
@@ -1187,7 +1186,7 @@ int main(int argc, char **argv) {
 						}
 					}
 					else if (editor->transform_mode == transform_mode_render_adjustment && render_component) {
-						entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->frame_memory_arena, 1);
 						*new_render_component = *render_component;
 						ImGuizmo::BeginFrame();
 						if (imguizmo_op == ImGuizmo::TRANSLATE) {
@@ -1221,7 +1220,7 @@ int main(int argc, char **argv) {
 				else if (editor->gizmo_mode == gizmo_mode_directional_light_rotate && entity_flags & entity_component_flag_light) {
 					entity_light_component *old_light_component = entity_get_light_component(level, editor->entity_index);
 					if (old_light_component->light_type == light_type_directional) {
-						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->frame_memory_arena, 1);
 						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
 						transform transform = transform_identity();
 						transform.translate = editor->camera.position + editor->camera.view * 16;
@@ -1255,7 +1254,7 @@ int main(int argc, char **argv) {
 				else if (editor->gizmo_mode == gizmo_mode_point_light_translate && entity_flags & entity_component_flag_light) {
 					entity_light_component *old_light_component = entity_get_light_component(level, editor->entity_index);
 					if (old_light_component->light_type == light_type_point) {
-						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_light_component *light_component = allocate_memory<struct entity_light_component>(&level->frame_memory_arena, 1);
 						memcpy(light_component, old_light_component, sizeof(struct entity_light_component));
 						transform transform = transform_identity();
 						transform.translate = light_component->point_light.position;
@@ -1271,7 +1270,7 @@ int main(int argc, char **argv) {
 				else if (editor->gizmo_mode == gizmo_mode_collision_sphere_scale && entity_flags & entity_component_flag_collision) {
 					entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (old_collision_component->shape == collision_shape_sphere) {
-						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->frame_memory_arena, 1);
 						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
 
 						auto *sphere = &collision_component->sphere;
@@ -1294,7 +1293,7 @@ int main(int argc, char **argv) {
 				else if (editor->gizmo_mode == gizmo_mode_collision_box_scale && entity_flags & entity_component_flag_collision) {
 					entity_collision_component *old_collision_component = entity_get_collision_component(level, editor->entity_index);
 					if (old_collision_component->shape == collision_shape_box) {
-						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->main_thread_frame_memory_arena, 1);
+						entity_collision_component *collision_component = allocate_memory<struct entity_collision_component>(&level->frame_memory_arena, 1);
 						memcpy(collision_component, old_collision_component, sizeof(struct entity_collision_component));
 						auto *box = &collision_component->box;
 						mat4 transform_mat = mat4_from_translate(level->entity_transforms[editor->entity_index].translate);
@@ -1419,7 +1418,7 @@ int main(int argc, char **argv) {
 				entity_collision_component *entity_collision_component = entity_get_collision_component(level, editor->entity_index);
 				if (entity_collision_component->shape == collision_shape_sphere) {
 					editor->render_data.collision_sphere_count = 1;
-					editor->render_data.collision_spheres = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_sphere_count);
+					editor->render_data.collision_spheres = allocate_memory<collision_shape_render_data>(&level->frame_memory_arena, editor->render_data.collision_sphere_count);
 
 					auto sphere = entity_collision_component->sphere;
 					transform transform = level->entity_transforms[editor->entity_index];
@@ -1428,7 +1427,7 @@ int main(int argc, char **argv) {
 				}
 				if (entity_collision_component->shape == collision_shape_capsule) {
 					editor->render_data.collision_capsule_count = 1;
-					editor->render_data.collision_capsules = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_capsule_count);
+					editor->render_data.collision_capsules = allocate_memory<collision_shape_render_data>(&level->frame_memory_arena, editor->render_data.collision_capsule_count);
 
 					transform transform = level->entity_transforms[editor->entity_index];
 					capsule capsule = {};
@@ -1449,7 +1448,7 @@ int main(int argc, char **argv) {
 				}
 				if (entity_collision_component->shape == collision_shape_box) {
 					editor->render_data.collision_bound_count = 1;
-					editor->render_data.collision_bounds = allocate_memory<collision_shape_render_data>(&level->main_thread_frame_memory_arena, editor->render_data.collision_bound_count);
+					editor->render_data.collision_bounds = allocate_memory<collision_shape_render_data>(&level->frame_memory_arena, editor->render_data.collision_bound_count);
 
 					transform transform = level->entity_transforms[editor->entity_index];
 					auto box = entity_collision_component->box;
@@ -1561,13 +1560,13 @@ int main(int argc, char **argv) {
 			}
 		}
 
-		entity_components_memory_arena_size = level->entity_components_memory_arenas[level->entity_components_memory_arena_index].size;
+		level_entity_memory_arena_size = level->entity_memory_arenas[level->entity_memory_arena_index].size;
 		level_update_entity_components(level);
 
-		main_thread_frame_memory_arena_size = level->main_thread_frame_memory_arena.size;
-		render_thread_frame_memory_arena_size = level->render_thread_frame_memory_arena.size;
-		level->main_thread_frame_memory_arena.size = 0;
-		level->render_thread_frame_memory_arena.size = 0;
+		level_frame_memory_arena_size = level->frame_memory_arena.size;
+		vulkan_frame_memory_arena_size = vulkan->frame_memory_arena.size;
+		level->frame_memory_arena.size = 0;
+		vulkan->frame_memory_arena.size = 0;
 	
 		QueryPerformanceCounter(&performance_counters[1]);
 		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;

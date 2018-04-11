@@ -284,6 +284,8 @@ struct vulkan {
 
 	uint32 frame_index;
 	uint32 swap_chain_image_index;
+
+	memory_arena frame_memory_arena;
 };
 
 #define m_vk_assert(vk_call) { VkResult result = vk_call; if (result != VK_SUCCESS) { fatal("Vulkan API Error:\n\nCode: %s\nError: %s\nFile: %s\nLine: %d", #vk_call, vk_result_to_str(result), __FILE__, __LINE__); } }
@@ -341,22 +343,12 @@ VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectT
 	return VK_FALSE;
 };
 
-void initialize_vulkan_device(vulkan_device *vulkan_device) {
+void initialize_vulkan_device(vulkan *vulkan) {
 	bool enable_validation_layer = true;
 	bool enable_renderdoc_layer = false;
 	bool enable_nsight_layer = false;
 
-	struct memory_arena memory_arena = {};
-	string info_str = {};
-	memory_arena.capacity = m_megabytes(1);
-	memory_arena.memory = allocate_virtual_memory(memory_arena.capacity);
-	m_assert(memory_arena.memory);
-	info_str.capacity = memory_arena.capacity / 2;
-	info_str.buf = allocate_memory<char>(&memory_arena, info_str.capacity);
-	m_scope_exit(
-		printf("%s\n", info_str.buf);
-		free_virtual_memory(memory_arena.memory);
-	);
+	m_memory_arena_undo_allocations_at_scope_exit(&vulkan->frame_memory_arena);
 	{ // dynamic load vulkan DLL
 		HMODULE vulkan_1_dll = LoadLibraryA("vulkan-1.dll");
 		m_assert(vulkan_1_dll);
@@ -367,22 +359,22 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 	{ // query/enable layers/extensions, create instance
 		uint32 layer_count = 0;
 		m_vk_assert(vkEnumerateInstanceLayerProperties(&layer_count, nullptr));
-		VkLayerProperties *layer_properties = allocate_memory<VkLayerProperties>(&memory_arena, layer_count);
+		VkLayerProperties *layer_properties = allocate_memory<VkLayerProperties>(&vulkan->frame_memory_arena, layer_count);
 		m_vk_assert(vkEnumerateInstanceLayerProperties(&layer_count, layer_properties));
-		string_catf(&info_str, "Instance Layers:\n");
+		printf("Instance Layers:\n");
 		for (uint32 i = 0; i < layer_count; i += 1) {
-			string_catf(&info_str, "  %s\n", layer_properties[i].layerName);
+			printf("  %s\n", layer_properties[i].layerName);
 		}
-		string_catf(&info_str, "\n");
+		printf("\n");
 		uint32 extension_count = 0;
 		m_vk_assert(vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr));
-		VkExtensionProperties *extension_properties = allocate_memory<VkExtensionProperties>(&memory_arena, extension_count);
+		VkExtensionProperties *extension_properties = allocate_memory<VkExtensionProperties>(&vulkan->frame_memory_arena, extension_count);
 		m_vk_assert(vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extension_properties));
-		string_catf(&info_str, "Instance Extensions:\n");
+		printf("Instance Extensions:\n");
 		for (uint32 i = 0; i < extension_count; i += 1) {
-			string_catf(&info_str, "  %s\n", extension_properties[i].extensionName);
+			printf("  %s\n", extension_properties[i].extensionName);
 		}
-		string_catf(&info_str, "\n");
+		printf("\n");
 
 		const char *enabled_layers[16] = {};
 		uint32 enabled_layer_count = 0;
@@ -413,48 +405,48 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		instance_info.ppEnabledLayerNames = enabled_layers;
 		instance_info.enabledExtensionCount = enabled_extension_count;
 		instance_info.ppEnabledExtensionNames = enabled_extensions;
-		m_vk_assert(vkCreateInstance(&instance_info, nullptr, &vulkan_device->instance));
+		m_vk_assert(vkCreateInstance(&instance_info, nullptr, &vulkan->device.instance));
 
-		#define m_x(shape, name) name = (shape)vkGetInstanceProcAddr(vulkan_device->instance, #name); m_assert(name);
+		#define m_x(shape, name) name = (shape)vkGetInstanceProcAddr(vulkan->device.instance, #name); m_assert(name);
 		m_vulkan_instance_procs
 		#undef m_x
 
 		for (uint32 i = 0; i < enabled_extension_count; i += 1) {
 			if (!strcmp(enabled_extensions[i], "VK_EXT_debug_report")) {
-				PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(vulkan_device->instance, "vkCreateDebugReportCallbackEXT");
+				PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(vulkan->device.instance, "vkCreateDebugReportCallbackEXT");
 				if (vkCreateDebugReportCallbackEXT) {
 					VkDebugReportCallbackCreateInfoEXT debug_callback_info = {VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT};
 					debug_callback_info.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
 					debug_callback_info.pfnCallback = vulkan_debug_callback;
 					VkDebugReportCallbackEXT debug_callback = {};
-					m_vk_assert(vkCreateDebugReportCallbackEXT(vulkan_device->instance, &debug_callback_info, nullptr, &debug_callback));
+					m_vk_assert(vkCreateDebugReportCallbackEXT(vulkan->device.instance, &debug_callback_info, nullptr, &debug_callback));
 				}
 				break;
 			}
 		}
-		string_catf(&info_str, "Enabled Layers: ");
+		printf("Enabled Layers: ");
 		for (uint32 i = 0; i < enabled_layer_count; i += 1) {
-			string_catf(&info_str, "\"%s\" ", enabled_layers[i]);
+			printf("\"%s\" ", enabled_layers[i]);
 		}
-		string_catf(&info_str, "\nEnabled Extensions: ");
+		printf("\nEnabled Extensions: ");
 		for (uint32 i = 0; i < enabled_extension_count; i += 1) {
-			string_catf(&info_str, "\"%s\" ", enabled_extensions[i]);
+			printf("\"%s\" ", enabled_extensions[i]);
 		}
-		string_catf(&info_str, "\n\n");
+		printf("\n\n");
 	}
 	{ // create physical device
 		uint32 physical_device_count = 0;
-		m_vk_assert(vkEnumeratePhysicalDevices(vulkan_device->instance, &physical_device_count, nullptr));
-		VkPhysicalDevice *physical_devices = allocate_memory<VkPhysicalDevice>(&memory_arena, physical_device_count);
-		m_vk_assert(vkEnumeratePhysicalDevices(vulkan_device->instance, &physical_device_count, physical_devices));
+		m_vk_assert(vkEnumeratePhysicalDevices(vulkan->device.instance, &physical_device_count, nullptr));
+		VkPhysicalDevice *physical_devices = allocate_memory<VkPhysicalDevice>(&vulkan->frame_memory_arena, physical_device_count);
+		m_vk_assert(vkEnumeratePhysicalDevices(vulkan->device.instance, &physical_device_count, physical_devices));
 		VkPhysicalDeviceProperties physical_device_properties = {};
 		VkPhysicalDeviceFeatures physical_device_features = {};
-		string_catf(&info_str, "Physical Devices: ");
+		printf("Physical Devices: ");
 		for (uint32 i = 0; i < physical_device_count; i += 1) {
 			vkGetPhysicalDeviceProperties(physical_devices[i], &physical_device_properties);
-			string_catf(&info_str, "\"%s\" ", physical_device_properties.deviceName);
+			printf("\"%s\" ", physical_device_properties.deviceName);
 		}
-		string_catf(&info_str, "\n");
+		printf("\n");
 		for (uint32 i = 0; i < physical_device_count; i += 1) {
 			VkPhysicalDevice physical_device = physical_devices[i];
 			vkGetPhysicalDeviceProperties(physical_device, &physical_device_properties);
@@ -463,7 +455,7 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 			}
 			uint32 physical_device_extensions_count = 0;
 			m_vk_assert(vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &physical_device_extensions_count, nullptr));
-			VkExtensionProperties *physical_device_extensions = allocate_memory<VkExtensionProperties>(&memory_arena, physical_device_extensions_count);
+			VkExtensionProperties *physical_device_extensions = allocate_memory<VkExtensionProperties>(&vulkan->frame_memory_arena, physical_device_extensions_count);
 			m_vk_assert(vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &physical_device_extensions_count, physical_device_extensions));
 			VkBool32 support_swap_chain_extension = VK_FALSE;
 			for (uint32 i = 0; i < physical_device_extensions_count; i += 1) {
@@ -480,77 +472,77 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 				  physical_device_features.fillModeNonSolid &&
 				  physical_device_features.shaderUniformBufferArrayDynamicIndexing &&
 				  physical_device_features.shaderSampledImageArrayDynamicIndexing) {
-				string_catf(&info_str, "Using Physical Device: %s\n", physical_device_properties.deviceName);
-				string_catf(&info_str, "\nPhysical Device Extensions:\n");
+				printf("Using Physical Device: %s\n", physical_device_properties.deviceName);
+				printf("\nPhysical Device Extensions:\n");
 				for (uint32 i = 0; i < physical_device_extensions_count; i += 1) {
-					string_catf(&info_str, "  %s\n", physical_device_extensions[i].extensionName);
+					printf("  %s\n", physical_device_extensions[i].extensionName);
 				}
-				string_catf(&info_str, "\nAPI Version: %d.%d.%d\n", VK_VERSION_MAJOR(physical_device_properties.apiVersion), VK_VERSION_MINOR(physical_device_properties.apiVersion), VK_VERSION_PATCH(physical_device_properties.apiVersion));
-				string_catf(&info_str, "Driver Version: %d.%d.%d\n", VK_VERSION_MAJOR(physical_device_properties.driverVersion), VK_VERSION_MINOR(physical_device_properties.driverVersion), VK_VERSION_PATCH(physical_device_properties.driverVersion));
-				vulkan_device->physical_device = physical_device;
-				vulkan_device->physical_device_properties = physical_device_properties;
-				vkGetPhysicalDeviceMemoryProperties(physical_device, &vulkan_device->physical_device_memory_properties);
+				printf("\nAPI Version: %d.%d.%d\n", VK_VERSION_MAJOR(physical_device_properties.apiVersion), VK_VERSION_MINOR(physical_device_properties.apiVersion), VK_VERSION_PATCH(physical_device_properties.apiVersion));
+				printf("Driver Version: %d.%d.%d\n", VK_VERSION_MAJOR(physical_device_properties.driverVersion), VK_VERSION_MINOR(physical_device_properties.driverVersion), VK_VERSION_PATCH(physical_device_properties.driverVersion));
+				vulkan->device.physical_device = physical_device;
+				vulkan->device.physical_device_properties = physical_device_properties;
+				vkGetPhysicalDeviceMemoryProperties(physical_device, &vulkan->device.physical_device_memory_properties);
 				break;
 			}
 		}
-		m_assert(vulkan_device->physical_device);
+		m_assert(vulkan->device.physical_device);
 	}
 	{ // create device, graphic/compute/transfer queues
 		uint32 queue_family_count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(vulkan_device->physical_device, &queue_family_count, nullptr);
-		VkQueueFamilyProperties *queue_family_properties = allocate_memory<VkQueueFamilyProperties>(&memory_arena, queue_family_count);
-		vkGetPhysicalDeviceQueueFamilyProperties(vulkan_device->physical_device, &queue_family_count, queue_family_properties);
+		vkGetPhysicalDeviceQueueFamilyProperties(vulkan->device.physical_device, &queue_family_count, nullptr);
+		VkQueueFamilyProperties *queue_family_properties = allocate_memory<VkQueueFamilyProperties>(&vulkan->frame_memory_arena, queue_family_count);
+		vkGetPhysicalDeviceQueueFamilyProperties(vulkan->device.physical_device, &queue_family_count, queue_family_properties);
 		for (uint32 i = 0; i < queue_family_count; i += 1) {
-			string_catf(&info_str, "Queue familiy %d properties: %d queues, ", i, queue_family_properties[i].queueCount);
+			printf("Queue familiy %d properties: %d queues, ", i, queue_family_properties[i].queueCount);
 			if (queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-				string_catf(&info_str, "\"graphic\" ");
+				printf("\"graphic\" ");
 			}
 			if (queue_family_properties[i].queueFlags & VK_QUEUE_TRANSFER_BIT) {
-				string_catf(&info_str, "\"transfer\" ");
+				printf("\"transfer\" ");
 			}
 			if (queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
-				string_catf(&info_str, "\"compute\" ");
+				printf("\"compute\" ");
 			}
 			if (queue_family_properties[i].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) {
-				string_catf(&info_str, "\"sparse binding\" ");
+				printf("\"sparse binding\" ");
 			}
-			string_catf(&info_str, "\n");
+			printf("\n");
 		}
-		vulkan_device->graphic_queue_family = UINT32_MAX;
-		vulkan_device->compute_queue_family = UINT32_MAX;
-		vulkan_device->transfer_queue_family = UINT32_MAX;
+		vulkan->device.graphic_queue_family = UINT32_MAX;
+		vulkan->device.compute_queue_family = UINT32_MAX;
+		vulkan->device.transfer_queue_family = UINT32_MAX;
 		for (uint32 i = 0; i < queue_family_count; i += 1) {
 			VkQueueFamilyProperties *properties = &queue_family_properties[i];
 			if (properties->queueFlags & VK_QUEUE_GRAPHICS_BIT && properties->queueCount > 0) {
-				vulkan_device->graphic_queue_family = i;
+				vulkan->device.graphic_queue_family = i;
 				properties->queueCount -= 1;
 			}
 			if (properties->queueFlags & VK_QUEUE_COMPUTE_BIT && properties->queueCount > 0) {
-				vulkan_device->compute_queue_family = i;
+				vulkan->device.compute_queue_family = i;
 				properties->queueCount -= 1;
 			}
 		}
 		for (uint32 i = 0; i < queue_family_count; i += 1) {
 			VkQueueFamilyProperties *properties = &queue_family_properties[i];
 			if (properties->queueFlags == VK_QUEUE_TRANSFER_BIT && properties->queueCount > 0) {
-				vulkan_device->transfer_queue_family = i;
+				vulkan->device.transfer_queue_family = i;
 				properties->queueCount -= 1;
 				break;
 			}
 		}
-		if (vulkan_device->transfer_queue_family == UINT32_MAX) {
+		if (vulkan->device.transfer_queue_family == UINT32_MAX) {
 			for (uint32 i = 0; i < queue_family_count; i += 1) {
 				VkQueueFamilyProperties *properties = &queue_family_properties[i];
 				if (properties->queueFlags & VK_QUEUE_TRANSFER_BIT && properties->queueCount > 0) {
-					vulkan_device->transfer_queue_family = i;
+					vulkan->device.transfer_queue_family = i;
 					properties->queueCount -= 1;
 					break;
 				}
 			}
 		}
-		m_assert(vulkan_device->graphic_queue_family != UINT32_MAX);
-		m_assert(vulkan_device->compute_queue_family != UINT32_MAX);
-		m_assert(vulkan_device->transfer_queue_family != UINT32_MAX);
+		m_assert(vulkan->device.graphic_queue_family != UINT32_MAX);
+		m_assert(vulkan->device.compute_queue_family != UINT32_MAX);
+		m_assert(vulkan->device.transfer_queue_family != UINT32_MAX);
 
 		float queue_priorities[3] = {1, 1, 1};
 		uint32 queue_info_count = 1;
@@ -559,31 +551,31 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		uint32 transfer_queue_index = 0;
 		VkDeviceQueueCreateInfo queue_infos[3] = {};
 		queue_infos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		queue_infos[0].queueFamilyIndex = vulkan_device->graphic_queue_family;
+		queue_infos[0].queueFamilyIndex = vulkan->device.graphic_queue_family;
 		queue_infos[0].queueCount = 1;
 		queue_infos[0].pQueuePriorities = queue_priorities;
-		if (vulkan_device->compute_queue_family == vulkan_device->graphic_queue_family) {
+		if (vulkan->device.compute_queue_family == vulkan->device.graphic_queue_family) {
 			queue_infos[0].queueCount += 1;
 			compute_queue_index = 1;
 		}
 		else {
 			queue_infos[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-			queue_infos[1].queueFamilyIndex = vulkan_device->compute_queue_family;
+			queue_infos[1].queueFamilyIndex = vulkan->device.compute_queue_family;
 			queue_infos[1].queueCount = 1;
 			queue_infos[1].pQueuePriorities = queue_priorities;
 			queue_info_count += 1;
 		}
-		if (vulkan_device->transfer_queue_family == vulkan_device->graphic_queue_family) {
+		if (vulkan->device.transfer_queue_family == vulkan->device.graphic_queue_family) {
 			queue_infos[0].queueCount += 1;
 			transfer_queue_index = compute_queue_index + 1;
 		}
-		else if (vulkan_device->transfer_queue_family == vulkan_device->compute_queue_family) {
+		else if (vulkan->device.transfer_queue_family == vulkan->device.compute_queue_family) {
 			queue_infos[1].queueCount += 1;
 			transfer_queue_index = compute_queue_index + 1;
 		}
 		else {
 			queue_infos[queue_info_count].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-			queue_infos[queue_info_count].queueFamilyIndex = vulkan_device->transfer_queue_family;
+			queue_infos[queue_info_count].queueFamilyIndex = vulkan->device.transfer_queue_family;
 			queue_infos[queue_info_count].queueCount = 1;
 			queue_infos[queue_info_count].pQueuePriorities = queue_priorities;
 			queue_info_count += 1;
@@ -605,13 +597,13 @@ void initialize_vulkan_device(vulkan_device *vulkan_device) {
 		device_info.enabledExtensionCount = m_countof(device_extensions);
 		device_info.ppEnabledExtensionNames = device_extensions;
 		device_info.pEnabledFeatures = &device_features;
-		m_vk_assert(vkCreateDevice(vulkan_device->physical_device, &device_info, nullptr, &vulkan_device->device));
-		#define m_x(shape, name) name = (shape)vkGetDeviceProcAddr(vulkan_device->device, #name); m_assert(name);
+		m_vk_assert(vkCreateDevice(vulkan->device.physical_device, &device_info, nullptr, &vulkan->device.device));
+		#define m_x(shape, name) name = (shape)vkGetDeviceProcAddr(vulkan->device.device, #name); m_assert(name);
 		m_vulkan_device_procs
 		#undef m_x
-		vkGetDeviceQueue(vulkan_device->device, vulkan_device->graphic_queue_family, graphic_queue_index, &vulkan_device->graphic_queue);
-		vkGetDeviceQueue(vulkan_device->device, vulkan_device->compute_queue_family, compute_queue_index, &vulkan_device->compute_queue);
-		vkGetDeviceQueue(vulkan_device->device, vulkan_device->transfer_queue_family, transfer_queue_index, &vulkan_device->transfer_queue);
+		vkGetDeviceQueue(vulkan->device.device, vulkan->device.graphic_queue_family, graphic_queue_index, &vulkan->device.graphic_queue);
+		vkGetDeviceQueue(vulkan->device.device, vulkan->device.compute_queue_family, compute_queue_index, &vulkan->device.compute_queue);
+		vkGetDeviceQueue(vulkan->device.device, vulkan->device.transfer_queue_family, transfer_queue_index, &vulkan->device.transfer_queue);
 	}
 }
 
@@ -661,10 +653,10 @@ void initialize_vulkan_swap_chain(vulkan *vulkan, window window, bool vsync_on) 
 		m_vk_assert(vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->device.physical_device, vulkan->swap_chain.surface, &surface_present_modes_count, nullptr));
 		VkPresentModeKHR *surface_present_modes = allocate_memory<VkPresentModeKHR>(&memory_arena, surface_present_modes_count);
 		m_vk_assert(vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->device.physical_device, vulkan->swap_chain.surface, &surface_present_modes_count, surface_present_modes));
-		string_catf(&info_str, "Swapchain Present Modes: ");
+		printf("Swapchain Present Modes: ");
 		const char *present_mode_strs[4] = {"Immediate", "Mailbox", "FIFO", "FIFO_Relaxed"};
 		for (uint32 i = 0; i < surface_present_modes_count; i += 1) {
-			string_catf(&info_str, "\"%s\" ", present_mode_strs[surface_present_modes[i]]);
+			printf("\"%s\" ", present_mode_strs[surface_present_modes[i]]);
 		}
 		if (vsync_on) {
 			vulkan->swap_chain.present_mode = VK_PRESENT_MODE_FIFO_KHR;
@@ -690,7 +682,7 @@ void initialize_vulkan_swap_chain(vulkan *vulkan, window window, bool vsync_on) 
 				vulkan->swap_chain.present_mode = VK_PRESENT_MODE_FIFO_KHR;
 			}
 		}
-		string_catf(&info_str, "\nUsing: \"%s\"\n", present_mode_strs[vulkan->swap_chain.present_mode]);
+		printf("\nUsing: \"%s\"\n", present_mode_strs[vulkan->swap_chain.present_mode]);
 	}
 	{ // create swap chain, swap chain images
 		VkSwapchainCreateInfoKHR swap_chain_create_info = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
@@ -723,7 +715,7 @@ void initialize_vulkan_swap_chain(vulkan *vulkan, window window, bool vsync_on) 
 		}
 		vulkan->swap_chain.image_width = swap_chain_create_info.imageExtent.width;
 		vulkan->swap_chain.image_height = swap_chain_create_info.imageExtent.height;
-		string_catf(&info_str, "\nSwapchain Image Size: %dx%d\n", vulkan->swap_chain.image_width, vulkan->swap_chain.image_height);
+		printf("\nSwapchain Image Size: %dx%d\n", vulkan->swap_chain.image_width, vulkan->swap_chain.image_height);
 	}
 }
 
@@ -2529,9 +2521,14 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 }
 
 void initialize_vulkan(vulkan *vulkan, const window &window) {
+	vulkan->frame_memory_arena.name = "vulkan frame";
+	vulkan->frame_memory_arena.capacity = m_megabytes(4);
+	vulkan->frame_memory_arena.memory = allocate_virtual_memory(vulkan->frame_memory_arena.capacity);
+	m_assert(vulkan->frame_memory_arena.memory);
+
 	bool vsync_on = false;
 	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
-	initialize_vulkan_device(&vulkan->device);
+	initialize_vulkan_device(vulkan);
 	initialize_vulkan_swap_chain(vulkan, window, vsync_on);
 	initialize_vulkan_memory_regions(vulkan);
 	initialize_vulkan_cmd_buffers(vulkan);

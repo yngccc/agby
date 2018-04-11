@@ -340,11 +340,10 @@ struct level {
 
 	level_render_data render_data;
 
-	memory_arena main_thread_frame_memory_arena;
-	memory_arena render_thread_frame_memory_arena;
-	memory_arena entity_components_memory_arenas[2];
-	uint32 entity_components_memory_arena_index;
 	memory_arena assets_memory_arena;
+	memory_arena frame_memory_arena;
+	memory_arena entity_memory_arenas[2];
+	uint32 entity_memory_arena_index;
 
 	level_persistant_data persistant_data;
 
@@ -353,27 +352,22 @@ struct level {
 
 void initialize_level(level *level, vulkan *vulkan) {
 	{ // memories
-		level->main_thread_frame_memory_arena.name = "main thread frame";
-		level->main_thread_frame_memory_arena.capacity = m_megabytes(4);
-		level->main_thread_frame_memory_arena.memory = allocate_virtual_memory(level->main_thread_frame_memory_arena.capacity);
-		m_assert(level->main_thread_frame_memory_arena.memory);
-
-		level->render_thread_frame_memory_arena.name = "render thread frame";
-		level->render_thread_frame_memory_arena.capacity = m_megabytes(4);
-		level->render_thread_frame_memory_arena.memory = allocate_virtual_memory(level->render_thread_frame_memory_arena.capacity);
-		m_assert(level->render_thread_frame_memory_arena.memory);
-
-		for (uint32 i = 0; i < m_countof(level->entity_components_memory_arenas); i += 1) {
-			level->entity_components_memory_arenas[i].name = "entity_components";
-			level->entity_components_memory_arenas[i].capacity = m_megabytes(4);
-			level->entity_components_memory_arenas[i].memory = allocate_virtual_memory(level->entity_components_memory_arenas[i].capacity);
-			m_assert(level->entity_components_memory_arenas[i].memory);
-		}
-
-		level->assets_memory_arena.name = "assets";
+		level->assets_memory_arena.name = "level assets";
 		level->assets_memory_arena.capacity = m_megabytes(64);
 		level->assets_memory_arena.memory = allocate_virtual_memory(level->assets_memory_arena.capacity);
 		m_assert(level->assets_memory_arena.memory);
+
+		level->frame_memory_arena.name = "level frame";
+		level->frame_memory_arena.capacity = m_megabytes(4);
+		level->frame_memory_arena.memory = allocate_virtual_memory(level->frame_memory_arena.capacity);
+		m_assert(level->frame_memory_arena.memory);
+
+		for (uint32 i = 0; i < m_countof(level->entity_memory_arenas); i += 1) {
+			level->entity_memory_arenas[i].name = "entity_components";
+			level->entity_memory_arenas[i].capacity = m_megabytes(4);
+			level->entity_memory_arenas[i].memory = allocate_virtual_memory(level->entity_memory_arenas[i].capacity);
+			m_assert(level->entity_memory_arenas[i].memory);
+		}
 
 		level->model_count = 0;
 		level->model_capacity = 1024;
@@ -395,8 +389,8 @@ void initialize_level(level *level, vulkan *vulkan) {
 		level->persistant_data.torus_vertex_region_buffer_offset = append_vulkan_vertex_region(vulkan, torus_vertices, sizeof(torus_vertices), 12u);
 
 		uint32 vertices_size = level_terrain_resolution * level_terrain_resolution * 6 * sizeof(struct terrain_vertex);
-		m_memory_arena_undo_allocations_at_scope_exit(&level->main_thread_frame_memory_arena);
-		terrain_vertex *vertices = allocate_memory<terrain_vertex>(&level->main_thread_frame_memory_arena, 128 * 128 * 6);
+		m_memory_arena_undo_allocations_at_scope_exit(&level->frame_memory_arena);
+		terrain_vertex *vertices = allocate_memory<terrain_vertex>(&level->frame_memory_arena, 128 * 128 * 6);
 		const float dp = level_terrain_size / level_terrain_resolution;
 		const float duv = 1.0f / level_terrain_resolution;
 		vec3 position = {-level_terrain_size / 2, 0, -level_terrain_size / 2};
@@ -637,8 +631,8 @@ void level_update_entity_components(level *level) {
 		addition = addition->next;
 	}
 
-	level->entity_components_memory_arena_index = (level->entity_components_memory_arena_index + 1) % 2;
-	memory_arena *entity_components_memory_arena = &level->entity_components_memory_arenas[level->entity_components_memory_arena_index];
+	level->entity_memory_arena_index = (level->entity_memory_arena_index + 1) % 2;
+	memory_arena *entity_components_memory_arena = &level->entity_memory_arenas[level->entity_memory_arena_index];
 	entity_components_memory_arena->size = 0;
 
 	uint32 *new_entity_flags = new_entity_count > 0 ? allocate_memory<uint32>(entity_components_memory_arena, new_entity_count) : nullptr;
@@ -1063,9 +1057,9 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	close_file_mapping(&level_json_file_mapping);
 	{
 		level->render_data = {};
-		level->entity_components_memory_arenas[0].size = 0;
-		level->entity_components_memory_arenas[1].size = 0;
-		level->entity_components_memory_arena_index = 0;
+		level->entity_memory_arenas[0].size = 0;
+		level->entity_memory_arenas[1].size = 0;
+		level->entity_memory_arena_index = 0;
 		level->assets_memory_arena.size = 0;
 		snprintf(level->json_file, sizeof(level->json_file), "%s", level_json_file);
 		level->model_count = 0;
@@ -1119,8 +1113,8 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			}
 		}
 
-		level->entity_components_memory_arena_index = 0;
-		memory_arena *memory_arena = &level->entity_components_memory_arenas[0];
+		level->entity_memory_arena_index = 0;
+		memory_arena *memory_arena = &level->entity_memory_arenas[0];
 		if (level->entity_count > 0) {
 			level->entity_flags = allocate_memory<uint32>(memory_arena, level->entity_count);
 			level->entity_infos = allocate_memory<entity_info>(memory_arena, level->entity_count);
@@ -1597,7 +1591,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 	}
 	{ // models
 		if (level->render_component_count > 0) {
-			level->render_data.models = allocate_memory<struct model_render_data>(&level->render_thread_frame_memory_arena, level->render_component_count);
+			level->render_data.models = allocate_memory<struct model_render_data>(&vulkan->frame_memory_arena, level->render_component_count);
 			level->render_data.model_count = 0;
 			uint32 render_component_index = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
@@ -1618,9 +1612,9 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 				model model = level->models[render_component->model_index];
 				if (render_component->animation_index < model.animation_count) {
 					model_animation *animation = &model.animations[render_component->animation_index];
-					model_node *animated_nodes = allocate_memory<struct model_node>(&level->render_thread_frame_memory_arena, model.node_count);
+					model_node *animated_nodes = allocate_memory<struct model_node>(&vulkan->frame_memory_arena, model.node_count);
 					memcpy(animated_nodes, model.nodes, model.node_count * sizeof(struct model_node));
-					transform *animated_node_transforms = allocate_memory<struct transform>(&level->render_thread_frame_memory_arena, model.node_count);
+					transform *animated_node_transforms = allocate_memory<struct transform>(&vulkan->frame_memory_arena, model.node_count);
 					for (uint32 i = 0; i < model.node_count; i += 1) {
 						animated_node_transforms[i] = animated_nodes[i].local_transform;
 					}
@@ -1678,7 +1672,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 				uint32 joints_uniform_region_buffer_offset = 0;
 				if (model.skin_count > 0) {
 					model_skin *skin = &model.skins[0];
-					mat4 *joint_mats = allocate_memory<mat4>(&level->render_thread_frame_memory_arena, skin->joint_count);
+					mat4 *joint_mats = allocate_memory<mat4>(&vulkan->frame_memory_arena, skin->joint_count);
 					traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
 						for (uint32 i = 0; i < skin->joint_count; i += 1) {
 							if (skin->joints[i].node_index == index) {
@@ -1699,7 +1693,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 						model_render_data->mesh_count += 1;
 					}
 				});
-				model_render_data->meshes = allocate_memory<struct mesh_render_data>(&level->render_thread_frame_memory_arena, model_render_data->mesh_count);
+				model_render_data->meshes = allocate_memory<struct mesh_render_data>(&vulkan->frame_memory_arena, model_render_data->mesh_count);
 				uint32 mesh_render_data_index = 0;
 				traverse_model_scenes_track_global_transform(&model, [&](model_node *node, uint32 index, mat4 global_transform) {
 					if (node->mesh_index < model.mesh_count) {
@@ -1712,7 +1706,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 							mesh_render_data->uniform_region_buffer_offset = append_vulkan_uniform_region(vulkan, &global_transform, sizeof(global_transform));
 						}
 						model_mesh *mesh = &model.meshes[node->mesh_index];
-						mesh_render_data->primitives = allocate_memory<struct primitive_render_data>(&level->render_thread_frame_memory_arena, mesh->primitive_count);
+						mesh_render_data->primitives = allocate_memory<struct primitive_render_data>(&vulkan->frame_memory_arena, mesh->primitive_count);
 						for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
 							primitive_render_data *primitive_render_data = &mesh_render_data->primitives[i];
 							primitive_render_data->primitive_index = i;
@@ -1736,7 +1730,7 @@ void level_generate_render_data(level *level, vulkan *vulkan, camera camera, F g
 	}
 	{ // terrains
 		if (level->terrain_component_count > 0) {
-			level->render_data.terrains = allocate_memory<struct terrain_render_data>(&level->render_thread_frame_memory_arena, level->terrain_component_count);
+			level->render_data.terrains = allocate_memory<struct terrain_render_data>(&vulkan->frame_memory_arena, level->terrain_component_count);
 			level->render_data.terrain_count = 0;
 			uint32 terrain_component_index = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
