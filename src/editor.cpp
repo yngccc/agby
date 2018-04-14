@@ -112,6 +112,8 @@ struct editor {
 	float menu_bar_height;
 	ImVec2 entity_window_pos;
 	ImVec2 entity_window_size;
+	ImVec2 model_window_pos;
+	ImVec2 model_window_size;
 	ImVec2 skybox_window_pos;
 	ImVec2 skybox_window_size;
 	ImVec2 terrain_window_pos;
@@ -129,6 +131,8 @@ struct editor {
 	gizmo_mode gizmo_mode;
 	
 	uint32 entity_index;
+	uint32 model_index;
+	uint32 terrain_index;
 
 	terrain_edit terrain_in_edit[16];
 	uint32 terrain_in_edit_count;
@@ -288,7 +292,7 @@ void save_terrain_in_edit(editor *editor, level *level) {
 
 bool save_editor_changes(editor *editor, level *level) {
 	if (!strcmp(level->json_file, "")) {
-		char json_file[256] = "assets\\levels\\level_save.json";
+		char json_file[256] = "assets/levels/level_save.json";
 		if (!open_file_dialog(json_file, sizeof(json_file))) {
 			return false;
 		}
@@ -1016,10 +1020,30 @@ int main(int argc, char **argv) {
 			ImGui::End();
 			ImGui::PopID();
 		}
-		{ // skyboxes window
+		{ // model window
 			ImGui::SetNextWindowPos(ImVec2{0, editor->entity_window_pos.y + editor->entity_window_size.y});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.2f});
-			ImGui::PushID("skyboxes_window");
+			ImGui::PushID("model_window");
+			if (ImGui::Begin("Models##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
+				editor->model_window_pos = ImGui::GetWindowPos();
+				editor->model_window_size = ImGui::GetWindowSize();
+				const char *model_combo_name = (editor->model_index < level->model_count) ? level->models[editor->model_index].gpk_file : nullptr;
+				if (ImGui::BeginCombo("models##model_combo", model_combo_name)) {
+					for (uint32 i = 0; i < level->model_count; i += 1) {
+						if (ImGui::Selectable(level->models[i].gpk_file, editor->model_index == i)) {
+							editor->model_index = i;
+						}
+					}
+					ImGui::EndCombo();
+				}
+			}
+			ImGui::End();
+			ImGui::PopID();
+		}
+		{ // skybox window
+			ImGui::SetNextWindowPos(ImVec2{0, editor->model_window_pos.y + editor->model_window_size.y});
+			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.2f});
+			ImGui::PushID("skybox_window");
 			if (ImGui::Begin("Skyboxes##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->skybox_window_pos = ImGui::GetWindowPos();
 				editor->skybox_window_size = ImGui::GetWindowSize();
@@ -1036,27 +1060,26 @@ int main(int argc, char **argv) {
 			ImGui::End();
 			ImGui::PopID();
 		}
-		{ // terrains window
+		{ // terrain window
 			ImGui::SetNextWindowPos(ImVec2{0, editor->skybox_window_pos.y + editor->skybox_window_size.y});
 			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.4f});
-			ImGui::PushID("terrains_window");
+			ImGui::PushID("terrain_window");
 			if (ImGui::Begin("Terrains##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->terrain_window_pos = ImGui::GetWindowPos();
 				editor->terrain_window_size = ImGui::GetWindowSize();
-				static uint32 terrain_index = 0;
-				const char *terrain_combo_name = (terrain_index < level->terrain_count) ? level->terrains[terrain_index].gpk_file : nullptr;
+				const char *terrain_combo_name = (editor->terrain_index < level->terrain_count) ? level->terrains[editor->terrain_index].gpk_file : nullptr;
 				if (ImGui::BeginCombo("terrains##terraines_combo", terrain_combo_name)) {
 					for (uint32 i = 0; i < level->terrain_count; i += 1) {
-						if (ImGui::Selectable(level->terrains[i].gpk_file, terrain_index == i)) {
-							terrain_index = i;
+						if (ImGui::Selectable(level->terrains[i].gpk_file, editor->terrain_index == i)) {
+							editor->terrain_index = i;
 						}
 					}
 					ImGui::EndCombo();
 				}
-				if (terrain_index < level->terrain_count) {
+				if (editor->terrain_index < level->terrain_count) {
 					static imgui_error_popup error_popup = {};
 					check_imgui_error_popup(&error_popup);
-					terrain *terrain = &level->terrains[terrain_index];
+					terrain *terrain = &level->terrains[editor->terrain_index];
 					ImGui::ImageButton((ImTextureID)(intptr_t)terrain->height_map_descriptor_index, ImVec2{50, 50});
 					ImGui::SameLine();
 					ImGui::ImageButton((ImTextureID)(intptr_t)terrain->diffuse_map_descriptor_index, ImVec2{50, 50});
