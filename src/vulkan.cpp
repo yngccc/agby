@@ -341,12 +341,12 @@ VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectT
 		printf("vulkan performance warning code %d: %s\n", message_code, message);
 	}
 	return VK_FALSE;
-};
+	};
 
 void initialize_vulkan_device(vulkan *vulkan) {
 	bool enable_validation_layer = true;
 	bool enable_renderdoc_layer = false;
-	bool enable_nsight_layer = false;
+	bool enable_nsight_layer = true;
 
 	m_memory_arena_undo_allocations_at_scope_exit(&vulkan->frame_memory_arena);
 	{ // dynamic load vulkan DLL
