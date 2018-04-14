@@ -167,56 +167,6 @@ void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
 	printf("done importing skybox: \"%s\"\n", gpk_file.c_str());
 }
 
-void terrain_to_gpk(std::string terrain_dir, std::string gpk_file) {
-	printf("begin importing terrain: \"%s\"\n", terrain_dir.c_str());
-	
-	int32 height_map_width = 0;
-	int32 height_map_height = 0;
-	std::string height_map_file = terrain_dir + "\\height.png";
-	int32 height_map_component = 0;
-	uint8 *height_map_data = stbi_load(height_map_file.c_str(), &height_map_width, &height_map_height, &height_map_component, 0);
-	m_assert(height_map_data);
-	m_assert(height_map_component == 1);
-	m_assert(height_map_width == height_map_height);
-	m_assert(is_pow_2(height_map_width));
-
-	int32 diffuse_map_width = 0;
-	int32 diffuse_map_height = 0;
-	std::string diffuse_map_file = terrain_dir + "\\diffuse.png";
-	int32 diffuse_map_component = 0;
-	uint8 *diffuse_map_data = stbi_load(diffuse_map_file.c_str(), &diffuse_map_width, &diffuse_map_height, &diffuse_map_component, 4);
-	m_assert(diffuse_map_data);
-	m_assert(diffuse_map_component == 4);
-	m_assert(diffuse_map_width == diffuse_map_height);
-	m_assert(is_pow_2(diffuse_map_width));
-
-	uint32 height_map_size = height_map_width * height_map_height;
-	uint32 height_map_offset = round_up((uint32)sizeof(struct gpk_terrain), 16u);
-	uint32 diffuse_map_size = diffuse_map_width * diffuse_map_height * 4;
-	uint32 diffuse_map_offset = round_up(height_map_offset + height_map_size, 16u);
-	uint64 gpk_file_size = diffuse_map_offset + diffuse_map_size;
-
-	file_mapping gpk_file_mapping;
-	m_assert(create_file_mapping(gpk_file.c_str(), gpk_file_size, &gpk_file_mapping));
-	gpk_terrain *gpk_terrain = (struct gpk_terrain *)gpk_file_mapping.ptr;
-	*gpk_terrain = {m_gpk_terrain_format_str};
-	gpk_terrain->height_map_offset = height_map_offset;
-	gpk_terrain->height_map_width = height_map_width;
-	gpk_terrain->height_map_height = height_map_height;
-	gpk_terrain->height_map_size = height_map_size;
-	gpk_terrain->diffuse_map_offset = diffuse_map_offset;
-	gpk_terrain->diffuse_map_width = diffuse_map_width;
-	gpk_terrain->diffuse_map_height = diffuse_map_height;
-	gpk_terrain->diffuse_map_size = diffuse_map_size;
-	memcpy(gpk_file_mapping.ptr + height_map_offset, height_map_data, height_map_size);
-	memcpy(gpk_file_mapping.ptr + diffuse_map_offset, diffuse_map_data, diffuse_map_size);
-
-	flush_file_mapping(gpk_file_mapping);
-	close_file_mapping(&gpk_file_mapping);
-
-	printf("done importing terrain: \"%s\"\n", gpk_file.c_str());
-}
-
 bool gltf_model_node_has_cycle(const tinygltf::Model &gltf_model) {
 	bool has_cycle = false;
 	for (auto &scene : gltf_model.scenes) {
@@ -1152,7 +1102,6 @@ struct import_json_schema {
 	bool force_import_all;
 	bool force_import_models;
 	bool force_import_skyboxes;
-	bool force_import_terrains;
 	struct model {
 		bool import;
 		std::string gltf_file;
@@ -1165,27 +1114,17 @@ struct import_json_schema {
 		std::string gpk_file;
 	};
 	std::vector<skybox> skyboxes;
-	struct terrain {
-		bool import;
-		std::string dir;
-		std::string gpk_file;
-	};
-	std::vector<terrain> terrains;
 };
 
 void from_json(const nlohmann::json &j, import_json_schema &import) {
 	import.force_import_all = j["force_import_all"];
 	import.force_import_models = j["force_import_models"];
 	import.force_import_skyboxes = j["force_import_skyboxes"];
-	import.force_import_terrains = j["force_import_terrains"];
 	for (auto &m : j["models"]) {
 		import.models.push_back({m["import"], m["gltf_file"], m["gpk_file"]});
 	}
 	for (auto &s : j["skyboxes"]) {
 		import.skyboxes.push_back({s["import"], s["dir"], s["gpk_file"]});
-	}
-	for (auto &s : j["terrains"]) {
-		import.terrains.push_back({s["import"], s["dir"], s["gpk_file"]});
 	}
 }
 
@@ -1246,13 +1185,6 @@ void import_json(std::string json_file) {
 			job_count += 1;
 		}
 	}
-	for (auto &s : import.terrains) {
-		if (s.import || import.force_import_all || import.force_import_terrains) {
-			std::string cmdl_str = std::string("import.exe -terrain-to-gpk ") + dir + s.dir + " " + s.gpk_file;
-			create_import_process(cmdl_str);
-			job_count += 1;
-		}
-	}
 
 	if (job_count > 0) {
 		DWORD completion_code;
@@ -1293,14 +1225,6 @@ int main(int argc, char **argv) {
 			}
 			else {
 				printf("error: expect -skybox-to-gpk skybox_dir gpk_file");
-			}
-		}
-		else if (!strcmp(mode_str, "-terrain-to-gpk")) {
-			if (argc == 4) {
-				terrain_to_gpk(argv[2], argv[3]);
-			}
-			else {
-				printf("error: expect -terrain-to-gpk terrain_dir gpk_file");
 			}
 		}
 		else if (!strcmp(mode_str, "-import-json")) {
