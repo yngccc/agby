@@ -48,7 +48,7 @@ enum selection_mode {
 
 enum transform_mode {
 	transform_mode_entity,
-	transform_mode_render_adjustment
+	transform_mode_model_adjustment
 };
 
 enum gizmo_mode {
@@ -512,9 +512,9 @@ int main(int argc, char **argv) {
 					if (ImGui::MenuItem("entity##transform_mode_entity", nullptr, editor->transform_mode == transform_mode_entity)) {
 						editor->transform_mode = transform_mode_entity;
 					}
-					if (entity_flags & entity_component_flag_render) {
-						if (ImGui::MenuItem("render adjustment##transform_mode_render_adjustment", nullptr, editor->transform_mode == transform_mode_render_adjustment)) {
-							editor->transform_mode = transform_mode_render_adjustment;
+					if (entity_flags & entity_component_flag_model) {
+						if (ImGui::MenuItem("model adjustment##transform_mode_model_adjustment", nullptr, editor->transform_mode == transform_mode_model_adjustment)) {
+							editor->transform_mode = transform_mode_model_adjustment;
 						}
 					}
 					ImGui::Dummy(ImVec2{0, 10});
@@ -589,11 +589,11 @@ int main(int argc, char **argv) {
 					float entity_min_distance = camera_ray.len;
 					uint32 entity_index = UINT32_MAX;
 					for (uint32 i = 0; i < level->entity_count; i += 1) {
-						if (level->entity_flags[i] & entity_component_flag_render) {
-							entity_render_component *render_component = entity_get_render_component(level, i);
-							if (render_component->model_index < level->model_count) {
-								model *model = &level->models[render_component->model_index];
-								mat4 transform_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(render_component->adjustment_transform);
+						if (level->entity_flags[i] & entity_component_flag_model) {
+							entity_model_component *model_component = entity_get_model_component(level, i);
+							if (model_component->model_index < level->model_count) {
+								model *model = &level->models[model_component->model_index];
+								mat4 transform_mat = mat4_from_transform(level->entity_transforms[i]) * mat4_from_transform(model_component->adjustment_transform);
 								float model_min_distance = camera_ray.len;
 								traverse_model_scenes_track_global_transform(model, [&](model_node *node, uint32 index, mat4 global_transform_mat) {
 									if (node->mesh_index < model->mesh_count) {
@@ -729,37 +729,37 @@ int main(int argc, char **argv) {
 					ImGui::PopID();
 				}
 				uint32 entity_flags = level->entity_flags[editor->entity_index];
-				if (entity_flags & entity_component_flag_render) {
-					ImGui::PushID("render_component");
-					if (ImGui::CollapsingHeader("Render Component"), ImGuiTreeNodeFlags_DefaultOpen) {
-						entity_render_component *old_render_component = entity_get_render_component(level, editor->entity_index);
-						entity_render_component *render_component = allocate_memory<struct entity_render_component>(&level->frame_memory_arena, 1);
-						memcpy(render_component, old_render_component, sizeof(struct entity_render_component));
-						const char *model_file_combo_name = (render_component->model_index < level->model_count) ? level->models[render_component->model_index].gpk_file : nullptr;
+				if (entity_flags & entity_component_flag_model) {
+					ImGui::PushID("model_component");
+					if (ImGui::CollapsingHeader("Model Component"), ImGuiTreeNodeFlags_DefaultOpen) {
+						entity_model_component *old_model_component = entity_get_model_component(level, editor->entity_index);
+						entity_model_component *model_component = allocate_memory<struct entity_model_component>(&level->frame_memory_arena, 1);
+						memcpy(model_component, old_model_component, sizeof(struct entity_model_component));
+						const char *model_file_combo_name = (model_component->model_index < level->model_count) ? level->models[model_component->model_index].gpk_file : nullptr;
 						if (ImGui::BeginCombo("models##models_combo", model_file_combo_name)) {
 							for (uint32 i = 0; i < level->model_count; i += 1) {
-								if (ImGui::Selectable(level->models[i].gpk_file, render_component->model_index == i)) {
-									render_component->model_index = i;
+								if (ImGui::Selectable(level->models[i].gpk_file, model_component->model_index == i)) {
+									model_component->model_index = i;
 								}
 							}
 							ImGui::EndCombo();
 						}
 						ImGui::Separator();
-						ImGui::InputFloat3("translate##transform_translate_field", render_component->adjustment_transform.translate.e, 3);
-						if (ImGui::InputFloat4("rotate##transform_rotate_field", render_component->adjustment_transform.rotate.e, 3)) {
-							render_component->adjustment_transform.rotate = quat_normalize(render_component->adjustment_transform.rotate);
+						ImGui::InputFloat3("translate##transform_translate_field", model_component->adjustment_transform.translate.e, 3);
+						if (ImGui::InputFloat4("rotate##transform_rotate_field", model_component->adjustment_transform.rotate.e, 3)) {
+							model_component->adjustment_transform.rotate = quat_normalize(model_component->adjustment_transform.rotate);
 						}
-						ImGui::InputFloat3("scale##transform_scale_field", render_component->adjustment_transform.scale.e, 3);
+						ImGui::InputFloat3("scale##transform_scale_field", model_component->adjustment_transform.scale.e, 3);
 						if (ImGui::Button("reset##transform_reset_button")) {
-							render_component->adjustment_transform = transform_identity();
+							model_component->adjustment_transform = transform_identity();
 						}
 						ImGui::SameLine();
-						ImGui::Checkbox("hide##hide_checkbox", &render_component->hide);
-						if (memcmp(render_component, old_render_component, sizeof(struct entity_render_component))) {
-							level->entity_modifications[editor->entity_index].render_component = render_component;
+						ImGui::Checkbox("hide##hide_checkbox", &model_component->hide);
+						if (memcmp(model_component, old_model_component, sizeof(struct entity_model_component))) {
+							level->entity_modifications[editor->entity_index].model_component = model_component;
 						}
 						if (ImGui::Button("delete##delete_button")) {
-							level->entity_modifications[editor->entity_index].remove_render_component = true;
+							level->entity_modifications[editor->entity_index].remove_model_component = true;
 						}
 					}
 					ImGui::PopID();
@@ -906,7 +906,7 @@ int main(int argc, char **argv) {
 				if (ImGui::BeginPopupModal("##new_component_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 					static imgui_error_popup error_popup = {};
 					check_imgui_error_popup(&error_popup);
-					static const char *component_types[] = {"render", "collision", "physics", "light", "terrain"};
+					static const char *component_types[] = {"model", "collision", "physics", "light", "terrain"};
 					static const char *light_types[] = {"ambient", "directional", "point"};
 					static uint32 component_type_index = 0;
 					static uint32 light_type_index = 0;
@@ -931,7 +931,7 @@ int main(int argc, char **argv) {
 						}
 					}
 					if (ImGui::Button("ok##new_component_popup_ok")) {
-						if ((component_type_index == 0 && entity_flags & entity_component_flag_render) ||
+						if ((component_type_index == 0 && entity_flags & entity_component_flag_model) ||
 								(component_type_index == 1 && entity_flags & entity_component_flag_collision) ||
 								(component_type_index == 2 && entity_flags & entity_component_flag_physics) ||
 								(component_type_index == 3 && entity_flags & entity_component_flag_light) ||
@@ -940,10 +940,10 @@ int main(int argc, char **argv) {
 						}
 						else {
 							if (component_type_index == 0) {
-								entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->frame_memory_arena, 1);
-								new_render_component->model_index = UINT32_MAX;
-								new_render_component->adjustment_transform = transform_identity();
-								level->entity_modifications[editor->entity_index].render_component = new_render_component;
+								entity_model_component *new_model_component = allocate_memory<struct entity_model_component>(&level->frame_memory_arena, 1);
+								new_model_component->model_index = UINT32_MAX;
+								new_model_component->adjustment_transform = transform_identity();
+								level->entity_modifications[editor->entity_index].model_component = new_model_component;
 							}
 							else if (component_type_index == 1) {
 								entity_collision_component *new_collision_component = allocate_memory<struct entity_collision_component>(&level->frame_memory_arena, 1);
@@ -1035,6 +1035,39 @@ int main(int argc, char **argv) {
 						}
 					}
 					ImGui::EndCombo();
+				}
+				if (editor->model_index < level->model_count) {
+					static imgui_error_popup error_popup = {};
+					check_imgui_error_popup(&error_popup);
+					model *model = &level->models[editor->model_index];
+				}
+				if (ImGui::Button("new##new_model")) {
+					ImGui::OpenPopup("##new_model_popup");
+				}
+				if (ImGui::BeginPopupModal("##new_model_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+					static imgui_error_popup error_popup = {};
+					check_imgui_error_popup(&error_popup);
+					static char gpk_file[256] = {};
+					ImGui::InputText("gpk file##gpk_file", gpk_file, sizeof(gpk_file));
+					ImGui::SameLine();
+					if (ImGui::Button("browse##browse_button")) {
+						open_file_dialog(gpk_file, sizeof(gpk_file));
+					}
+					if (ImGui::Button("ok##ok")) {
+						if (!file_exists(gpk_file)) {
+							open_imgui_error_popup(&error_popup, "gpk file doesn't exist"); 
+						} else {
+							level_add_gpk_model(level, vulkan, gpk_file);
+							array_set(gpk_file, '\0');
+							ImGui::CloseCurrentPopup();
+						}
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("cancel##cancel")) {
+						array_set(gpk_file, '\0');
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
 				}
 			}
 			ImGui::End();
@@ -1180,10 +1213,10 @@ int main(int argc, char **argv) {
 				auto transform_gizmo = [&](ImGuizmo::OPERATION imguizmo_op) {
 					transform entity_transform = level->entity_transforms[editor->entity_index];
 					transform adjustment_transform = transform_identity();
-					entity_render_component *render_component = nullptr;
-					if (entity_flags & entity_component_flag_render) {
-						render_component = entity_get_render_component(level, editor->entity_index);
-						adjustment_transform = render_component->adjustment_transform;
+					entity_model_component *model_component = nullptr;
+					if (entity_flags & entity_component_flag_model) {
+						model_component = entity_get_model_component(level, editor->entity_index);
+						adjustment_transform = model_component->adjustment_transform;
 					}
 					mat4 transform_mat = mat4_from_translate(entity_transform.translate + adjustment_transform.translate);
 					if (editor->transform_mode == transform_mode_entity) {
@@ -1208,26 +1241,26 @@ int main(int argc, char **argv) {
 							level->entity_modifications[editor->entity_index].transform = new_entity_transform;
 						}
 					}
-					else if (editor->transform_mode == transform_mode_render_adjustment && render_component) {
-						entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->frame_memory_arena, 1);
-						*new_render_component = *render_component;
+					else if (editor->transform_mode == transform_mode_model_adjustment && model_component) {
+						entity_model_component *new_model_component = allocate_memory<struct entity_model_component>(&level->frame_memory_arena, 1);
+						*new_model_component = *model_component;
 						ImGuizmo::BeginFrame();
 						if (imguizmo_op == ImGuizmo::TRANSLATE) {
 							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
-							new_render_component->adjustment_transform.translate = mat4_get_translate(transform_mat) - entity_transform.translate;
+							new_model_component->adjustment_transform.translate = mat4_get_translate(transform_mat) - entity_transform.translate;
 						}
 						if (imguizmo_op == ImGuizmo::ROTATE) {
  							transform_mat = transform_mat * mat4_from_rotate(adjustment_transform.rotate);
 							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float *)transform_mat);
-							new_render_component->adjustment_transform.rotate = mat4_get_rotate(transform_mat);
+							new_model_component->adjustment_transform.rotate = mat4_get_rotate(transform_mat);
 						}
 						else if (imguizmo_op == ImGuizmo::SCALE) {
  							transform_mat = transform_mat * mat4_from_scale(adjustment_transform.scale);
 							ImGuizmo::Manipulate((float *)camera_view_mat, (float *)camera_proj_mat, ImGuizmo::SCALE, ImGuizmo::LOCAL, (float *)transform_mat);
-							new_render_component->adjustment_transform.scale = mat4_get_scale(transform_mat);
+							new_model_component->adjustment_transform.scale = mat4_get_scale(transform_mat);
 						}
-						if (!level->entity_modifications[editor->entity_index].render_component) {
-							level->entity_modifications[editor->entity_index].render_component = new_render_component;
+						if (!level->entity_modifications[editor->entity_index].model_component) {
+							level->entity_modifications[editor->entity_index].model_component = new_model_component;
 						}
 					}
 				};
