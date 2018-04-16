@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
 
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
-	level_read_json(level, vulkan, "assets\\levels\\level_save.json", [](nlohmann::json &json){}, false);
+	level_read_json(level, vulkan, "assets/levels/level_save.json", [](nlohmann::json &json){}, false);
 	game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
 
 	btDiscreteDynamicsWorld *bt_world = nullptr;
@@ -295,15 +295,15 @@ int main(int argc, char **argv) {
 			}
 		}
 		{ // animations
-			uint32 render_component_index = 0;
+			uint32 model_component_index = 0;
 			for (uint32 i = 0; i < level->entity_count; i += 1) {
-				if (level->entity_flags[i] & entity_component_flag_render) {
-					entity_render_component *render_component = &level->render_components[render_component_index++];
-					if (render_component->model_index < level->model_count &&  render_component->animation_index < level->models[render_component->model_index].animation_count) {
-						entity_render_component *new_render_component = allocate_memory<struct entity_render_component>(&level->frame_memory_arena, 1);
-						*new_render_component = *render_component;
-						new_render_component->animation_time += last_frame_time_sec;
-						level->entity_modifications[i].render_component = new_render_component;
+				if (level->entity_flags[i] & entity_component_flag_model) {
+					entity_model_component *model_component = &level->model_components[model_component_index++];
+					if (model_component->model_index < level->model_count &&  model_component->animation_index < level->models[model_component->model_index].animation_count) {
+						entity_model_component *new_model_component = allocate_memory<struct entity_model_component>(&level->frame_memory_arena, 1);
+						*new_model_component = *model_component;
+						new_model_component->animation_time += last_frame_time_sec;
+						level->entity_modifications[i].model_component = new_model_component;
 					}
 				}
 			}
