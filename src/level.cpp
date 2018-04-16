@@ -11,6 +11,7 @@
 #include "../vendor/include/bullet/BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h"
 
 #include "geometry.cpp"
+#include "simd.cpp"
 
 const uint32 level_max_entity_count = 1024;
 const uint32 level_max_directional_light_count = 1;

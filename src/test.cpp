@@ -4,6 +4,7 @@
 
 #include "common.cpp"
 #include "math.cpp"
+#include "simd.cpp"
 
 struct test_guard {
   uint32 counter;
@@ -197,6 +198,21 @@ int main(int argc, char **argv) {
       float intersect_distance = 0;
       bool intersect = ray_intersect_triangle(ray, a, b, c, &intersect_distance);
       m_assert(intersect);
+    }
+  }
+
+  m_test(simd) {
+    m_case(filter_floats) {
+      alignas(16) float in[32] = {};
+      alignas(16) float out[32] = {};
+      for (uint32 i = 0; i < m_countof(in); i += 1) {
+        in[i] = (float)i;
+      }
+      uint32 n = simd_filter_floats(in, out, m_countof(in), 10, compare_op_ge);
+      m_assert(n == 22);
+      for (uint32 i = 0; i < n; i += 1) {
+        m_assert(out[i] == (float)(10 + i));
+      }
     }
   }
 }
