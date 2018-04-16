@@ -92,13 +92,13 @@ void *allocate_virtual_memory(uint64 size) {
 	size = round_up(size, (uint64)system_info.dwPageSize);
 	char *mem = (char *)VirtualAlloc(nullptr, size + 2 * system_info.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 	if (!mem) {
-		return false;
+		return nullptr;
 	}
 	DWORD old_protect;
 	if (!VirtualProtect(mem, system_info.dwPageSize, PAGE_NOACCESS, &old_protect) ||
-		!VirtualProtect(mem + system_info.dwPageSize + size, system_info.dwPageSize, PAGE_NOACCESS, &old_protect)) {
+		  !VirtualProtect(mem + system_info.dwPageSize + size, system_info.dwPageSize, PAGE_NOACCESS, &old_protect)) {
 		VirtualFree(mem, 0, MEM_RELEASE);
-		return false;
+		return nullptr;
 	}
 	return mem + system_info.dwPageSize;
 }
