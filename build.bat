@@ -31,11 +31,11 @@ rem codegen ..\src\common.cpp ..\src\math.cpp ..\src\vulkan.cpp ..\src\assets.cp
 rmdir /s /q compiler_output 2>nul
 mkdir compiler_output
 
-set compile_editor=start /b 9>"compiler_output\editor.lock" cmd /c "cl ..\src\editor.cpp %flags% %dirs% %libs% %bullet3_libs% > compiler_output\editor.txt"
-set compile_game=start /b 9>"compiler_output\game.lock" cmd /c "cl ..\src\game.cpp %flags% %dirs% %libs% %bullet3_libs% > compiler_output\game.txt"
-set compile_import=start /b 9>"compiler_output\import.lock" cmd /c "cl ..\src\import.cpp %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
-set compile_lightmap=start /b 9>"compiler_output\lightmap.lock" cmd /c "cl ..\src\lightmap.cpp %flags% %dirs% %libs% UVAtlas.lib DirectXMesh.lib > compiler_output\lightmap.txt"
-set compile_test=start /b 9>"compiler_output\test.lock" cmd /c "cl ..\src\test.cpp %flags% %dirs% %libs% > compiler_output\test.txt"
+set compile_editor=start /b cmd /c "9>compiler_output\editor.lock cl ..\src\editor.cpp %flags% %dirs% %libs% %bullet3_libs% > compiler_output\editor.txt"
+set compile_game=start /b cmd /c "9>compiler_output\game.lock cl ..\src\game.cpp %flags% %dirs% %libs% %bullet3_libs% > compiler_output\game.txt"
+set compile_import=start /b cmd /c "9>compiler_output\import.lock cl ..\src\import.cpp %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
+set compile_lightmap=start /b cmd /c "9>compiler_output\lightmap.lock cl ..\src\lightmap.cpp %flags% %dirs% %libs% UVAtlas.lib DirectXMesh.lib > compiler_output\lightmap.txt"
+set compile_test=start /b cmd /c "9>compiler_output\test.lock cl ..\src\test.cpp %flags% %dirs% %libs% > compiler_output\test.txt"
 
 printf "\ncompiling cpp files...\n"
 if "%~1"=="" (
@@ -51,9 +51,10 @@ if "%~1"=="import" %compile_import%
 if "%~1"=="lightmap" %compile_lightmap%
 if "%~1"=="test" %compile_test%
 
+:wait
 1>nul 2>nul ping /n 2 ::1
 for %%F in (compiler_output\*.lock) do (
-	(call ) 9>"%%F" || goto :Wait
+	(call ) 9>"%%F" || goto :wait
 ) 2>nul
 
 type compiler_output\editor.txt 2>nul

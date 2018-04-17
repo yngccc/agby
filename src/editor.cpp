@@ -98,6 +98,11 @@ struct terrain_edit {
 	uint8 *diffuse_map_image_data;
 };
 
+enum terrain_brush_tool {
+	terrain_brush_tool_raise,
+	terrain_brush_tool_flatten
+};
+
 struct editor {
 	editor_render_data render_data;
 
@@ -138,6 +143,7 @@ struct editor {
 	uint32 terrain_in_edit_count;
 	float terrain_brush_sharpness;
 	float terrain_brush_radius;
+	int terrain_brush_tool;
 
 	undoable undoables[256];
 	uint32 undoable_count;
@@ -1377,6 +1383,9 @@ int main(int argc, char **argv) {
 						editor->terrain_brush_window_size = ImGui::GetWindowSize();
 						ImGui::SliderFloat("sharpness", &editor->terrain_brush_sharpness, 0.5f, 2.0f);
 						ImGui::SliderFloat("radius", &editor->terrain_brush_radius, 0.3f, 20.0f);
+						ImGui::RadioButton("raise##raise_tool_button", &editor->terrain_brush_tool, terrain_brush_tool_raise);
+						ImGui::SameLine();
+						ImGui::RadioButton("flatten##flatten_tool_button", &editor->terrain_brush_tool, terrain_brush_tool_flatten);
 					}
 					ImGui::End();
 					ImGui::PopID();
@@ -1394,7 +1403,7 @@ int main(int argc, char **argv) {
 							terrain_edit = &editor->terrain_in_edit[editor->terrain_in_edit_count++];
 							uint32 height_map_image_size = level_terrain_resolution * level_terrain_resolution * 2;
 							uint32 diffuse_map_image_size = level_terrain_resolution * level_terrain_resolution * 4;
-							uint8 *height_map_image_data = new uint8[height_map_image_size]();
+							uint8 *height_map_image_data = level->terrains[terrain_edit->terrain_index].height_map_data;
 							uint8 *diffuse_map_image_data = new uint8[diffuse_map_image_size]();
 							*terrain_edit = {terrain_component->terrain_index, height_map_image_data, diffuse_map_image_data};
 							terrain *terrain = &level->terrains[terrain_component->terrain_index];
@@ -1410,37 +1419,42 @@ int main(int argc, char **argv) {
 							if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
 								if (ImGui::IsMouseDown(0)) {
 									// terrain brush
+									int16 *height_map = (int16 *)terrain_edit->height_map_image_data;
 									float pixel_uv_size = 1.0f / level_terrain_resolution;
 									float radius_uv_size = editor->terrain_brush_radius / level_terrain_size;
-									vec2 center_uv = {(intersection.x + bound) / level_terrain_size, (intersection.z + bound) / level_terrain_size};
+									if (editor->terrain_brush_tool == terrain_brush_tool_raise) {
+										vec2 center_uv = {(intersection.x + bound) / level_terrain_size, (intersection.z + bound) / level_terrain_size};
 
-									vec2 min_uv = {min(center_uv.u - radius_uv_size, 0.0f), min(center_uv.v - radius_uv_size, 0.0f)};
-									vec2 max_uv = {max(center_uv.u + radius_uv_size, 1.0f), max(center_uv.v + radius_uv_size, 1.0f)};
+										vec2 min_uv = {min(center_uv.u - radius_uv_size, 0.0f), min(center_uv.v - radius_uv_size, 0.0f)};
+										vec2 max_uv = {max(center_uv.u + radius_uv_size, 1.0f), max(center_uv.v + radius_uv_size, 1.0f)};
 
-									uint32 begin_column = min((uint32)(level_terrain_resolution * min_uv.u), level_terrain_resolution - 1);
-									uint32 begin_row = min((uint32)(level_terrain_resolution * min_uv.v), level_terrain_resolution - 1);
-									uint32 end_column = min((uint32)(level_terrain_resolution * max_uv.u), level_terrain_resolution - 1);
-									uint32 end_row = min((uint32)(level_terrain_resolution * max_uv.v), level_terrain_resolution - 1);
-									vec2 current_uv = min_uv;
+										uint32 begin_column = min((uint32)(level_terrain_resolution * min_uv.u), level_terrain_resolution - 1);
+										uint32 begin_row = min((uint32)(level_terrain_resolution * min_uv.v), level_terrain_resolution - 1);
+										uint32 end_column = min((uint32)(level_terrain_resolution * max_uv.u), level_terrain_resolution - 1);
+										uint32 end_row = min((uint32)(level_terrain_resolution * max_uv.v), level_terrain_resolution - 1);
+										vec2 current_uv = min_uv;
 
-									uint16 *image = (uint16 *)terrain_edit->height_map_image_data;
-									for (uint32 i = begin_row; i < end_row; i += 1) {
-										for (uint32 j = begin_column; j < end_column; j += 1) {
-											float distance_uv_size = vec2_len(current_uv - center_uv);
-											if (distance_uv_size <= radius_uv_size) {
-												float distance = distance_uv_size / radius_uv_size * editor->terrain_brush_sharpness;
-												float fade_factor = expf(-0.5f * distance * distance) / sqrtf(2 * (float)M_PI);
-												image[level_terrain_resolution * i + j] += (uint32)(10000.0f * last_frame_time_sec * fade_factor);
+										for (uint32 i = begin_row; i < end_row; i += 1) {
+											for (uint32 j = begin_column; j < end_column; j += 1) {
+												float distance_uv_size = vec2_len(current_uv - center_uv);
+												if (distance_uv_size <= radius_uv_size) {
+													float distance = distance_uv_size / radius_uv_size * editor->terrain_brush_sharpness;
+													float fade_factor = expf(-0.5f * distance * distance) / sqrtf(2 * (float)M_PI);
+													height_map[level_terrain_resolution * i + j] += (int16)(10000.0f * last_frame_time_sec * fade_factor);
+												}
+												current_uv.u += pixel_uv_size;
 											}
-											current_uv.u += pixel_uv_size;
+											current_uv.v += pixel_uv_size;
+											current_uv.u = min_uv.u;
 										}
-										current_uv.v += pixel_uv_size;
-										current_uv.u = min_uv.u;
+									}
+									else if (editor->terrain_brush_tool == terrain_brush_tool_flatten) {
+
 									}
 									terrain *terrain = &level->terrains[terrain_component->terrain_index];
 									uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
 									uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
-									update_vulkan_image_region(vulkan, height_map_index, (uint8 *)image, level_terrain_resolution * level_terrain_resolution * 2);
+									update_vulkan_image_region(vulkan, height_map_index, (uint8 *)height_map, level_terrain_resolution * level_terrain_resolution * 2);
 								}
 								editor->terrain_brush_radius = clamp(editor->terrain_brush_radius + ImGui::GetIO().MouseWheel * 0.1f, 0.3f, 20.0f);
 							}

@@ -156,13 +156,13 @@ int main(int argc, char **argv) {
     }
     m_case(pop_back) {
       {
-        char path[256] = "c:\\sdk\\include\\foo.h";
+        char path[256] = "c:/sdk/include/foo.h";
         string path_str = string_from_array(path);
-        string_pop_back(&path_str, '\\');
-        m_assert(!strcmp(path, "c:\\sdk\\include\\"));
+        string_pop_back(&path_str, '/');
+        m_assert(!strcmp(path, "c:/sdk/include/"));
         m_assert(path_str.len == (uint32)strlen(path));
-        string_pop_back(&path_str, '\\');
-        m_assert(!strcmp(path, "c:\\sdk\\include\\"));
+        string_pop_back(&path_str, '/');
+        m_assert(!strcmp(path, "c:/sdk/include/"));
         m_assert(path_str.len == (uint32)strlen(path));
         string_pop_back(&path_str, ':');
         m_assert(!strcmp(path, "c:"));
@@ -203,15 +203,22 @@ int main(int argc, char **argv) {
 
   m_test(simd) {
     m_case(filter_floats) {
-      alignas(16) float in[32] = {};
-      alignas(16) float out[32] = {};
+      const uint32 array_size = 128;
+      const uint32 test_num = 64;
+      alignas(16) float in[array_size] = {};
+      alignas(16) float out[array_size] = {};
       for (uint32 i = 0; i < m_countof(in); i += 1) {
         in[i] = (float)i;
       }
-      uint32 n = simd_filter_floats(in, out, m_countof(in), 10, compare_op_ge);
-      m_assert(n == 22);
+      uint32 n = simd_filter_floats(in, out, array_size, (float)test_num, compare_op_ge);
+      m_assert(n == (array_size - test_num));
       for (uint32 i = 0; i < n; i += 1) {
-        m_assert(out[i] == (float)(10 + i));
+        m_assert(out[i] == (float)(test_num + i));
+      }
+      n = simd_filter_floats(in, out, array_size, (float)test_num, compare_op_le);
+      m_assert(n == (test_num + 1));
+      for (uint32 i = 0; i < n; i += 1) {
+        m_assert(out[i] == (float)(i));
       }
     }
   }
