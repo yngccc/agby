@@ -2,7 +2,7 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#include "common.cpp"
+#include "platform_windows.cpp"
 #include "math.cpp"
 #include "simd.cpp"
 
@@ -203,23 +203,42 @@ int main(int argc, char **argv) {
 
   m_test(simd) {
     m_case(filter_floats) {
-      const uint32 array_size = 128;
-      const uint32 test_num = 64;
-      alignas(16) float in[array_size] = {};
-      alignas(16) float out[array_size] = {};
-      for (uint32 i = 0; i < m_countof(in); i += 1) {
-        in[i] = (float)i;
+      const uint32 array_size = 100000;
+      const uint32 test_num = 5;
+      float *in = new float[array_size]();
+      float *out = new float[array_size]();
+      float *out_simd = new float[array_size]();
+      for (uint32 i = 0; i < array_size; i += 1) {
+        in[i] = (float)(rand() % 10);
       }
-      uint32 n = simd_filter_floats(in, out, array_size, (float)test_num, compare_op_ge);
-      m_assert(n == (array_size - test_num));
-      for (uint32 i = 0; i < n; i += 1) {
-        m_assert(out[i] == (float)(test_num + i));
+      timer timer = {};
+      initialize_timer(&timer);
+      uint32 count = 0;
+      {
+        start_timer(&timer);
+        for (uint32 i = 0; i < array_size; i += 1) {
+          if (in[i] >= (float)test_num) {
+            out[count++] = in[i];
+          }
+        }
+        stop_timer(&timer);
+        uint64 duration = get_timer_duration_microsecs(timer);
+        // printf("%llu\n", duration);
       }
-      n = simd_filter_floats(in, out, array_size, (float)test_num, compare_op_le);
-      m_assert(n == (test_num + 1));
-      for (uint32 i = 0; i < n; i += 1) {
-        m_assert(out[i] == (float)(i));
+      {
+        start_timer(&timer);
+        uint32 n = simd_filter_floats(in, out_simd, array_size, (float)test_num, compare_op_ge);
+        stop_timer(&timer);
+        uint64 duration = get_timer_duration_microsecs(timer);
+        // printf("%llu\n", duration);
+        m_assert(n == count);
+        for (uint32 i = 0; i < n; i += 1) {
+          m_assert(out_simd[i] == out[i]);
+        }
       }
+      delete []in;
+      delete []out;
+      delete []out_simd;
     }
   }
 }

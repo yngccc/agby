@@ -129,9 +129,8 @@ int main(int argc, char **argv) {
 		entity_get_physics_component(level, level->player_entity_index)->bt_rigid_body->setActivationState(DISABLE_DEACTIVATION);
 	}
 
-	LARGE_INTEGER performance_frequency = {};
-	QueryPerformanceFrequency(&performance_frequency);
-	LARGE_INTEGER performance_counters[2] = {};
+	timer timer = {};
+	initialize_timer(&timer);
 	uint64 last_frame_time_microsec = 0;
 	double last_frame_time_sec = 0;
 	bool program_running = true;
@@ -166,7 +165,7 @@ int main(int argc, char **argv) {
 	}
 	
 	while (program_running) {
-		QueryPerformanceCounter(&performance_counters[0]);
+		start_timer(&timer);
 
 		ImGui::GetIO().DeltaTime = (float)last_frame_time_sec;
 		window.raw_mouse_dx = 0;
@@ -323,9 +322,9 @@ int main(int argc, char **argv) {
 		
 		game->frame_done_flag.store(1);
 		
-		QueryPerformanceCounter(&performance_counters[1]);
-		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;
-		last_frame_time_sec = (double)last_frame_time_microsec / 1000000;
+		stop_timer(&timer);
+		last_frame_time_microsec = get_timer_duration_microsecs(timer);
+		last_frame_time_sec = get_timer_duration_secs(timer);
 	}
 	ImGui::DestroyContext(game->imgui_context);
 }

@@ -61,6 +61,33 @@ void console(const char *fmt, ...) {
 	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), buffer, n2, &n3, nullptr);
 }
 
+struct timer {
+	LARGE_INTEGER performance_frequency;
+	LARGE_INTEGER performance_counters[2];
+};
+
+void initialize_timer(timer *timer) {
+	QueryPerformanceFrequency(&timer->performance_frequency);
+}
+
+void start_timer(timer *timer) {
+	QueryPerformanceCounter(&timer->performance_counters[0]);
+}
+
+void stop_timer(timer *timer) {
+	QueryPerformanceCounter(&timer->performance_counters[1]);
+}
+
+uint64 get_timer_duration_microsecs(timer timer) {
+	LONGLONG ticks = timer.performance_counters[1].QuadPart - timer.performance_counters[0].QuadPart;
+	return (ticks * 1000000) / timer.performance_frequency.QuadPart;
+}
+
+double get_timer_duration_secs(timer timer) {
+	LONGLONG ticks = timer.performance_counters[1].QuadPart - timer.performance_counters[0].QuadPart;
+	return (double)ticks / (double)timer.performance_frequency.QuadPart;
+}
+
 bool get_current_dir(char *buffer, uint32 buffer_size) {
 	DWORD d = GetCurrentDirectory(buffer_size, buffer);
 	return d > 0;

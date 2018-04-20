@@ -332,9 +332,8 @@ int main(int argc, char **argv) {
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
 
-	LARGE_INTEGER performance_frequency = {};
-	QueryPerformanceFrequency(&performance_frequency);
-	LARGE_INTEGER performance_counters[2] = {};
+	timer timer = {};
+	initialize_timer(&timer);
 	uint64 last_frame_time_microsec = 0;
 	double last_frame_time_sec = 0;
 
@@ -350,7 +349,7 @@ int main(int argc, char **argv) {
 	show_window(&window);
 
 	while (!editor_closed) {
-		QueryPerformanceCounter(&performance_counters[0]);
+		start_timer(&timer);
 
 		ImGui::GetIO().DeltaTime = (float)last_frame_time_sec;
 		window.raw_mouse_dx = 0;
@@ -1639,9 +1638,9 @@ int main(int argc, char **argv) {
 		level->frame_memory_arena.size = 0;
 		vulkan->frame_memory_arena.size = 0;
 	
-		QueryPerformanceCounter(&performance_counters[1]);
-		last_frame_time_microsec = (performance_counters[1].QuadPart - performance_counters[0].QuadPart) * 1000000 / performance_frequency.QuadPart;
-		last_frame_time_sec = (double)last_frame_time_microsec / 1000000;
+		stop_timer(&timer);
+		last_frame_time_microsec = get_timer_duration_microsecs(timer);
+		last_frame_time_sec = get_timer_duration_secs(timer);
 	}
 	ImGui::DestroyContext(editor->imgui_context);
 }
