@@ -6,6 +6,8 @@
 #include "math.cpp"
 #include "simd.cpp"
 
+#include "../build/simple.ispc.h"
+
 struct test_guard {
   uint32 counter;
   bool trigger;
@@ -217,22 +219,23 @@ int main(int argc, char **argv) {
       {
         start_timer(&timer);
         for (uint32 i = 0; i < array_size; i += 1) {
-          if (in[i] >= (float)test_num) {
+          if (in[i] <= (float)test_num) {
             out[count++] = in[i];
           }
         }
         stop_timer(&timer);
         uint64 duration = get_timer_duration_microsecs(timer);
-        // printf("%llu\n", duration);
+        printf("\n%llu\n", duration);
       }
       {
         start_timer(&timer);
-        uint32 n = simd_filter_floats(in, out_simd, array_size, (float)test_num, compare_op_ge);
+        uint32 n = simd_filter_floats(in, out_simd, array_size, (float)test_num, compare_op_le);
+        // uint32 n = ispc::filter_floats(in, out_simd, array_size, (float)test_num);
         stop_timer(&timer);
         uint64 duration = get_timer_duration_microsecs(timer);
-        // printf("%llu\n", duration);
+        printf("%llu\n", duration);
         m_assert(n == count);
-        for (uint32 i = 0; i < n; i += 1) {
+        for (uint32 i = 0; i < count; i += 1) {
           m_assert(out_simd[i] == out[i]);
         }
       }

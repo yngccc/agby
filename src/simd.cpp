@@ -44,16 +44,17 @@ enum compare_op {
 
 uint32 simd_filter_floats(const float *in, float *out, uint32 count, float limit, compare_op cmp) {
   m_debug_assert(count % 4 == 0);
+  __m128 limits = _mm_set1_ps(limit);
   uint32 out_offset = 0;
 	for (uint32 i = 0; i < count; i += 4) {
 		__m128 val = _mm_load_ps(in + i);
 		__m128 mask;
 		switch (cmp) {
-			case compare_op_gt: mask = _mm_cmpgt_ps(val, _mm_set1_ps(limit)); break;
-			case compare_op_ge: mask = _mm_cmpge_ps(val, _mm_set1_ps(limit)); break;
-			case compare_op_eq: mask = _mm_cmpeq_ps(val, _mm_set1_ps(limit)); break;
-			case compare_op_le: mask = _mm_cmple_ps(val, _mm_set1_ps(limit)); break;
-			case compare_op_lt: mask = _mm_cmplt_ps(val, _mm_set1_ps(limit)); break;
+			case compare_op_gt: mask = _mm_cmpgt_ps(val, limits); break;
+			case compare_op_ge: mask = _mm_cmpge_ps(val, limits); break;
+			case compare_op_eq: mask = _mm_cmpeq_ps(val, limits); break;
+			case compare_op_le: mask = _mm_cmple_ps(val, limits); break;
+			case compare_op_lt: mask = _mm_cmplt_ps(val, limits); break;
 		}
 		__m128 result = simd_left_pack(val, mask);
 		_mm_storeu_ps(out + out_offset, result);
