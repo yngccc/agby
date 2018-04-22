@@ -58,7 +58,7 @@ void console(const char *fmt, ...) {
 	va_end(vl);
 	int n2 = (n1 < (int)sizeof(buffer) - 1) ? n1 : ((int)sizeof(buffer) - 1);
 	DWORD n3;
-	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), buffer, n2, &n3, nullptr);
+	WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), buffer, n2, &n3, nullptr);
 }
 
 struct timer {
@@ -89,7 +89,7 @@ double get_timer_duration_secs(timer timer) {
 }
 
 bool get_current_dir(char *buffer, uint32 buffer_size) {
-	DWORD d = GetCurrentDirectory(buffer_size, buffer);
+	DWORD d = GetCurrentDirectoryA(buffer_size, buffer);
 	return d > 0;
 }
 
@@ -160,25 +160,25 @@ bool create_file_mapping(const char *file_name, uint64 file_size, file_mapping *
 	size.QuadPart = file_size;
 	if (!SetFilePointerEx(file_handle, size, nullptr, FILE_BEGIN)) {
 		CloseHandle(file_handle);
-		DeleteFile(file_name);
+		DeleteFileA(file_name);
 		return false;
 	}
 	if (!SetEndOfFile(file_handle)) {
 		CloseHandle(file_handle);
-		DeleteFile(file_name);
+		DeleteFileA(file_name);
 		return false;
 	}
 	HANDLE mapping_handle = CreateFileMappingA(file_handle, nullptr, PAGE_READWRITE, 0, 0, nullptr);
 	if (!mapping_handle) {
 		CloseHandle(file_handle);
-		DeleteFile(file_name);
+		DeleteFileA(file_name);
 		return false;
 	}
 	uint8 *mapping_ptr = (uint8 *)MapViewOfFile(mapping_handle, FILE_MAP_WRITE, 0, 0, 0);
 	if (!mapping_ptr) {
 		CloseHandle(file_handle);
 		CloseHandle(mapping_handle);
-		DeleteFile(file_name);
+		DeleteFileA(file_name);
 		return false;
 	}
 	file_mapping->file_handle = file_handle;
@@ -530,17 +530,17 @@ void show_window(window *window) {
 
 void set_window_fullscreen(window *window, bool fullscreen) {
 	HWND hwnd = window->handle;
-	DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
+	DWORD dwStyle = GetWindowLongA(hwnd, GWL_STYLE);
 	if (fullscreen && !window->fullscreen) {
 		MONITORINFO mi = {sizeof(mi)};
 		if (GetWindowPlacement(hwnd, &window->placement) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
-			SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+			SetWindowLongA(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
 			SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
 			window->fullscreen = true;
 		}
 	}
 	else if (!fullscreen && window->fullscreen) {
-		SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+		SetWindowLongA(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
 		SetWindowPlacement(hwnd, &window->placement);
 		SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
 		window->fullscreen = false;
@@ -549,7 +549,7 @@ void set_window_fullscreen(window *window, bool fullscreen) {
 
 bool peek_window_message(window *window) {
 	MSG msg;
-	if (PeekMessage(&msg, window->handle, 0, 0, PM_REMOVE)) {
+	if (PeekMessageA(&msg, window->handle, 0, 0, PM_REMOVE)) {
 		TranslateMessage(&msg);
 		DispatchMessageA(&msg);
 		return true;
