@@ -2,9 +2,9 @@
 	"build_systems":
 	[
 		{
+			"cmd": ["C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/vcvarsall.bat", "x64", "&&", "${project_path}/build.bat", ""],
 			"file_regex": "^(.*)\\(([0-9]+)\\): (.*)error (.*)$",
-			"name": "agby_build",
-			"cmd": ["C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/vcvarsall.bat", "x64", "&&", "${project_path}/build.bat", ""]
+			"name": "agby_build"
 		}
 	],
 	"folders":

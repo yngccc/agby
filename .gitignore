@@ -3,6 +3,7 @@ src/TAGS
 src/.tags
 src/codegen.gen.cpp
 agby.sublime-workspace
+compile_commands.json
 
 *.suo
 *.user

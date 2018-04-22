@@ -9,12 +9,19 @@
 
 #include "../vendor/include/ispc_texcomp/ispc_texcomp.h"
 
+#include "../vendor/include/json/json.hpp"
+
 #define STB_IMAGE_IMPLEMENTATION
+#include "../vendor/include/stb/stb_image.h"
+
 #define TINYGLTF_IMPLEMENTATION
+#define TINYGLTF_NO_STB_IMAGE
+#define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "../vendor/include/tinygltf/tiny_gltf.h"
 
 #include "math.cpp"
 #include "gpk.cpp"
+
 #include <vulkan/vulkan.h>
 
 #include <stack>
