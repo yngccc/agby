@@ -3,6 +3,8 @@
 /***************************************************************************************************/
 
 #include "platform_windows.cpp"
+#include "math.cpp"
+#include "gpk.cpp"
 
 #define NVTT_SHARED 1
 #include "../vendor/include/nvtt/nvtt.h"
@@ -18,9 +20,6 @@
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "../vendor/include/tinygltf/tiny_gltf.h"
-
-#include "math.cpp"
-#include "gpk.cpp"
 
 #include <vulkan/vulkan.h>
 
@@ -1004,7 +1003,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 	}
 	uint32 image_index = 0;
 	for (size_t i = 0; i < gltf_model.images.size(); i += 1) {
-		auto &image = gltf_model.images[i];
 		auto &remap = image_remaps[i];
 		if (remap.index == UINT32_MAX) {
 			continue;

@@ -2,18 +2,14 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#include "platform_windows.cpp"
-#include "math.cpp"
-#include "vulkan.cpp"
-#include "gpk.cpp"
 #include "level.cpp"
-
-#include <atomic>
 
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "../vendor/include/imgui/imgui_draw.cpp"
 #include "../vendor/include/imgui/imgui.cpp"
 #undef snprintf
+
+#include <atomic>
 
 struct render_thread_arg {
 	struct vulkan *vulkan;
@@ -220,6 +216,7 @@ int main(int argc, char **argv) {
 				case window_message_type_mouse_wheel: {
 					ImGui::GetIO().MouseWheel = window.mouse_wheel;
 				} break;
+				default: {} break;
 			}
 		}
 			

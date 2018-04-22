@@ -4,6 +4,7 @@ src/.tags
 src/codegen.gen.cpp
 agby.sublime-workspace
 compile_commands.json
+.cquery_cached_index/
 
 *.suo
 *.user

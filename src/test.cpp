@@ -9,21 +9,21 @@
 #include "../build/simple.ispc.h"
 
 struct test_guard {
-  uint32 counter;
-  bool trigger;
-  ~test_guard() {
-    if (trigger) {
-      printf("\n");
-    }
-  }
+	uint32 counter;
+	bool trigger;
+	~test_guard() {
+		if (trigger) {
+			printf("\n");
+		}
+	}
 };
 
 struct test_case_guard {
-  uint32 counter;
-  bool passed;
-  char error[256];
-  ~test_case_guard() {
-    if (passed) {
+	uint32 counter;
+	bool passed;
+	char error[256];
+	~test_case_guard() {
+	  if (passed) {
       printf("passed\n");
     }
     else {
@@ -32,48 +32,48 @@ struct test_case_guard {
   }
 };
 
-#define m_test(test_name)                                                                                         \
-  bool _test_##test_name = false;                                                                                 \
-  bool _skip_test_##test_name = false;                                                                            \
-  bool _test_print_##test_name = false;                                                                           \
-  for (int i = 1; i < argc; i += 1) {                                                                             \
-    if (!strcmp(argv[i], "-list")) {                                                                              \
-      _test_print_##test_name = true;                                                                             \
-      break;                                                                                                      \
-    }                                                                                                             \
-  }                                                                                                               \
-  if (_test_print_##test_name) {                                                                                  \
-    printf("%s\n", #test_name);                                                                                   \
-  }                                                                                                               \
-  for (int i = 1; i < argc; i += 1) {                                                                             \
-    if (!strcmp(argv[i], "skip_" #test_name)) {                                                                   \
-      _skip_test_##test_name = true;                                                                              \
-      break;                                                                                                      \
-    }                                                                                                             \
-  }                                                                                                               \
-  if (argc == 1) {                                                                                                \
-    _test_##test_name = true;                                                                                     \
-  }                                                                                                               \
-  else {                                                                                                          \
-    for (int i = 1; i < argc; i += 1) {                                                                           \
-      if (!strcmp(argv[i], "all") || !strcmp(argv[i], #test_name)) {                                              \
-        _test_##test_name = true;                                                                                 \
-        break;                                                                                                    \
-      }                                                                                                           \
-    }                                                                                                             \
-  }                                                                                                               \
-  bool _trigger_test_##test_name = !_test_print_##test_name && !_skip_test_##test_name && _test_##test_name;      \
-  if (_trigger_test_##test_name) {                                                                                \
-    printf("[Testing ");                                                                                          \
-    printf(#test_name);                                                                                           \
-    printf("]\n");                                                                                                \
-    num_test_performed += 1;                                                                                      \
-  }                                                                                                               \
+#define m_test(test_name)                                                                                    \
+  bool _test_##test_name = false;                                                                            \
+  bool _skip_test_##test_name = false;                                                                       \
+  bool _test_print_##test_name = false;                                                                      \
+  for (int i = 1; i < argc; i += 1) {                                                                        \
+    if (!strcmp(argv[i], "-list")) {                                                                         \
+      _test_print_##test_name = true;                                                                        \
+      break;                                                                                                 \
+    }                                                                                                        \
+  }                                                                                                          \
+  if (_test_print_##test_name) {                                                                             \
+    printf("%s\n", #test_name);                                                                              \
+  }                                                                                                          \
+  for (int i = 1; i < argc; i += 1) {                                                                        \
+    if (!strcmp(argv[i], "skip_" #test_name)) {                                                              \
+      _skip_test_##test_name = true;                                                                         \
+      break;                                                                                                 \
+    }                                                                                                        \
+  }                                                                                                          \
+  if (argc == 1) {                                                                                           \
+    _test_##test_name = true;                                                                                \
+  }                                                                                                          \
+  else {                                                                                                     \
+    for (int i = 1; i < argc; i += 1) {                                                                      \
+      if (!strcmp(argv[i], "all") || !strcmp(argv[i], #test_name)) {                                         \
+        _test_##test_name = true;                                                                            \
+        break;                                                                                               \
+      }                                                                                                      \
+    }                                                                                                        \
+  }                                                                                                          \
+  bool _trigger_test_##test_name = !_test_print_##test_name && !_skip_test_##test_name && _test_##test_name; \
+  if (_trigger_test_##test_name) {                                                                           \
+    printf("[Testing ");                                                                                     \
+    printf(#test_name);                                                                                      \
+    printf("]\n");                                                                                           \
+    num_test_performed += 1;                                                                                 \
+  }                                                                                                          \
   for (test_guard _test = {0, _trigger_test_##test_name}; _test.trigger && _test.counter < 1; _test.counter += 1)
 
-#define m_case(case)                                                                             \
-  printf(#case);                                                                                 \
-  printf(" ... ");                                                                               \
+#define m_case(case) \
+  printf(#case);     \
+  printf(" ... ");   \
   for (test_case_guard _test_case = {0, true, {}}; _test_case.counter < 1; _test_case.counter += 1)
 
 #undef m_assert

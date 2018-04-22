@@ -2,10 +2,6 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#include "platform_windows.cpp"
-#include "math.cpp"
-#include "vulkan.cpp"
-#include "gpk.cpp"
 #include "level.cpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -404,6 +400,7 @@ int main(int argc, char **argv) {
 				case window_message_type_mouse_wheel: {
 					ImGui::GetIO().MouseWheel = window.mouse_wheel;
 				} break;
+				default: {} break;
 			}
 		}
 
@@ -497,7 +494,7 @@ int main(int argc, char **argv) {
 		}
 		{ // selection modes, transform mode, gizmo modes
 			ImGui::PushID("selection_transform_gizmo_mode_popup");
-			if ((ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl) {
+			if ((ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || (ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl)) {
 				ImGui::OpenPopup("##popup");
 			}
 			if (ImGui::BeginPopup("##popup")) {
@@ -1044,7 +1041,7 @@ int main(int argc, char **argv) {
 				if (editor->model_index < level->model_count) {
 					static imgui_error_popup error_popup = {};
 					check_imgui_error_popup(&error_popup);
-					model *model = &level->models[editor->model_index];
+					// model *model = &level->models[editor->model_index];
 				}
 				if (ImGui::Button("new##new_model")) {
 					ImGui::OpenPopup("##new_model_popup");
@@ -1194,7 +1191,7 @@ int main(int argc, char **argv) {
 					snprintf(overlay, sizeof(overlay), "%s / %s", pretty_print_bytes(memory_size).data(), pretty_print_bytes(memory_capacity).data());
 					ImGui::ProgressBar((float)((double)memory_size / (double)memory_capacity), ImVec2{ImGui::GetWindowContentRegionWidth() * 0.5f, 0}, overlay);
 					ImGui::SameLine();
-					ImGui::Text(memory_name);
+					ImGui::Text("%s", memory_name);
 				};
 				ImGui::Text("Memory Arenas");
 				imgui_render_memory(level_entity_memory_arena_size, level->entity_memory_arenas[0].capacity, "Level Entity");

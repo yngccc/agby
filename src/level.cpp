@@ -4,15 +4,19 @@
 
 #pragma once
 
+#include "platform_windows.cpp"
+#include "math.cpp"
+#include "geometry.cpp"
+#include "simd.cpp"
+#include "gpk.cpp"
+#include "vulkan.cpp"
+
 #include "../vendor/include/json/json.hpp"
 
 #define BT_NO_SIMD_OPERATOR_OVERLOADS
 #include "../vendor/include/bullet/btBulletCollisionCommon.h"
 #include "../vendor/include/bullet/btBulletDynamicsCommon.h"
 #include "../vendor/include/bullet/BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h"
-
-#include "geometry.cpp"
-#include "simd.cpp"
 
 const uint32 level_max_entity_count = 1024;
 const uint32 level_max_directional_light_count = 1;
@@ -1375,7 +1379,6 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 		entities = nlohmann::json::array();
 		for (uint32 i = 0; i < level->entity_count; i += 1) {
 			uint32 &flags = level->entity_flags[i];
-			entity_info &info = level->entity_infos[i];
 			transform &tfm = level->entity_transforms[i];
 			nlohmann::json entity_json = {
 				{"name", level->entity_infos[i].name},
@@ -1891,7 +1894,6 @@ void level_generate_render_commands(level *level, vulkan *vulkan, const camera &
 			}
 		}
 		if (level->skybox_index < level->skybox_count) {
-		  skybox *skybox = &level->skyboxes[level->skybox_index];
 		  vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.skybox_pipeline);
 		  struct camera skybox_camera = camera;
 		  skybox_camera.position = {0, 0, 0};
