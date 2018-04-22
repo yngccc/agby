@@ -5,6 +5,9 @@
 #pragma once
 
 #define _USE_MATH_DEFINES
+#define _CRT_SECURE_NO_WARNINGS
+#define _ITERATOR_DEBUG_LEVEL 0
+
 #include <cassert>
 #include <cctype>
 #include <cinttypes>

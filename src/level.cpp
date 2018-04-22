@@ -6,6 +6,7 @@
 
 #include "../vendor/include/json/json.hpp"
 
+#define BT_NO_SIMD_OPERATOR_OVERLOADS
 #include "../vendor/include/bullet/btBulletCollisionCommon.h"
 #include "../vendor/include/bullet/btBulletDynamicsCommon.h"
 #include "../vendor/include/bullet/BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h"

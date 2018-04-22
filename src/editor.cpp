@@ -1448,7 +1448,7 @@ int main(int argc, char **argv) {
 										}
 									}
 									else if (editor->terrain_brush_tool == terrain_brush_tool_flatten) {
-
+										
 									}
 									terrain *terrain = &level->terrains[terrain_component->terrain_index];
 									uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;

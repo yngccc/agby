@@ -89,7 +89,6 @@ int main(int argc, char **argv) {
   }
 
   uint32 num_test_performed = 0;
-  m_scope_exit(printf("Performed %d tests\n", num_test_performed));
 
   m_test(array) {
     m_case(remove) {
@@ -128,7 +127,6 @@ int main(int argc, char **argv) {
       }
     }
   }
-
   m_test(string) {
     m_case(cat) {
       {
@@ -186,7 +184,6 @@ int main(int argc, char **argv) {
       }
     }
   }
-
   m_test(math) {
     m_case(ray_intersect_triangle) {
       vec3 a = {-1, -1, 0};
@@ -196,13 +193,11 @@ int main(int argc, char **argv) {
       ray.origin = {0, 0, 1};
       ray.direction = {0, 0, -1};
       ray.len = 10;
-      vec3 barycentric_coord = {};
       float intersect_distance = 0;
       bool intersect = ray_intersect_triangle(ray, a, b, c, &intersect_distance);
       m_assert(intersect);
     }
   }
-
   m_test(simd) {
     m_case(filter_floats) {
       const uint32 array_size = 100000;
@@ -244,4 +239,6 @@ int main(int argc, char **argv) {
       delete []out_simd;
     }
   }
+
+  printf("Performed %d tests\n", num_test_performed);
 }

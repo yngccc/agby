@@ -4,6 +4,12 @@
 
 #pragma once
 
+#include <mmintrin.h>
+#include <xmmintrin.h>
+#include <emmintrin.h>
+#include <pmmintrin.h>
+#include <tmmintrin.h> 
+
 #include <intrin.h>
 
 #define x (char)(0x80)

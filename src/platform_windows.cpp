@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "common.cpp"
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -12,8 +14,6 @@
 #include <commdlg.h>
 #undef far
 #undef near
-
-#include "common.cpp"
 
 #define m_line_end "\r\n"
 #define m_path_sep '\\'
