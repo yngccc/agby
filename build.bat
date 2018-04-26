@@ -10,11 +10,11 @@ printf "\ncompiling glsl..."
 rmdir /s /q shaders 2>nul
 mkdir shaders
 pushd "../src/glsl"
-for %%G in (.vert, .frag) do forfiles /m *%%G /c "cmd /c %VULKAN_SDK%/Bin/glslc.exe -o ../../build/shaders/@file.spv @file & if ERRORLEVEL 1 echo file name: @file"
+for %%G in (.vert, .frag) do forfiles /m *%%G /c "cmd /c %VULKAN_SDK%/Bin/glslc.exe -o ../../build/shaders/@file.spv @file & if errorlevel 1 echo file name: @file"
 popd
 
 where /q ispc
-if not ERRORLEVEL 0 (
+if not errorlevel 0 (
   printf "Error: cannot find ispc.exe\n"
   exit 0
 )
@@ -35,47 +35,72 @@ set libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib Comdlg32.lib
 set bullet_libs=BulletCollision.lib BulletDynamics.lib BulletInverseDynamics.lib BulletSoftBody.lib LinearMath.lib
 set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
 
-set compile_editor=start /b cmd /c "9>compiler_output/editor.lock cl ../src/editor.cpp %flags% %dirs% %libs% %bullet_libs% > compiler_output/editor.txt"
-set compile_game=start /b cmd /c "9>compiler_output/game.lock cl ../src/game.cpp %flags% %dirs% %libs% %bullet_libs% > compiler_output/game.txt"
-set compile_import=start /b cmd /c "9>compiler_output/import.lock cl ../src/import.cpp %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
-rem set compile_lightmap=start /b cmd /c "9>compiler_output/lightmap.lock cl ../src/lightmap.cpp %flags% %dirs% %libs% UVAtlas.lib DirectXMesh.lib > compiler_output/lightmap.txt"
-set compile_test=start /b cmd /c "9>compiler_output/test.lock cl ../src/test.cpp %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
+set compile_editor_cmd=start /b cmd /c "cl ../src/editor.cpp %flags% %dirs% %libs% %bullet_libs% > compiler_output/editor.txt"
+set compile_game_cmd=start /b cmd /c "cl ../src/game.cpp %flags% %dirs% %libs% %bullet_libs% > compiler_output/game.txt"
+set compile_import_cmd=start /b cmd /c "cl ../src/import.cpp %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
+set compile_test_cmd=start /b cmd /c "cl ../src/test.cpp %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
 
 if "%~2"=="clang" (
-  set compile_editor=start /b cmd /c "9>compiler_output/editor.lock clang-cl ../src/editor.cpp -o editor.clang.exe %flags% %dirs% %libs% %bullet_libs% > compiler_output/editor.txt"
-  set compile_game=start /b cmd /c "9>compiler_output/game.lock clang-cl ../src/game.cpp -o game.clang.exe %flags% %dirs% %libs% %bullet_libs% > compiler_output/game.txt"
-  set compile_import=start /b cmd /c "9>compiler_output/import.lock clang-cl ../src/import.cpp -o import.clang.exe %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
-  rem set compile_lightmap=start /b cmd /c "9>compiler_output/lightmap.lock clang-cl ../src/lightmap.cpp -o lightmap.clang.exe %flags% %dirs% %libs% UVAtlas.lib DirectXMesh.lib > compiler_output/lightmap.txt"
-  set compile_test=start /b cmd /c "9>compiler_output/test.lock clang-cl ../src/test.cpp -o test.clang.exe %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
+  set compile_editor_cmd=start /b cmd /c "clang-cl ../src/editor.cpp -o editor.clang.exe %flags% %dirs% %libs% %bullet_libs% > compiler_output/editor.txt"
+  set compile_game_cmd=start /b cmd /c "clang-cl ../src/game.cpp -o game.clang.exe %flags% %dirs% %libs% %bullet_libs% > compiler_output/game.txt"
+  set compile_import_cmd=start /b cmd /c "clang-cl ../src/import.cpp -o import.clang.exe %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
+  set compile_test_cmd=start /b cmd /c "clang-cl ../src/test.cpp -o test.clang.exe %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
 )
 
-set compile_all=false
 if "%~1"=="" set compile_all=true
 if "%~1"=="all" set compile_all=true
 if "%compile_all%"=="true" (
-	 %compile_editor%
-	 %compile_game%
-	 %compile_import%
-	 rem %compile_lightmap%
-	 %compile_test%
+  set compile_editor=true
+  set compile_game=true
+  set compile_import=true
+  set compile_test=true
+
+	%compile_editor_cmd%
+	%compile_game_cmd%
+	%compile_import_cmd%
+	%compile_test_cmd%
 )
-if "%~1"=="editor" %compile_editor%
-if "%~1"=="game" %compile_game%
-if "%~1"=="import" %compile_import%
-rem if "%~1"=="lightmap" %compile_lightmap%
-if "%~1"=="test" %compile_test%
+if "%~1"=="editor" (
+  set compile_editor=true
+	%compile_editor_cmd%
+)
+if "%~1"=="game" (
+  set compile_game=true
+	%compile_game_cmd%
+)
+if "%~1"=="import" (
+  set compile_import=true
+	%compile_import_cmd%
+)
+if "%~1"=="test" (
+  set compile_test=true
+	%compile_test_cmd%
+)
 
-:wait
-1>nul 2>nul ping /n 2 ::1
-for %%F in (compiler_output/*.lock) do (
-	(call ) 9>"%%F" || goto :wait
-) 2>nul
-
-type compiler_output\editor.txt 2>nul
-type compiler_output\game.txt 2>nul
-type compiler_output\import.txt 2>nul
-type compiler_output\lightmap.txt 2>nul
-type compiler_output\test.txt 2>nul
+if "%compile_editor%"=="true" (
+  :wait_editor_txt
+	if not exist compiler_output/editor.txt goto :wait_editor_txt
+	2>nul (>>compiler_output/editor.txt echo off) || goto :wait_editor_txt
+	type compiler_output\editor.txt
+)
+if "%compile_game%"=="true" (
+  :wait_game_txt
+	if not exist compiler_output/game.txt goto :wait_game_txt
+	2>nul (>>compiler_output/game.txt echo off) || goto :wait_game_txt
+	type compiler_output\game.txt
+)
+if "%compile_import%"=="true" (
+  :wait_import_txt
+	if not exist compiler_output/import.txt goto :wait_import_txt
+	2>nul (>>compiler_output/import.txt echo off) || goto :wait_import_txt
+	type compiler_output\import.txt
+)
+if "%compile_test%"=="true" (
+  :wait_test_txt
+	if not exist compiler_output/test.txt goto :wait_test_txt
+	2>nul (>>compiler_output/test.txt echo off) || goto :wait_test_txt
+	type compiler_output\test.txt
+)
 
 copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >nul
 copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >nul

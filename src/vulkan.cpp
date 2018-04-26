@@ -323,8 +323,7 @@ const char *vk_result_to_str(VkResult result) {
 	}
 }
 
-VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT object_type, uint64_t object, 
-	                             size_t location, int32 message_code, const char *layer_prefix, const char *message, void *user_data) {
+VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT object_type, uint64_t object, size_t location, int32 message_code, const char *layer_prefix, const char *message, void *user_data) {
 	int32 ignore_list[] = {6, 61};
 	for (auto &code : ignore_list) {
 		if (message_code == code) {
@@ -341,7 +340,7 @@ VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectT
 		printf("vulkan performance warning code %d: %s\n", message_code, message);
 	}
 	return VK_FALSE;
-	};
+};
 
 void initialize_vulkan_device(vulkan *vulkan) {
 	bool enable_validation_layer = true;
