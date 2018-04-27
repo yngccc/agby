@@ -198,8 +198,9 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		image_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		image_view_info.subresourceRange.levelCount = 1;
 		image_view_info.subresourceRange.layerCount = 1;
-		uint32 image_index = append_vulkan_image_region(vulkan, image_info, image_view_info, font_atlas_image, font_atlas_image_width * font_atlas_image_height * 4, 1, 4);
-		editor->imgui_font_atlas_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_index, vulkan->samplers.mipmap_samplers[0]);
+		uint32 image_index = append_vulkan_level_images(vulkan, image_info, image_view_info, font_atlas_image, font_atlas_image_width * font_atlas_image_height * 4, 1, 4);
+		VkImageView image_view = vulkan->memory_regions.level_images.images[image_index].view;
+		editor->imgui_font_atlas_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_view, vulkan->samplers.mipmap_samplers[0]);
 		imgui_io.Fonts->SetTexID((ImTextureID)(intptr_t)editor->imgui_font_atlas_descriptor_index);
 		imgui_io.Fonts->ClearTexData();
 	}
@@ -1199,10 +1200,10 @@ int main(int argc, char **argv) {
 				imgui_render_memory(level_frame_memory_arena_size, level->frame_memory_arena.capacity, "Level Frame");
 				imgui_render_memory(vulkan_frame_memory_arena_size, vulkan->frame_memory_arena.capacity, "Vulkan Frame");
 				ImGui::Text("Vulkan Memories");
-				imgui_render_memory(vulkan->memory_regions.image_region_size, vulkan->memory_regions.image_region_capacity, "Image Region");
-				imgui_render_memory(vulkan->memory_regions.vertex_region_size, vulkan->memory_regions.vertex_region_capacity, "Vertex Region");
-				imgui_render_memory(vulkan_uniform_region_size, vulkan->memory_regions.uniform_region_capacities[vulkan->frame_index], "Uniform Region");
-				imgui_render_memory(vulkan_dynamic_vertex_region_size, vulkan->memory_regions.dynamic_vertex_region_capacities[vulkan->frame_index], "Dynamic Vertex Region");
+				imgui_render_memory(vulkan->memory_regions.level_images.memory_size, vulkan->memory_regions.level_images.memory_capacity, "Level Images");
+				imgui_render_memory(vulkan->memory_regions.level_vertex_buffer.buffer_size, vulkan->memory_regions.level_vertex_buffer.buffer_capacity, "Level Vertex");
+				imgui_render_memory(vulkan_uniform_region_size, vulkan->memory_regions.frame_uniform_buffers[vulkan->frame_index].buffer_capacity, "Frame Uniform");
+				imgui_render_memory(vulkan_dynamic_vertex_region_size, vulkan->memory_regions.frame_vertex_buffers[vulkan->frame_index].buffer_capacity, "Frame Vertex");
 			}
 			ImGui::End();
 			ImGui::PopID();
@@ -1403,11 +1404,8 @@ int main(int argc, char **argv) {
 							uint8 *diffuse_map_image_data = new uint8[diffuse_map_image_size]();
 							*terrain_edit = {terrain_component->terrain_index, height_map_image_data, diffuse_map_image_data};
 							terrain *terrain = &level->terrains[terrain_component->terrain_index];
-							uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
-							uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
-							uint32 diffuse_map_index = image_indices[terrain->diffuse_map_descriptor_index];
-							retrieve_vulkan_image_region(vulkan, height_map_index, height_map_image_data, height_map_image_size);
-							retrieve_vulkan_image_region(vulkan, diffuse_map_index, diffuse_map_image_data, diffuse_map_image_size);
+							retrieve_vulkan_level_images(vulkan, terrain->height_map_image_index, height_map_image_data, height_map_image_size);
+							retrieve_vulkan_level_images(vulkan, terrain->diffuse_map_image_index, diffuse_map_image_data, diffuse_map_image_size);
 						}
 						vec3 intersection = {};
 						if (ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
@@ -1448,9 +1446,7 @@ int main(int argc, char **argv) {
 										
 									}
 									terrain *terrain = &level->terrains[terrain_component->terrain_index];
-									uint32 *image_indices = vulkan->descriptors.combined_2d_image_sampler_image_indices;
-									uint32 height_map_index = image_indices[terrain->height_map_descriptor_index];
-									update_vulkan_image_region(vulkan, height_map_index, (uint8 *)height_map, level_terrain_resolution * level_terrain_resolution * 2);
+									update_vulkan_level_images(vulkan, terrain->height_map_image_index, (uint8 *)height_map, level_terrain_resolution * level_terrain_resolution * 2);
 								}
 								editor->terrain_brush_radius = clamp(editor->terrain_brush_radius + ImGui::GetIO().MouseWheel * 0.1f, 0.3f, 20.0f);
 							}
@@ -1526,8 +1522,8 @@ int main(int argc, char **argv) {
 			ImDrawData *imgui_draw_data = ImGui::GetDrawData();
 			for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
 				ImDrawList *dlist = imgui_draw_data->CmdLists[i];
-				uint32 offset = append_vulkan_dynamic_vertex_region(vulkan, dlist->VtxBuffer.Data, dlist->VtxBuffer.Size * sizeof(ImDrawVert), sizeof(ImDrawVert));
-				append_vulkan_dynamic_vertex_region(vulkan, dlist->IdxBuffer.Data, dlist->IdxBuffer.Size * sizeof(ImDrawIdx), sizeof(ImDrawVert));
+				uint32 offset = append_vulkan_frame_vertex_buffer(vulkan, dlist->VtxBuffer.Data, dlist->VtxBuffer.Size * sizeof(ImDrawVert), sizeof(ImDrawVert));
+				append_vulkan_frame_vertex_buffer(vulkan, dlist->IdxBuffer.Data, dlist->IdxBuffer.Size * sizeof(ImDrawIdx), sizeof(ImDrawVert));
 				if (i == 0) {
 					editor->render_data.imgui_dynamic_vertex_region_buffer_offset = offset;
 				}
@@ -1538,7 +1534,7 @@ int main(int argc, char **argv) {
 			if (editor->render_data.terrain_brush) {
 				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.color_vertex_pipeline);
 				VkDeviceSize offset = 0;
-				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &offset);
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.level_vertex_buffer.buffer, &offset);
 				shader_color_vertex_push_constant pc = {};
 				pc.transform_mat = editor->render_data.terrain_brush_transform_mat;
 				pc.color = vec4{1, 0, 0, 1};
@@ -1549,7 +1545,7 @@ int main(int argc, char **argv) {
 			if (editor->render_data.collision_sphere_count + editor->render_data.collision_capsule_count + editor->render_data.collision_bound_count > 0) {
 				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.color_vertex_pipeline);
 				VkDeviceSize vertices_offset = 0;
-				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.vertex_region_buffer, &vertices_offset);
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.level_vertex_buffer.buffer, &vertices_offset);
 				for (uint32 i = 0; i < editor->render_data.collision_sphere_count; i += 1) {
 					shader_color_vertex_push_constant pc = {editor->render_data.collision_spheres[i].transform, editor->render_data.collision_spheres[i].color, level->persistant_data.default_height_map_descriptor_index};
 					vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
@@ -1581,8 +1577,8 @@ int main(int argc, char **argv) {
 			if (imgui_draw_data->CmdListsCount > 0) {
 				vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipelines.imgui_pipeline);
 				VkDeviceSize vertices_offset = 0;
-				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.dynamic_vertex_region_buffers[vulkan->frame_index], &vertices_offset);
-				vkCmdBindIndexBuffer(cmd_buffer, vulkan->memory_regions.dynamic_vertex_region_buffers[vulkan->frame_index], vertices_offset, VK_INDEX_TYPE_UINT16);
+				vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &vulkan->memory_regions.frame_vertex_buffers[vulkan->frame_index].buffer, &vertices_offset);
+				vkCmdBindIndexBuffer(cmd_buffer, vulkan->memory_regions.frame_vertex_buffers[vulkan->frame_index].buffer, vertices_offset, VK_INDEX_TYPE_UINT16);
 				uint32 buffer_offset = editor->render_data.imgui_dynamic_vertex_region_buffer_offset;
 				for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
 					ImDrawList *dlist = imgui_draw_data->CmdLists[i];
@@ -1610,8 +1606,8 @@ int main(int argc, char **argv) {
 		level_generate_render_data(level, vulkan, editor->camera, generate_editor_render_data);
 		level_generate_render_commands(level, vulkan, editor->camera, extra_color_render_pass_commands, extra_swap_chain_render_pass_commands);
 		bool screen_shot = ImGui::IsKeyReleased(keycode_print_screen);
-		vulkan_uniform_region_size = vulkan->memory_regions.uniform_region_sizes[vulkan->frame_index];
-		vulkan_dynamic_vertex_region_size = vulkan->memory_regions.dynamic_vertex_region_sizes[vulkan->frame_index];
+		vulkan_uniform_region_size = vulkan->memory_regions.frame_uniform_buffers[vulkan->frame_index].buffer_size;
+		vulkan_dynamic_vertex_region_size = vulkan->memory_regions.frame_vertex_buffers[vulkan->frame_index].buffer_size;
 		vulkan_end_render(vulkan, screen_shot);
 
 		{
