@@ -235,7 +235,7 @@ int main(int argc, char **argv) {
 		}
 		ImGui::NewFrame();
 		{ // miscs
-			if (ImGui::IsKeyPressed(VK_RETURN) && ImGui::IsKeyDown(VK_MENU)) {
+			if (ImGui::IsKeyPressed(VK_F11) || (ImGui::IsKeyPressed(VK_RETURN) && ImGui::IsKeyDown(VK_MENU))) {
 				set_window_fullscreen(window, !window->fullscreen);
 			}
 			if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
