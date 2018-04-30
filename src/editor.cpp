@@ -11,7 +11,6 @@
 #include "../vendor/include/imgui/imgui_draw.cpp"
 #include "../vendor/include/imgui/imgui.cpp"
 #include "../vendor/include/imgui/ImGuizmo.cpp"
-#undef snprintf
 
 struct imgui_error_popup {
 	bool error;
@@ -103,6 +102,7 @@ struct editor {
 	editor_render_data render_data;
 
 	ImGuiContext *imgui_context;
+	ImGuiIO *imgui_io;
 	uint32 imgui_font_atlas_descriptor_index;
 	
 	camera camera;
@@ -151,36 +151,36 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 	{ // imgui
 		editor->imgui_context = ImGui::CreateContext();
 		ImGui::StyleColorsDark();
-		ImGuiIO &imgui_io = ImGui::GetIO();
-		imgui_io.KeyMap[ImGuiKey_Tab] = keycode_tab;
-		imgui_io.KeyMap[ImGuiKey_LeftArrow] = keycode_left;
-		imgui_io.KeyMap[ImGuiKey_RightArrow] = keycode_right;
-		imgui_io.KeyMap[ImGuiKey_UpArrow] = keycode_up;
-		imgui_io.KeyMap[ImGuiKey_DownArrow] = keycode_down;
-		imgui_io.KeyMap[ImGuiKey_PageUp] = keycode_page_up;
-		imgui_io.KeyMap[ImGuiKey_PageDown] = keycode_page_down;
-		imgui_io.KeyMap[ImGuiKey_Home] = keycode_home;
-		imgui_io.KeyMap[ImGuiKey_End] = keycode_end;
-		imgui_io.KeyMap[ImGuiKey_Backspace] = keycode_backspace;
-		imgui_io.KeyMap[ImGuiKey_Enter] = keycode_return;
-		imgui_io.KeyMap[ImGuiKey_Escape] = keycode_esc;
-		imgui_io.KeyMap[ImGuiKey_A] = 'A';
-		imgui_io.KeyMap[ImGuiKey_C] = 'C';
-		imgui_io.KeyMap[ImGuiKey_V] = 'V';
-		imgui_io.KeyMap[ImGuiKey_X] = 'X';
-		imgui_io.KeyMap[ImGuiKey_Y] = 'Y';
-		imgui_io.KeyMap[ImGuiKey_Z] = 'Z';
-		imgui_io.DisplaySize = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
-		ImGuizmo::SetRect(0, 0, imgui_io.DisplaySize.x, imgui_io.DisplaySize.y);
-		imgui_io.IniFilename = nullptr;
-		imgui_io.MousePos = {-1, -1};
-		imgui_io.FontGlobalScale = (float)vulkan->swap_chain.image_width / (float)GetSystemMetrics(SM_CXSCREEN);
+		editor->imgui_io = &ImGui::GetIO();
+		editor->imgui_io->KeyMap[ImGuiKey_Tab] = VK_TAB;
+		editor->imgui_io->KeyMap[ImGuiKey_LeftArrow] = VK_LEFT;
+		editor->imgui_io->KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
+		editor->imgui_io->KeyMap[ImGuiKey_UpArrow] = VK_UP;
+		editor->imgui_io->KeyMap[ImGuiKey_DownArrow] = VK_DOWN;
+		editor->imgui_io->KeyMap[ImGuiKey_PageUp] = VK_PRIOR;
+		editor->imgui_io->KeyMap[ImGuiKey_PageDown] = VK_NEXT;
+		editor->imgui_io->KeyMap[ImGuiKey_Home] = VK_HOME;
+		editor->imgui_io->KeyMap[ImGuiKey_End] = VK_END;
+		editor->imgui_io->KeyMap[ImGuiKey_Backspace] = VK_BACK;
+		editor->imgui_io->KeyMap[ImGuiKey_Enter] = VK_RETURN;
+		editor->imgui_io->KeyMap[ImGuiKey_Escape] = VK_ESCAPE;
+		editor->imgui_io->KeyMap[ImGuiKey_A] = 'A';
+		editor->imgui_io->KeyMap[ImGuiKey_C] = 'C';
+		editor->imgui_io->KeyMap[ImGuiKey_V] = 'V';
+		editor->imgui_io->KeyMap[ImGuiKey_X] = 'X';
+		editor->imgui_io->KeyMap[ImGuiKey_Y] = 'Y';
+		editor->imgui_io->KeyMap[ImGuiKey_Z] = 'Z';
+		editor->imgui_io->DisplaySize = {(float)vulkan->framebuffers.color_framebuffer_width, (float)vulkan->framebuffers.color_framebuffer_height};
+		ImGuizmo::SetRect(0, 0, editor->imgui_io->DisplaySize.x, editor->imgui_io->DisplaySize.y);
+		editor->imgui_io->IniFilename = nullptr;
+		editor->imgui_io->MousePos = {-1, -1};
+		editor->imgui_io->FontGlobalScale = (float)vulkan->framebuffers.color_framebuffer_width / (float)GetSystemMetrics(SM_CXSCREEN);
 
-		imgui_io.Fonts->AddFontFromFileTTF("assets/fonts/OpenSans-Regular.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 100);
+		editor->imgui_io->Fonts->AddFontFromFileTTF("assets/fonts/OpenSans-Regular.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 100);
 		uint8* font_atlas_image = nullptr;
 		int32 font_atlas_image_width = 0;
 		int32 font_atlas_image_height = 0;
-		imgui_io.Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
+		editor->imgui_io->Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
 
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_info.imageType = VK_IMAGE_TYPE_2D;
@@ -201,13 +201,13 @@ void initialize_editor(editor *editor, vulkan *vulkan) {
 		uint32 image_index = append_vulkan_level_images(vulkan, image_info, image_view_info, font_atlas_image, font_atlas_image_width * font_atlas_image_height * 4, 1, 4);
 		VkImageView image_view = vulkan->memory_regions.level_images.images[image_index].view;
 		editor->imgui_font_atlas_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, image_view, vulkan->samplers.mipmap_samplers[0]);
-		imgui_io.Fonts->SetTexID((ImTextureID)(intptr_t)editor->imgui_font_atlas_descriptor_index);
-		imgui_io.Fonts->ClearTexData();
+		editor->imgui_io->Fonts->SetTexID((ImTextureID)(intptr_t)editor->imgui_font_atlas_descriptor_index);
+		editor->imgui_io->Fonts->ClearTexData();
 	}
 	editor->camera.position = vec3{4, 8, 8};
 	editor->camera.view = vec3_normalize(-editor->camera.position);
 	editor->camera.fovy = degree_to_radian(50);
-	editor->camera.aspect = (float)vulkan->swap_chain.image_width / (float)vulkan->swap_chain.image_height;
+	editor->camera.aspect = (float)vulkan->framebuffers.color_framebuffer_width / (float)vulkan->framebuffers.color_framebuffer_height;
 	editor->camera.znear = 0.1f;
 	editor->camera.zfar = 1000;
 	editor->camera_pitch = asinf(editor->camera.view.y);
@@ -283,7 +283,7 @@ void save_terrain_in_edit(editor *editor, level *level) {
 		terrain_edit *terrain_edit = &editor->terrain_in_edit[i];
 		terrain *terrain = &level->terrains[terrain_edit->terrain_index];
 		file_mapping gpk_file_mapping;
-		m_assert(open_file_mapping(terrain->gpk_file, &gpk_file_mapping));
+		m_assert(open_file_mapping(terrain->gpk_file, &gpk_file_mapping), "");
 		gpk_terrain *gpk_terrain = (struct gpk_terrain *)gpk_file_mapping.ptr;
 		uint8 *height_map_ptr = gpk_file_mapping.ptr + gpk_terrain->height_map_offset;
 		uint8 *diffuse_map_ptr = gpk_file_mapping.ptr + gpk_terrain->diffuse_map_offset;
@@ -307,6 +307,94 @@ bool save_editor_changes(editor *editor, level *level) {
 	return true;
 }
 
+struct {
+	bool initialized;
+	bool quit;
+	window *window;
+	editor *editor;
+} window_message_channel = {};
+
+LRESULT window_message_handle_func(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+	LRESULT result = 0;
+	if (!window_message_channel.initialized) {
+		result = DefWindowProcA(hwnd, msg, wparam, lparam);
+	}
+	else {
+		window *window = window_message_channel.window;
+		ImGuiIO *imgui_io = window_message_channel.editor->imgui_io;
+		switch (msg) {
+			default: {
+				result = DefWindowProcA(hwnd, msg, wparam, lparam);
+			} break;
+			case WM_CLOSE:
+			case WM_QUIT: {
+				window_message_channel.quit = true;
+			} break;
+			case WM_PAINT: {
+				ValidateRect(hwnd, nullptr);
+			} break;
+			case WM_SIZE: {
+				window->width = LOWORD(lparam);
+				window->height = HIWORD(lparam);
+			} break;
+			case WM_SHOWWINDOW : {
+			} break;
+			case WM_KEYDOWN:
+			case WM_SYSKEYDOWN: 
+			case WM_KEYUP:
+			case WM_SYSKEYUP: {
+				bool down = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+				imgui_io->KeysDown[wparam] = down;
+				if (wparam == VK_SHIFT) {
+					imgui_io->KeyShift = down;
+				}
+				else if (wparam == VK_CONTROL) {
+					imgui_io->KeyCtrl = down;
+				}
+				else if (wparam == VK_MENU) {
+					imgui_io->KeyAlt = down;
+				}
+			} break;
+			case WM_CHAR:
+			case WM_SYSCHAR: {
+				imgui_io->AddInputCharacter((ImWchar)wparam);
+			} break;
+			case WM_MOUSEMOVE: {
+				window->mouse_x = LOWORD(lparam);
+				window->mouse_y = HIWORD(lparam);
+			} break;
+			case WM_LBUTTONDOWN:
+			case WM_LBUTTONUP: {
+				imgui_io->MouseDown[0] = (msg == WM_LBUTTONDOWN);
+			} break;
+			case WM_RBUTTONDOWN:
+			case WM_RBUTTONUP: {
+				imgui_io->MouseDown[1] = (msg == WM_RBUTTONDOWN);
+			} break;
+			case WM_MBUTTONDOWN:
+			case WM_MBUTTONUP: {
+				imgui_io->MouseDown[2] = (msg == WM_MBUTTONDOWN);
+			} break;
+			case WM_MOUSEWHEEL: {
+				imgui_io->MouseWheel = (float)WHEEL_DELTA / (float)GET_WHEEL_DELTA_WPARAM(wparam);
+			} break;
+			case WM_INPUT: {
+				RAWINPUT raw_input;
+				uint32 raw_input_size = sizeof(raw_input);
+				GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &raw_input, &raw_input_size, sizeof(RAWINPUTHEADER));
+				if (raw_input.header.dwType == RIM_TYPEMOUSE) {
+					RAWMOUSE *raw_mouse = &raw_input.data.mouse;
+					if (raw_mouse->usFlags == MOUSE_MOVE_RELATIVE) {
+						window->raw_mouse_dx += raw_mouse->lLastX;
+						window->raw_mouse_dy += raw_mouse->lLastY;
+					}
+				}
+			} break;
+		}
+	}
+	return result;
+}
+
 int main(int argc, char **argv) {
 	set_exe_dir_as_current();
 
@@ -314,11 +402,10 @@ int main(int argc, char **argv) {
 	general_memory_arena.name = "general";
 	general_memory_arena.capacity = m_megabytes(16);
 	general_memory_arena.memory = allocate_virtual_memory(general_memory_arena.capacity);
-	m_assert(general_memory_arena.memory);
+	m_assert(general_memory_arena.memory, "");
 	
-	window window = {};
-	m_assert(initialize_window(&window));
-	set_window_fullscreen(&window, true);
+	window *window = allocate_memory<struct window>(&general_memory_arena, 1);
+	m_assert(initialize_window(window, window_message_handle_func), "");
 
 	vulkan *vulkan = allocate_memory<struct vulkan>(&general_memory_arena, 1);
 	initialize_vulkan(vulkan, window);
@@ -328,6 +415,11 @@ int main(int argc, char **argv) {
 
 	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
 	initialize_level(level, vulkan);
+
+	window_message_channel.window = window;
+	window_message_channel.editor = editor;
+	window_message_channel.initialized = true;
+	show_window(window);
 
 	timer timer = {};
 	initialize_timer(&timer);
@@ -340,97 +432,68 @@ int main(int argc, char **argv) {
 	uint64 vulkan_uniform_region_size = 0;
 	uint64 vulkan_dynamic_vertex_region_size = 0;
 
-	bool editor_closing = false;
-	bool editor_closed = false;
+	bool quitting_editor = false;
+	bool quit_editor = false;
 
-	show_window(&window);
-
-	while (!editor_closed) {
+	while (!quit_editor) {
 		start_timer(&timer);
 
-		ImGui::GetIO().DeltaTime = (float)last_frame_time_sec;
-		window.raw_mouse_dx = 0;
-		window.raw_mouse_dy = 0;
+		window->raw_mouse_dx = 0;
+		window->raw_mouse_dy = 0;
+		handle_window_messages(window);
 
-		while (peek_window_message(&window)) {
-			switch (window.msg_type) {
-				case window_message_type_destroy:
-				case window_message_type_close:
-				case window_message_type_quit: {
-					editor_closing = true;
-				} break;
-				case window_message_type_key_down:
-				case window_message_type_key_up: {
-					if (window.keycode == keycode_shift) {
-						ImGui::GetIO().KeyShift = (window.msg_type == window_message_type_key_down);
-					}
-					else if (window.keycode == keycode_ctrl) {
-						ImGui::GetIO().KeyCtrl = (window.msg_type == window_message_type_key_down);
-					}
-					else if (window.keycode == keycode_alt) {
-						ImGui::GetIO().KeyAlt = (window.msg_type == window_message_type_key_down);
-					}
-					else {
-						m_assert(window.keycode < sizeof(ImGui::GetIO().KeysDown));
-						ImGui::GetIO().KeysDown[window.keycode] = (window.msg_type == window_message_type_key_down);
-						if (window.keycode == keycode_print_screen && window.msg_type != window_message_type_key_down) {
-							// simulate print screen key down event since windows does not send it for some reason
-							ImGui::GetIO().KeysDownDuration[keycode_print_screen] = 0.1f;
-						}
-					}
-				} break;
-				case window_message_type_char: {
-					ImGui::GetIO().AddInputCharacter(window.input_char);
-				} break;
-				case window_message_type_mouse_move: {
-					ImGui::GetIO().MousePos.x = (float)window.mouse_x;
-					ImGui::GetIO().MousePos.y = (float)window.mouse_y;
-				} break;
-				case window_message_type_mouse_lb_down:
-				case window_message_type_mouse_lb_up: {
-					ImGui::GetIO().MouseDown[0] = (window.msg_type == window_message_type_mouse_lb_down);
-				} break;
-				case window_message_type_mouse_rb_down:
-				case window_message_type_mouse_rb_up: {
-					ImGui::GetIO().MouseDown[1] = (window.msg_type == window_message_type_mouse_rb_down);
-				} break;
-				case window_message_type_mouse_mb_down:
-				case window_message_type_mouse_mb_up: {
-					ImGui::GetIO().MouseDown[2] = (window.msg_type == window_message_type_mouse_mb_down);
-				} break;
-				case window_message_type_mouse_wheel: {
-					ImGui::GetIO().MouseWheel = window.mouse_wheel;
-				} break;
-				default: {} break;
+		editor->imgui_io->DeltaTime = (float)last_frame_time_sec;
+		bool mouse_in_display_area = true;
+		{ // mouse position
+			float px = (float)window->mouse_x / vulkan->swap_chain.width;
+			float py = (float)window->mouse_y / vulkan->swap_chain.height;
+			vec4 region = vulkan->swap_chain_framebuffer_region;
+			if (px >= region.x && px <= (region.x + region.z) && py >= region.y && py <= (region.y + region.w)) {
+				editor->imgui_io->MousePos.x = editor->imgui_io->DisplaySize.x * (px - region.x) / region.z;
+				editor->imgui_io->MousePos.y = editor->imgui_io->DisplaySize.y * (py - region.y) / region.w;
+			}
+			else {
+				editor->imgui_io->MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
+				mouse_in_display_area = false;
 			}
 		}
-
 		ImGui::NewFrame();
 	  { // miscs
-	  	if (ImGui::GetIO().KeyAlt && ImGui::IsKeyPressed(keycode_f4)) {
-	  		editor_closing = true;
+	  	if (ImGui::IsKeyPressed(VK_RETURN) && ImGui::IsKeyDown(VK_MENU)) {
+	  		set_window_fullscreen(window, !window->fullscreen);
 	  	}
-	  	if (editor_closing) {
-	  		editor_closing = false;
-	  		ImGui::OpenPopup("##editor_closing_popup");
+	  	if (window_message_channel.quit) {
+	  		window_message_channel.quit = false;
+	  		quitting_editor = true;
 	  	}
-	  	if (ImGui::BeginPopupModal("##editor_closing_popup")) {
-	  		ImGui::Text("Exiting editor, save changes?");
+	  	if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
+	  		quitting_editor = true;
+	  	}
+	  	if (quitting_editor) {
+	  		quitting_editor = false;
+	  		ImGui::OpenPopup("##quitting_editor_popup");
+	  	}
+	  	if (ImGui::BeginPopupModal("##quitting_editor_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+	  		ImGui::Text("Save changes?");
 	  		if (ImGui::Button("Yes")) {
 	  			if (!save_editor_changes(editor, level)) {
 	  				ImGui::OpenPopup("##save_editor_changes_failed_popup");
 	  			}
 	  			else {
 	  				ImGui::CloseCurrentPopup();
-	  				editor_closed = true;
+	  				quit_editor = true;
 	  			}
 	  		}
 	  		ImGui::SameLine();
 	  		if (ImGui::Button("No")) {
 	  			ImGui::CloseCurrentPopup();
-	  			editor_closed = true;
+	  			quit_editor = true;
 	  		}
-	  		if (ImGui::BeginPopupModal("##save_editor_changes_failed_popup")) {
+	  		ImGui::SameLine();
+				if (ImGui::Button("Cancel")) {
+	  			ImGui::CloseCurrentPopup();
+				}
+	  		if (ImGui::BeginPopupModal("##save_editor_changes_failed_popup", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 	  			ImGui::Text("failed to save editor changes");
 	  			if (ImGui::Button("Ok")) {
 	  				ImGui::CloseCurrentPopup();
@@ -441,7 +504,7 @@ int main(int argc, char **argv) {
 	  	}
 	  }
 		{ // move camera
-			if (ImGui::IsMouseClicked(2) && !ImGui::GetIO().WantCaptureMouse) {
+			if (ImGui::IsMouseClicked(2) && !editor->imgui_io->WantCaptureMouse) {
 				pin_cursor(true);
 				editor->camera_moving = true;
 			}
@@ -466,9 +529,9 @@ int main(int argc, char **argv) {
 				}
 				float camera_rotation_speed = 2.0f;
 				float max_pitch = degree_to_radian(75.0f);
-				float yaw = -window.raw_mouse_dx * camera_rotation_speed * ImGui::GetIO().DeltaTime;
+				float yaw = -window->raw_mouse_dx * camera_rotation_speed * editor->imgui_io->DeltaTime;
 				editor->camera.view = vec3_normalize(mat3_from_mat4(mat4_from_rotate(vec3{0, 1, 0}, yaw)) * editor->camera.view);
-				float pitch = -window.raw_mouse_dy * camera_rotation_speed * ImGui::GetIO().DeltaTime;
+				float pitch = -window->raw_mouse_dy * camera_rotation_speed * editor->imgui_io->DeltaTime;
 				if (editor->camera_pitch + pitch > -max_pitch && editor->camera_pitch + pitch < max_pitch) {
 					vec3 view_cross_up = vec3_normalize(vec3_cross(editor->camera.view, vec3{0, 1, 0}));
 					mat4 rotate_mat = mat4_from_rotate(view_cross_up, pitch);
@@ -478,8 +541,8 @@ int main(int argc, char **argv) {
 			}
 			{
 				static bool camera_move_speed_popup = false;
-				if (!ImGui::GetIO().WantCaptureMouse && editor->camera_moving) {
-					if (ImGui::GetIO().MouseWheel != 0 && ImGui::GetIO().KeyShift) {
+				if (!editor->imgui_io->WantCaptureMouse && editor->camera_moving) {
+					if (editor->imgui_io->MouseWheel != 0 && editor->imgui_io->KeyShift) {
 						ImGui::OpenPopup("##camera_speed_popup");
 						camera_move_speed_popup = true;
 					}
@@ -487,7 +550,7 @@ int main(int argc, char **argv) {
 				if (ImGui::BeginPopupModal("##camera_speed_popup", &camera_move_speed_popup, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
 					float min_speed = 0.1f;
 					float max_speed = 100;
-					editor->camera_move_speed += ImGui::GetIO().MouseWheel;
+					editor->camera_move_speed += editor->imgui_io->MouseWheel;
 					ImGui::SliderFloat("camera speed##camera_speed_slider", &editor->camera_move_speed, min_speed, max_speed);
 					ImGui::EndPopup();
 				}
@@ -495,7 +558,7 @@ int main(int argc, char **argv) {
 		}
 		{ // selection modes, transform mode, gizmo modes
 			ImGui::PushID("selection_transform_gizmo_mode_popup");
-			if ((ImGui::IsMouseClicked(1) && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) || (ImGui::IsKeyPressed('X') && ImGui::GetIO().KeyCtrl)) {
+			if ((ImGui::IsMouseClicked(1) && !editor->imgui_io->WantCaptureMouse && !ImGuizmo::IsOver()) || (ImGui::IsKeyPressed('X') && ImGui::IsKeyDown(VK_CONTROL))) {
 				ImGui::OpenPopup("##popup");
 			}
 			if (ImGui::BeginPopup("##popup")) {
@@ -580,14 +643,14 @@ int main(int argc, char **argv) {
 			ImGui::PopID();
 		}
 		ray camera_ray = {};
-		{
-			vec3 window_pos = vec3{ImGui::GetMousePos().x, ImGui::GetIO().DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
-			vec4 viewport = vec4{0, 0, ImGui::GetIO().DisplaySize.x , ImGui::GetIO().DisplaySize.y};
+		if (mouse_in_display_area) {
+			vec3 window_pos = vec3{ImGui::GetMousePos().x, editor->imgui_io->DisplaySize.y - ImGui::GetMousePos().y, 0.1f};
+			vec4 viewport = vec4{0, 0, editor->imgui_io->DisplaySize.x , editor->imgui_io->DisplaySize.y};
 			vec3 mouse_world_position = mat4_unproject(window_pos, camera_view_mat4(editor->camera), camera_projection_mat4(editor->camera), viewport);
 			camera_ray = {editor->camera.position, vec3_normalize(mouse_world_position - editor->camera.position), editor->camera.zfar};
 		}
 		{ // selection
-			if (ImGui::IsMouseClicked(0) && ImGui::GetIO().KeyShift && !ImGui::GetIO().WantCaptureMouse && !ImGuizmo::IsOver()) {
+			if (ImGui::IsMouseClicked(0) && ImGui::IsKeyDown(VK_SHIFT) && mouse_in_display_area && !editor->imgui_io->WantCaptureMouse && !ImGuizmo::IsOver()) {
 				if (editor->selection_mode == selection_mode_entity) {
 					float entity_min_distance = camera_ray.len;
 					uint32 entity_index = UINT32_MAX;
@@ -641,6 +704,9 @@ int main(int argc, char **argv) {
 						}
 					}
 					ImGui::Separator();
+					if (ImGui::MenuItem("Quit##quit")) {
+						quitting_editor = true;
+					}
 					ImGui::PopID();
 					ImGui::EndMenu();
 				}
@@ -657,7 +723,7 @@ int main(int argc, char **argv) {
 		}
 		{ // entity window
 			ImGui::SetNextWindowPos(ImVec2{0, editor->menu_bar_height});
-			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f});
+			ImGui::SetNextWindowSize(ImVec2{editor->imgui_io->DisplaySize.x * 0.2f, editor->imgui_io->DisplaySize.y * 0.5f});
 			ImGui::PushID("entitiy_window");
 			if (ImGui::Begin("Entity##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->entity_window_pos = ImGui::GetWindowPos();
@@ -1025,7 +1091,7 @@ int main(int argc, char **argv) {
 		}
 		{ // model window
 			ImGui::SetNextWindowPos(ImVec2{0, editor->entity_window_pos.y + editor->entity_window_size.y});
-			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.2f});
+			ImGui::SetNextWindowSize(ImVec2{editor->imgui_io->DisplaySize.x * 0.2f, editor->imgui_io->DisplaySize.y * 0.5f * 0.2f});
 			ImGui::PushID("model_window");
 			if (ImGui::Begin("Models##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->model_window_pos = ImGui::GetWindowPos();
@@ -1078,7 +1144,7 @@ int main(int argc, char **argv) {
 		}
 		{ // skybox window
 			ImGui::SetNextWindowPos(ImVec2{0, editor->model_window_pos.y + editor->model_window_size.y});
-			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.2f});
+			ImGui::SetNextWindowSize(ImVec2{editor->imgui_io->DisplaySize.x * 0.2f, editor->imgui_io->DisplaySize.y * 0.5f * 0.2f});
 			ImGui::PushID("skybox_window");
 			if (ImGui::Begin("Skyboxes##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->skybox_window_pos = ImGui::GetWindowPos();
@@ -1098,7 +1164,7 @@ int main(int argc, char **argv) {
 		}
 		{ // terrain window
 			ImGui::SetNextWindowPos(ImVec2{0, editor->skybox_window_pos.y + editor->skybox_window_size.y});
-			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.4f});
+			ImGui::SetNextWindowSize(ImVec2{editor->imgui_io->DisplaySize.x * 0.2f, editor->imgui_io->DisplaySize.y * 0.5f * 0.4f});
 			ImGui::PushID("terrain_window");
 			if (ImGui::Begin("Terrains##window", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse)) {
 				editor->terrain_window_pos = ImGui::GetWindowPos();
@@ -1181,8 +1247,8 @@ int main(int argc, char **argv) {
 			ImGui::PopID();
 		}
 		{ // memory window
-			ImGui::SetNextWindowPos(ImVec2{ImGui::GetIO().DisplaySize.x * 0.8f, editor->menu_bar_height});
-			ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.5f * 0.8f});
+			ImGui::SetNextWindowPos(ImVec2{editor->imgui_io->DisplaySize.x * 0.8f, editor->menu_bar_height});
+			ImGui::SetNextWindowSize(ImVec2{editor->imgui_io->DisplaySize.x * 0.2f, editor->imgui_io->DisplaySize.y * 0.5f * 0.8f});
 			ImGui::PushID("memory_usage_window");
 			if (ImGui::Begin("Memory Usage##window", nullptr, ImGuiWindowFlags_NoCollapse)) {
 				editor->memory_window_pos = ImGui::GetWindowPos();
@@ -1303,8 +1369,8 @@ int main(int argc, char **argv) {
 						line_end.x = line_end.x * 0.5f + 0.5f;
 						line_end.y = -line_end.y * 0.5f + 0.5f;
 
-						ImVec2 line_begin_imgui = {ImGui::GetIO().DisplaySize.x * line_begin.x, ImGui::GetIO().DisplaySize.y * line_begin.y};
-						ImVec2 line_end_imgui = {ImGui::GetIO().DisplaySize.x * line_end.x, ImGui::GetIO().DisplaySize.y * line_end.y};
+						ImVec2 line_begin_imgui = {editor->imgui_io->DisplaySize.x * line_begin.x, editor->imgui_io->DisplaySize.y * line_begin.y};
+						ImVec2 line_end_imgui = {editor->imgui_io->DisplaySize.x * line_end.x, editor->imgui_io->DisplaySize.y * line_end.y};
 
 						draw_list->AddLine(line_begin_imgui, line_end_imgui, 0xffffffff, 6);
 						draw_list->AddCircleFilled(line_end_imgui, 12, 0xff00ffff);
@@ -1373,7 +1439,7 @@ int main(int argc, char **argv) {
 				}
 				else if (editor->gizmo_mode == gizmo_mode_terrain_brush && entity_flags & entity_component_flag_terrain) {
 					ImGui::SetNextWindowPos(ImVec2{editor->entity_window_pos.x + editor->entity_window_size.x, editor->entity_window_pos.y});
-					ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.2f});
+					ImGui::SetNextWindowSize(ImVec2{editor->imgui_io->DisplaySize.x * 0.2f, editor->imgui_io->DisplaySize.y * 0.2f});
 					ImGui::PushID("brush_properties_window");
 					if (ImGui::Begin("brush properties##window")) {
 						editor->terrain_brush_window_pos = ImGui::GetWindowPos();
@@ -1396,7 +1462,7 @@ int main(int argc, char **argv) {
 							}
 						}
 						if (!terrain_edit) {
-							m_assert(editor->terrain_in_edit_count < m_countof(editor::terrain_in_edit));
+							m_assert(editor->terrain_in_edit_count < m_countof(editor::terrain_in_edit), "");
 							terrain_edit = &editor->terrain_in_edit[editor->terrain_in_edit_count++];
 							uint32 height_map_image_size = level_terrain_resolution * level_terrain_resolution * 2;
 							uint32 diffuse_map_image_size = level_terrain_resolution * level_terrain_resolution * 4;
@@ -1408,7 +1474,7 @@ int main(int argc, char **argv) {
 							retrieve_vulkan_level_images(vulkan, terrain->diffuse_map_image_index, diffuse_map_image_data, diffuse_map_image_size);
 						}
 						vec3 intersection = {};
-						if (ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
+						if (mouse_in_display_area && ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
 							float bound = level_terrain_size / 2.0f;
 							if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
 								if (ImGui::IsMouseDown(0)) {
@@ -1448,7 +1514,7 @@ int main(int argc, char **argv) {
 									terrain *terrain = &level->terrains[terrain_component->terrain_index];
 									update_vulkan_level_images(vulkan, terrain->height_map_image_index, (uint8 *)height_map, level_terrain_resolution * level_terrain_resolution * 2);
 								}
-								editor->terrain_brush_radius = clamp(editor->terrain_brush_radius + ImGui::GetIO().MouseWheel * 0.1f, 0.3f, 20.0f);
+								editor->terrain_brush_radius = clamp(editor->terrain_brush_radius + editor->imgui_io->MouseWheel * 0.1f, 0.3f, 20.0f);
 							}
 						}
 					}
@@ -1464,7 +1530,7 @@ int main(int argc, char **argv) {
 				entity_terrain_component *terrain_component = entity_get_terrain_component(level, editor->entity_index);
 				if (terrain_component->terrain_index < level->terrain_count) {
 					vec3 intersection = {};
-					if (ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
+					if (mouse_in_display_area && ray_interect_plane(camera_ray, plane{{0, 1, 0}, 0}, &intersection)) {
 						float bound = level_terrain_size / 2.0f;
 						if (intersection.x >= -bound && intersection.x <= bound && intersection.z >= -bound && intersection.z <= bound) {
 							intersection.y += 0.0005f;
@@ -1590,10 +1656,23 @@ int main(int argc, char **argv) {
 					buffer_offset += round_up(indices_size, (uint32)sizeof(ImDrawVert));
 					for (int32 i = 0; i < dlist->CmdBuffer.Size; i += 1) {
 						ImDrawCmd *dcmd = &dlist->CmdBuffer.Data[i];
-						VkRect2D scissor = {{(int32)dcmd->ClipRect.x, (int32)dcmd->ClipRect.y}, {(uint32)(dcmd->ClipRect.z - dcmd->ClipRect.x), (uint32)(dcmd->ClipRect.w - dcmd->ClipRect.y)}};
+						vec2 clip_rect[2] = {{dcmd->ClipRect.x, dcmd->ClipRect.y}, {dcmd->ClipRect.z, dcmd->ClipRect.w}};
+						for (auto &point : clip_rect) {
+							float px = point.x / editor->imgui_io->DisplaySize.x;
+							float py = point.y / editor->imgui_io->DisplaySize.y;
+							px = vulkan->swap_chain_framebuffer_region.x + vulkan->swap_chain_framebuffer_region.z * px;
+							py = vulkan->swap_chain_framebuffer_region.y + vulkan->swap_chain_framebuffer_region.w * py;
+							point.x = vulkan->swap_chain.width * px;
+							point.y = vulkan->swap_chain.height * py;
+						}
+						VkRect2D scissor = {{(int32)clip_rect[0].x, (int32)clip_rect[0].y}, {(uint32)(clip_rect[1].x - clip_rect[0].x), (uint32)(clip_rect[1].y - clip_rect[0].y)}};
 						vkCmdSetScissor(cmd_buffer, 0, 1, &scissor);
 						shader_imgui_push_constant pc = {};
-						pc.viewport = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
+						pc.swap_chain_framebuffer_region = vulkan->swap_chain_framebuffer_region;
+						pc.swap_chain_width = vulkan->swap_chain.width;
+						pc.swap_chain_height = vulkan->swap_chain.height;
+						pc.framebuffer_width = vulkan->framebuffers.color_framebuffer_width;
+						pc.framebuffer_height = vulkan->framebuffers.color_framebuffer_height;
 						pc.texture_index = (uint32)(intptr_t)dcmd->TextureId;
 						vkCmdPushConstants(cmd_buffer, vulkan->pipelines.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 						vkCmdDrawIndexed(cmd_buffer, dcmd->ElemCount, 1, element_index, vertex_index, 0);
@@ -1602,10 +1681,11 @@ int main(int argc, char **argv) {
 				}
 			}
 		};
-		vulkan_begin_render(vulkan);
+
+		vulkan_begin_render(vulkan, window->width, window->height);
 		level_generate_render_data(level, vulkan, editor->camera, generate_editor_render_data);
 		level_generate_render_commands(level, vulkan, editor->camera, extra_color_render_pass_commands, extra_swap_chain_render_pass_commands);
-		bool screen_shot = ImGui::IsKeyReleased(keycode_print_screen);
+		bool screen_shot = ImGui::IsKeyReleased(VK_SNAPSHOT);
 		vulkan_uniform_region_size = vulkan->memory_regions.frame_uniform_buffers[vulkan->frame_index].buffer_size;
 		vulkan_dynamic_vertex_region_size = vulkan->memory_regions.frame_vertex_buffers[vulkan->frame_index].buffer_size;
 		vulkan_end_render(vulkan, screen_shot);

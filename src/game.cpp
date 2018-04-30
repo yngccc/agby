@@ -7,22 +7,13 @@
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include "../vendor/include/imgui/imgui_draw.cpp"
 #include "../vendor/include/imgui/imgui.cpp"
-#undef snprintf
 
 #include <atomic>
 
-struct render_thread_arg {
-	struct vulkan *vulkan;
-	struct level *level;
-	struct game *game;
-};
-
 struct game {
-	std::atomic<uint32> render_done_flag;
-	std::atomic<uint32> frame_done_flag;
-
 	ImGuiContext *imgui_context;
-
+	ImGuiIO *imgui_io;
+	
 	camera player_camera;
 	float player_camera_r;
 	float player_camera_theta;
@@ -30,45 +21,129 @@ struct game {
 };
 
 void initialize_game(game *game, vulkan *vulkan) {
-	{ // misc
-		game->render_done_flag = 0;
-		game->frame_done_flag = 0;
-	}
 	{ // imgui
 		game->imgui_context = ImGui::CreateContext();
-		ImGuiIO &imgui_io = ImGui::GetIO();
-		imgui_io.KeyMap[ImGuiKey_Tab] = keycode_tab;
-		imgui_io.KeyMap[ImGuiKey_LeftArrow] = keycode_left;
-		imgui_io.KeyMap[ImGuiKey_RightArrow] = keycode_right;
-		imgui_io.KeyMap[ImGuiKey_UpArrow] = keycode_up;
-		imgui_io.KeyMap[ImGuiKey_DownArrow] = keycode_down;
-		imgui_io.KeyMap[ImGuiKey_PageUp] = keycode_page_up;
-		imgui_io.KeyMap[ImGuiKey_PageDown] = keycode_page_down;
-		imgui_io.KeyMap[ImGuiKey_Home] = keycode_home;
-		imgui_io.KeyMap[ImGuiKey_End] = keycode_end;
-		imgui_io.KeyMap[ImGuiKey_Backspace] = keycode_backspace;
-		imgui_io.KeyMap[ImGuiKey_Enter] = keycode_return;
-		imgui_io.KeyMap[ImGuiKey_Escape] = keycode_esc;
-		imgui_io.KeyMap[ImGuiKey_A] = 'A';
-		imgui_io.KeyMap[ImGuiKey_C] = 'C';
-		imgui_io.KeyMap[ImGuiKey_V] = 'V';
-		imgui_io.KeyMap[ImGuiKey_X] = 'X';
-		imgui_io.KeyMap[ImGuiKey_Y] = 'Y';
-		imgui_io.KeyMap[ImGuiKey_Z] = 'Z';
-		imgui_io.DisplaySize = {(float)vulkan->swap_chain.image_width, (float)vulkan->swap_chain.image_height};
-		imgui_io.MousePos = {-1, -1};
+		game->imgui_io = &ImGui::GetIO();
+		game->imgui_io->KeyMap[ImGuiKey_Tab] = VK_TAB;
+		game->imgui_io->KeyMap[ImGuiKey_LeftArrow] = VK_LEFT;
+		game->imgui_io->KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
+		game->imgui_io->KeyMap[ImGuiKey_UpArrow] = VK_UP;
+		game->imgui_io->KeyMap[ImGuiKey_DownArrow] = VK_DOWN;
+		game->imgui_io->KeyMap[ImGuiKey_PageUp] = VK_PRIOR;
+		game->imgui_io->KeyMap[ImGuiKey_PageDown] = VK_NEXT;
+		game->imgui_io->KeyMap[ImGuiKey_Home] = VK_HOME;
+		game->imgui_io->KeyMap[ImGuiKey_End] = VK_END;
+		game->imgui_io->KeyMap[ImGuiKey_Backspace] = VK_BACK;
+		game->imgui_io->KeyMap[ImGuiKey_Enter] = VK_RETURN;
+		game->imgui_io->KeyMap[ImGuiKey_Escape] = VK_ESCAPE;
+		game->imgui_io->KeyMap[ImGuiKey_A] = 'A';
+		game->imgui_io->KeyMap[ImGuiKey_C] = 'C';
+		game->imgui_io->KeyMap[ImGuiKey_V] = 'V';
+		game->imgui_io->KeyMap[ImGuiKey_X] = 'X';
+		game->imgui_io->KeyMap[ImGuiKey_Y] = 'Y';
+		game->imgui_io->KeyMap[ImGuiKey_Z] = 'Z';
+		game->imgui_io->DisplaySize = {(float)vulkan->swap_chain.width, (float)vulkan->swap_chain.height};
+		game->imgui_io->MousePos = {-1, -1};
 
 		uint8* font_atlas_image = nullptr;
 		int32 font_atlas_image_width = 0;
 		int32 font_atlas_image_height = 0;
-		imgui_io.Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
-		imgui_io.Fonts->ClearTexData();
+		game->imgui_io->Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
+		game->imgui_io->Fonts->ClearTexData();
 	}
 	{ // player
 		game->player_camera_r = 8;
 		game->player_camera_theta = 0.5f;
 		game->player_camera_phi = 0;
 	}
+}
+
+struct {
+	bool initialized;
+	bool quit;
+	window *window;
+	game *game;
+} window_message_channel = {};
+
+LRESULT window_message_handle_func(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+	LRESULT result = 0;
+	if (!window_message_channel.initialized) {
+		result = DefWindowProcA(hwnd, msg, wparam, lparam);
+	}
+	else {
+		window *window = window_message_channel.window;
+		ImGuiIO *imgui_io = window_message_channel.game->imgui_io;
+		switch (msg) {
+			default: { 
+				result = DefWindowProcA(hwnd, msg, wparam, lparam); 
+			} break;
+			case WM_CLOSE:
+			case WM_QUIT: {
+				window_message_channel.quit = true;
+			} break;
+			case WM_PAINT: {
+				ValidateRect(hwnd, nullptr);
+			} break;
+			case WM_SIZE: {
+				window->width = LOWORD(lparam);
+				window->height = HIWORD(lparam);
+			} break;
+			case WM_SHOWWINDOW : {
+			} break;
+			case WM_KEYDOWN:
+			case WM_SYSKEYDOWN: 
+			case WM_KEYUP:
+			case WM_SYSKEYUP: {
+				bool down = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+				imgui_io->KeysDown[wparam] = down;
+				if (wparam == VK_SHIFT) {
+					imgui_io->KeyShift = down;
+				}
+				else if (wparam == VK_CONTROL) {
+					imgui_io->KeyCtrl = down;
+				}
+				else if (wparam == VK_MENU) {
+					imgui_io->KeyAlt = down;
+				}
+			} break;
+			case WM_CHAR:
+			case WM_SYSCHAR: {
+				imgui_io->AddInputCharacter((ImWchar)wparam);
+			} break;
+			case WM_MOUSEMOVE: {
+				window->mouse_x = LOWORD(lparam);
+				window->mouse_y = HIWORD(lparam);
+			} break;
+			case WM_LBUTTONDOWN:
+			case WM_LBUTTONUP: {
+				imgui_io->MouseDown[0] = (msg == WM_LBUTTONDOWN);
+			} break;
+			case WM_RBUTTONDOWN:
+			case WM_RBUTTONUP: {
+				imgui_io->MouseDown[1] = (msg == WM_RBUTTONDOWN);
+			} break;
+			case WM_MBUTTONDOWN:
+			case WM_MBUTTONUP: {
+				imgui_io->MouseDown[2] = (msg == WM_MBUTTONDOWN);
+			} break;
+			case WM_MOUSEWHEEL: {
+				imgui_io->MouseWheel = (float)WHEEL_DELTA / (float)GET_WHEEL_DELTA_WPARAM(wparam);
+			} break;
+			case WM_INPUT: {
+				RAWINPUT raw_input;
+				uint32 raw_input_size = sizeof(raw_input);
+				GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &raw_input, &raw_input_size, sizeof(RAWINPUTHEADER));
+				if (raw_input.header.dwType == RIM_TYPEMOUSE) {
+					RAWMOUSE *raw_mouse = &raw_input.data.mouse;
+					if (raw_mouse->usFlags == MOUSE_MOVE_RELATIVE) {
+						window->raw_mouse_dx += raw_mouse->lLastX;
+						window->raw_mouse_dy += raw_mouse->lLastY;
+					}
+				}
+			} break;
+		}
+	}
+	return result;
 }
 
 int main(int argc, char **argv) {
@@ -78,11 +153,10 @@ int main(int argc, char **argv) {
 	general_memory_arena.name = "general";
 	general_memory_arena.capacity = m_megabytes(16);
 	general_memory_arena.memory = allocate_virtual_memory(general_memory_arena.capacity);
-	m_assert(general_memory_arena.memory);
+	m_assert(general_memory_arena.memory, "");
 	
-	window window = {};
-	m_assert(initialize_window(&window));
-	set_window_fullscreen(&window, true);
+	window *window = allocate_memory<struct window>(&general_memory_arena, 1);
+	m_assert(initialize_window(window, window_message_handle_func), "");
 
 	vulkan *vulkan = allocate_memory<struct vulkan>(&general_memory_arena, 1);
 	initialize_vulkan(vulkan, window);
@@ -125,111 +199,56 @@ int main(int argc, char **argv) {
 		entity_get_physics_component(level, level->player_entity_index)->bt_rigid_body->setActivationState(DISABLE_DEACTIVATION);
 	}
 
+	window_message_channel.window = window;
+	window_message_channel.game = game;
+	window_message_channel.initialized = true;
+	show_window(window);
+	pin_cursor(true);
+	show_cursor(false);
+
 	timer timer = {};
 	initialize_timer(&timer);
 	uint64 last_frame_time_microsec = 0;
 	double last_frame_time_sec = 0;
-	bool program_running = true;
 
-	show_window(&window);
-	pin_cursor(true);
-	show_cursor(false);
-
-	{ // rendering thread
-		render_thread_arg *render_thread_arg = allocate_memory<struct render_thread_arg>(&general_memory_arena, 1);
-		*render_thread_arg = {vulkan, level, game};
-		auto render_thread_func = [](void *arg) -> DWORD {
-			struct render_thread_arg *render_thread_arg = (struct render_thread_arg *)arg;
-			struct vulkan *vulkan = render_thread_arg->vulkan;
-			struct level *level = render_thread_arg->level;
-			struct game *game = render_thread_arg->game;
-			while (true) {
-				vulkan_begin_render(vulkan);
-				level_generate_render_data(level, vulkan, game->player_camera, []{});
-				level_generate_render_commands(level, vulkan, game->player_camera, []{}, []{});
-				vulkan_end_render(vulkan, false);
-
-				game->render_done_flag.store(1);
-				uint32 frame_done_flag = 1;
-				while (!game->frame_done_flag.compare_exchange_weak(frame_done_flag, 0)) {
-					frame_done_flag = 1;
-				}
-			}
-			return 0;
-		};
-		CreateThread(nullptr, 0, render_thread_func, render_thread_arg, 0, nullptr);
-	}
+	bool quit_game = false;
 	
-	while (program_running) {
+	while (!quit_game) {
 		start_timer(&timer);
 
-		ImGui::GetIO().DeltaTime = (float)last_frame_time_sec;
-		window.raw_mouse_dx = 0;
-		window.raw_mouse_dy = 0;
+		window->raw_mouse_dx = 0;
+		window->raw_mouse_dy = 0;
+		handle_window_messages(window);
 
-		while (peek_window_message(&window)) {
-			switch (window.msg_type) {
-				case window_message_type_destroy:
-				case window_message_type_close:
-				case window_message_type_quit: {
-					program_running = false;
-				} break;
-				case window_message_type_key_down:
-				case window_message_type_key_up: {
-					if (window.keycode == keycode_shift) {
-						ImGui::GetIO().KeyShift = (window.msg_type == window_message_type_key_down);
-					}
-					else if (window.keycode == keycode_ctrl) {
-						ImGui::GetIO().KeyCtrl = (window.msg_type == window_message_type_key_down);
-					}
-					else if (window.keycode == keycode_alt) {
-						ImGui::GetIO().KeyAlt = (window.msg_type == window_message_type_key_down);
-					}
-					else {
-						m_assert(window.keycode < sizeof(ImGui::GetIO().KeysDown));
-						ImGui::GetIO().KeysDown[window.keycode] = (window.msg_type == window_message_type_key_down);
-						if (window.keycode == keycode_print_screen && window.msg_type != window_message_type_key_down) {
-							// simulate print screen key down event since windows does not send it for some reason
-							ImGui::GetIO().KeysDownDuration[keycode_print_screen] = 0.1f;
-						}
-					}
-				} break;
-				case window_message_type_char: {
-					ImGui::GetIO().AddInputCharacter(window.input_char);
-				} break;
-				case window_message_type_mouse_move: {
-					ImGui::GetIO().MousePos.x = (float)window.mouse_x;
-					ImGui::GetIO().MousePos.y = (float)window.mouse_y;
-				} break;
-				case window_message_type_mouse_lb_down:
-				case window_message_type_mouse_lb_up: {
-					ImGui::GetIO().MouseDown[0] = (window.msg_type == window_message_type_mouse_lb_down);
-				} break;
-				case window_message_type_mouse_rb_down:
-				case window_message_type_mouse_rb_up: {
-					ImGui::GetIO().MouseDown[1] = (window.msg_type == window_message_type_mouse_rb_down);
-				} break;
-				case window_message_type_mouse_mb_down:
-				case window_message_type_mouse_mb_up: {
-					ImGui::GetIO().MouseDown[2] = (window.msg_type == window_message_type_mouse_mb_down);
-				} break;
-				case window_message_type_mouse_wheel: {
-					ImGui::GetIO().MouseWheel = window.mouse_wheel;
-				} break;
-				default: {} break;
+		game->imgui_io->DeltaTime = (float)last_frame_time_sec;
+		{ // mouse position
+			float px = (float)window->mouse_x / vulkan->swap_chain.width;
+			float py = (float)window->mouse_y / vulkan->swap_chain.height;
+			vec4 region = vulkan->swap_chain_framebuffer_region;
+			if (px >= region.x && px <= (region.x + region.z) && py >= region.y && py <= (region.y + region.w)) {
+				game->imgui_io->MousePos.x = game->imgui_io->DisplaySize.x * (px - region.x) / region.z;
+				game->imgui_io->MousePos.y = game->imgui_io->DisplaySize.y * (py - region.y) / region.w;
+			}
+			else {
+				game->imgui_io->MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
 			}
 		}
-			
 		ImGui::NewFrame();
-		if (ImGui::GetIO().KeyAlt && ImGui::IsKeyDown(keycode_f4)) {
-			program_running = false;
+		{ // miscs
+			if (ImGui::IsKeyPressed(VK_RETURN) && ImGui::IsKeyDown(VK_MENU)) {
+				set_window_fullscreen(window, !window->fullscreen);
+			}
+			if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
+				quit_game = true;
+			}
 		}
 		{ // camera movement
 			float x_sensitivity = 0.005f;
 			float y_sensitivity = 0.005f;
-			game->player_camera_theta = clamp(game->player_camera_theta + window.raw_mouse_dy * y_sensitivity, -(float)M_PI / 3, (float)M_PI / 3);
-			game->player_camera_phi = wrap_angle(game->player_camera_phi - window.raw_mouse_dx * x_sensitivity);
-			game->player_camera_r = clamp(game->player_camera_r - ImGui::GetIO().MouseWheel, 4.0f, 30.0f);
+			game->player_camera_theta = clamp(game->player_camera_theta + window->raw_mouse_dy * y_sensitivity, -(float)M_PI / 3, (float)M_PI / 3);
+			game->player_camera_phi = wrap_angle(game->player_camera_phi - window->raw_mouse_dx * x_sensitivity);
+			game->player_camera_r = clamp(game->player_camera_r - game->imgui_io->MouseWheel, 4.0f, 30.0f);
+			game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
 		}
 		{ // player movement
 			entity_physics_component *physics_component = entity_get_physics_component(level, level->player_entity_index);
@@ -306,18 +325,14 @@ int main(int argc, char **argv) {
 		}
 		ImGui::EndFrame();
 
-		uint32 render_done_flag = 1;
-		while (!game->render_done_flag.compare_exchange_weak(render_done_flag, 0)) {
-			render_done_flag = 1;
-		}
-		
+		vulkan_begin_render(vulkan, window->width, window->height);
+		level_generate_render_data(level, vulkan, game->player_camera, []{});
+		level_generate_render_commands(level, vulkan, game->player_camera, []{}, []{});
+		vulkan_end_render(vulkan, false);
+
 		level_update_entity_components(level);
 		level->frame_memory_arena.size = 0;
 		vulkan->frame_memory_arena.size = 0;
-
-		game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
-		
-		game->frame_done_flag.store(1);
 		
 		stop_timer(&timer);
 		last_frame_time_microsec = get_timer_duration_microsecs(timer);

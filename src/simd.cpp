@@ -49,7 +49,7 @@ enum compare_op {
 };
 
 uint32 simd_filter_floats(const float *in, float *out, uint32 count, float limit, compare_op cmp) {
-  m_debug_assert(count % 4 == 0);
+  m_debug_assert(count % 4 == 0, "");
   __m128 limits = _mm_set1_ps(limit);
   uint32 out_offset = 0;
 	for (uint32 i = 0; i < count; i += 4) {

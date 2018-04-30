@@ -2,7 +2,7 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#include "platform_windows.cpp"
+#include "common.cpp"
 #include "math.cpp"
 #include "simd.cpp"
 

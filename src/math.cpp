@@ -347,7 +347,7 @@ float vec2_len(vec2 v) {
 
 vec2 vec2_normalize(vec2 v) {
 	float len = vec2_len(v);
-	m_debug_assert(len > 0);
+	m_debug_assert(len > 0, "");
 	return v / len;
 }
 
@@ -361,7 +361,7 @@ float vec3_len(vec3 v) {
 
 vec3 vec3_normalize(vec3 v) {
 	float len = vec3_len(v);
-	m_debug_assert(len > 0);
+	m_debug_assert(len > 0, "");
 	return v / len;
 }
 
@@ -374,7 +374,7 @@ vec3 vec3_cross(vec3 v1, vec3 v2) {
 }
 
 vec3 vec3_lerp(vec3 v1, vec3 v2, float t) {
-	m_debug_assert(t >= 0 && t <= 1);  
+	m_debug_assert(t >= 0 && t <= 1, "");
 	return v1 + (v2 - v1) * t;
 }
 
@@ -384,7 +384,7 @@ float vec4_len(vec4 v) {
 
 vec4 vec4_normalize(vec4 v) {
 	float len = vec4_len(v);
-	m_debug_assert(len > 0);
+	m_debug_assert(len > 0, "");
 	return v / len;
 }
 
@@ -446,7 +446,7 @@ quat mat3_get_rotate(const mat3 &m) {
 	case 1: return quat{biggest_val, (m[0][1] + m[1][0]) * mult, (m[2][0] + m[0][2]) * mult, (m[1][2] - m[2][1]) * mult};
 	case 2: return quat{(m[0][1] + m[1][0]) * mult, biggest_val, (m[1][2] + m[2][1]) * mult, (m[2][0] - m[0][2]) * mult};
 	case 3: return quat{(m[2][0] + m[0][2]) * mult, (m[1][2] + m[2][1]) * mult, biggest_val, (m[0][1] - m[1][0]) * mult};
-	default: { m_assert(false); return quat{0, 0, 0, 1}; }
+	default: { m_debug_assert(false, ""); return quat{0, 0, 0, 1}; }
 	}
 }
 
@@ -457,7 +457,7 @@ mat3 mat3_from_scale(vec3 scale) {
 }
 
 mat3 mat3_from_rotate(vec3 axis, float angle) {
-	m_debug_assert(fabsf(vec3_len(axis) - 1.0f) < 0.000001f);
+	m_debug_assert(fabsf(vec3_len(axis) - 1.0f) < 0.000001f, "");
 	const float c = cosf(angle);
 	const float c_1 = 1 - c;
 	const float s = sinf(angle);
@@ -571,7 +571,7 @@ mat4 mat4_from_translate(vec3 translate) {
 }
 
 mat4 mat4_from_rotate(vec3 axis, float angle) {
-	m_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2));
+	m_debug_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2), "");
 	const float c = cosf(angle);
 	const float c_1 = 1 - c;
 	const float s = sinf(angle);
@@ -628,7 +628,7 @@ quat mat4_get_rotate(const mat4 &m) {
 	m3[2] /= scaling.z;
 	quat q = mat3_get_rotate(m3);
 	float q_len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-	m_debug_assert(q_len > 0);
+	m_debug_assert(q_len > 0, "");
 	return q / q_len;
 }
 
@@ -720,7 +720,7 @@ quat quat_identity() {
 
 quat quat_normalize(quat q) {
 	float len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-	m_debug_assert(len > 0);
+	m_debug_assert(len > 0, "");
 	return q / len;
 }
 
@@ -784,7 +784,7 @@ quat quat_from_between(vec3 a, vec3 b) {
 }
 
 quat quat_slerp(quat q1, quat q2, float t) {
-	m_debug_assert(t >= 0 && t <= 1);
+	m_debug_assert(t >= 0 && t <= 1, "");
 	quat q3 = q2;
 	float cos_theta = q1.x * q2.x + q1.y * q2.y + q1.z * q2.z + q1.w * q2.w;
 	if (cos_theta < 0) {
@@ -1191,7 +1191,12 @@ vec4 fit_rect_into_rect(float rect_outer_width, float rect_outer_height, float r
 	rect_inner_height *= scale;
 	float x = (rect_outer_width - rect_inner_width) / 2;
 	float y = (rect_outer_height - rect_inner_height) / 2;
-	return vec4{x, y, rect_inner_width, rect_inner_height};
+	vec4 rect;
+	rect[0] = x / rect_outer_width;
+	rect[1] = y / rect_outer_height;
+	rect[2] = rect_inner_width / rect_outer_width;
+	rect[3] = rect_inner_height / rect_outer_height;
+	return rect;
 }
 
 void flip_rgba_image(void *image, uint32 w, uint32 h) {

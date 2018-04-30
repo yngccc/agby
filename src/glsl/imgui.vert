@@ -18,5 +18,10 @@ m_declare_imgui_push_constant
 void main() {
   uv_out = uv_in;
   color_out = color_in;
-  gl_Position = vec4(-1 + position_in.x / pc.viewport.x * 2, -1 + position_in.y / pc.viewport.y * 2, 0, 1);
+
+	float px = position_in.x / pc.framebuffer_width;
+	float py = position_in.y / pc.framebuffer_height;
+	px = pc.swap_chain_framebuffer_region.x + pc.swap_chain_framebuffer_region.z * px;
+	py = pc.swap_chain_framebuffer_region.y + pc.swap_chain_framebuffer_region.w * py;
+	gl_Position = vec4(px * 2 - 1, py * 2 - 1, 0, 1);
 } 

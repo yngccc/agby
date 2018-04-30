@@ -10,15 +10,15 @@ printf "\ncompiling glsl..."
 rmdir /s /q shaders 2>nul
 mkdir shaders
 pushd "../src/glsl"
-for %%G in (.vert, .frag) do forfiles /m *%%G /c "cmd /c %VULKAN_SDK%/Bin/glslc.exe -o ../../build/shaders/@file.spv @file & if errorlevel 1 echo file name: @file"
+start /b forfiles /c "cmd /c %VULKAN_SDK%/bin/glslc.exe -o ../../build/shaders/@file.spv @file"
 popd
 
+printf "\ncompiling ispc...\n"
 where /q ispc
 if not errorlevel 0 (
   printf "Error: cannot find ispc.exe\n"
-  exit 0
+  exit 1
 )
-printf "\ncompiling ispc...\n"
 del *.ispc.* 2>nul
 ispc ../src/ispc/simple.ispc -o simple.ispc.obj -h simple.ispc.h --target=sse4-i32x4
 
@@ -26,23 +26,23 @@ rmdir /s /q compiler_output 2>nul
 mkdir compiler_output
 
 printf "\ncompiling c++...\n"
-set flags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3
+set flags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3 /WX
 if "%~2"=="clang" (
   set flags=%flags% -Wno-missing-braces -Wno-microsoft-include -mssse3
 )
 set dirs=/I %VULKAN_SDK%/include /link /LIBPATH:../vendor/lib/windows
 set libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib Comdlg32.lib
 set bullet_libs=BulletCollision.lib BulletDynamics.lib BulletInverseDynamics.lib BulletSoftBody.lib LinearMath.lib
-set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
+rem set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
 
-set compile_editor_cmd=start /b cmd /c "cl ../src/editor.cpp %flags% %dirs% %libs% %bullet_libs% > compiler_output/editor.txt"
-set compile_game_cmd=start /b cmd /c "cl ../src/game.cpp %flags% %dirs% %libs% %bullet_libs% > compiler_output/game.txt"
+set compile_editor_cmd=start /b cmd /c "cl ../src/editor.cpp %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/editor.txt"
+set compile_game_cmd=start /b cmd /c "cl ../src/game.cpp %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/game.txt"
 set compile_import_cmd=start /b cmd /c "cl ../src/import.cpp %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
 set compile_test_cmd=start /b cmd /c "cl ../src/test.cpp %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
 
 if "%~2"=="clang" (
-  set compile_editor_cmd=start /b cmd /c "clang-cl ../src/editor.cpp -o editor.clang.exe %flags% %dirs% %libs% %bullet_libs% > compiler_output/editor.txt"
-  set compile_game_cmd=start /b cmd /c "clang-cl ../src/game.cpp -o game.clang.exe %flags% %dirs% %libs% %bullet_libs% > compiler_output/game.txt"
+  set compile_editor_cmd=start /b cmd /c "clang-cl ../src/editor.cpp -o editor.clang.exe %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/editor.txt"
+  set compile_game_cmd=start /b cmd /c "clang-cl ../src/game.cpp -o game.clang.exe %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/game.txt"
   set compile_import_cmd=start /b cmd /c "clang-cl ../src/import.cpp -o import.clang.exe %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
   set compile_test_cmd=start /b cmd /c "clang-cl ../src/test.cpp -o test.clang.exe %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
 )

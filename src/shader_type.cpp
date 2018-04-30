@@ -66,11 +66,19 @@ struct shader_color_vertex_push_constant {
 };
 
 struct shader_swap_chain_push_constant {
+  float x;
+  float y;
+  float width;
+  float height;
   uint32 texture_index;
 };
 
 struct shader_imgui_push_constant {
-  vec2 viewport;
+  vec4 swap_chain_framebuffer_region;
+  uint32 swap_chain_width;
+  uint32 swap_chain_height;
+  uint32 framebuffer_width;
+  uint32 framebuffer_height;
   uint32 texture_index;
 };
 
@@ -117,21 +125,29 @@ struct shader_imgui_push_constant {
     uint cube_map_index;                         \
   } pc;
 
-#define m_declare_color_vertex_push_constant \
-  layout(push_constant) uniform push_constant {    \
-    mat4 transform_mat;                            \
-    vec4 color;                                    \
-    uint height_map_index;                         \
+#define m_declare_color_vertex_push_constant     \
+  layout(push_constant) uniform push_constant {  \
+    mat4 transform_mat;                          \
+    vec4 color;                                  \
+    uint height_map_index;                       \
   } pc;
 
 #define m_declare_swap_chain_push_constant      \
   layout(push_constant) uniform push_constant { \
+    float x;                                    \
+    float y;                                    \
+    float width;                                \
+    float height;                               \
     uint texture_index;                         \
   } pc;
 
 #define m_declare_imgui_push_constant           \
   layout(push_constant) uniform push_constant { \
-    vec2 viewport;                              \
+    vec4 swap_chain_framebuffer_region;         \
+    uint swap_chain_width;                      \
+    uint swap_chain_height;                     \
+    uint framebuffer_width;                     \
+    uint framebuffer_height;                    \
     uint texture_index;                         \
   } pc;
 
