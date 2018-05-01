@@ -187,43 +187,12 @@ struct vulkan_buffer_memory_region {
 };
 
 struct vulkan_memory_regions {
-	vulkan_image_memory_region common_images;
-	vulkan_image_memory_region framebuffer_images;
 	vulkan_image_memory_region level_images;
 
 	vulkan_buffer_memory_region level_vertex_buffer;
 	vulkan_buffer_memory_region frame_uniform_buffers[vulkan_buffering_count];
 	vulkan_buffer_memory_region frame_vertex_buffers[vulkan_buffering_count];
 	vulkan_buffer_memory_region staging_buffer;
-
-	// VkDeviceMemory image_region;
-	// uint64 image_region_size;
-	// uint64 image_region_capacity;
-	// vulkan_image *image_region_images;
-	// uint32 image_region_image_count;
-	// uint32 image_region_image_capacity;
-
-	// VkDeviceMemory vertex_region;
-	// uint32 vertex_region_size;
-	// uint32 vertex_region_capacity;
-	// VkBuffer vertex_region_buffer;
-
-	// VkDeviceMemory uniform_regions[vulkan_buffering_count];
-	// uint32 uniform_region_sizes[vulkan_buffering_count];
-	// uint32 uniform_region_capacities[vulkan_buffering_count];
-	// VkBuffer uniform_region_buffers[vulkan_buffering_count];
-	// uint8 *uniform_region_buffer_ptrs[vulkan_buffering_count];
-
-	// VkDeviceMemory dynamic_vertex_regions[vulkan_buffering_count];
-	// uint32 dynamic_vertex_region_sizes[vulkan_buffering_count];
-	// uint32 dynamic_vertex_region_capacities[vulkan_buffering_count];
-	// VkBuffer dynamic_vertex_region_buffers[vulkan_buffering_count];
-	// uint8 *dynamic_vertex_region_buffer_ptrs[vulkan_buffering_count];
-
-	// VkDeviceMemory staging_region;
-	// uint32 staging_region_capacity;
-	// VkBuffer staging_region_buffer;
-	// uint8 *staging_region_buffer_ptr;
 };
 
 struct vulkan_samplers {
@@ -257,21 +226,31 @@ struct vulkan_render_passes {
 
 struct vulkan_framebuffer {
 	VkFramebuffer framebuffer;
-	VkSampleCountFlagBits sample_count;
 	vulkan_image *color_attachment_images[4];
 	uint32 color_attachment_count;
 	vulkan_image *depth_stencil_attachment_image;
 	vulkan_image *color_resolve_attachment_image;
 };
 
+struct vulkan_framebuffer_sizes {
+	VkSampleCountFlagBits color_framebuffer_sample_count;
+	uint32 color_framebuffer_width;
+	uint32 color_framebuffer_height;
+
+	uint32 shadow_map_framebuffer_width;
+	uint32 shadow_map_framebuffer_height;
+};
+
 struct vulkan_framebuffers {
 	vulkan_framebuffer shadow_map_framebuffers[vulkan_buffering_count];
 	vulkan_framebuffer shadow_map_blur_1_framebuffers[vulkan_buffering_count];
 	vulkan_framebuffer shadow_map_blur_2_framebuffers[vulkan_buffering_count];
+	VkSampleCountFlagBits shadow_map_framebuffer_sample_count;
 	uint32 shadow_map_framebuffer_width;
 	uint32 shadow_map_framebuffer_height;
 
 	vulkan_framebuffer color_framebuffers[vulkan_buffering_count];
+	VkSampleCountFlagBits color_framebuffer_sample_count;
 	uint32 color_framebuffer_width;
 	uint32 color_framebuffer_height;
 
@@ -352,12 +331,12 @@ const char *vk_result_to_str(VkResult result) {
 }
 
 VkBool32 vulkan_debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT object_type, uint64_t object, size_t location, int32 message_code, const char *layer_prefix, const char *message, void *user_data) {
-	int32 ignore_list[] = {6, 61};
-	for (auto &code : ignore_list) {
-		if (message_code == code) {
-			return VK_FALSE;
-		}
-	}
+	// int32 ignore_list[] = {6, 61};
+	// for (auto &code : ignore_list) {
+	// 	if (message_code == code) {
+	// 		return VK_FALSE;
+	// 	}
+	// }
 	if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
 		printf("vulkan error code %d: %s\n", message_code, message);
 	}
@@ -847,7 +826,7 @@ VkDeviceMemory allocate_vulkan_memory(vulkan *vulkan, uint64 size, uint32 type_b
 }
 
 void initialize_vulkan_memory_regions(vulkan *vulkan) {
-	{ // common level images
+	{ // images
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 		image_info.imageType = VK_IMAGE_TYPE_2D;
 		image_info.format = VK_FORMAT_B8G8R8A8_SRGB;
@@ -863,15 +842,6 @@ void initialize_vulkan_memory_regions(vulkan *vulkan) {
 		VkMemoryRequirements memory_requirements = {};
 		vkGetImageMemoryRequirements(vulkan->device.device, image, &memory_requirements);
 		vkDestroyImage(vulkan->device.device, image, nullptr);
-
-		vulkan_image_memory_region &common_images = vulkan->memory_regions.common_images;
-		common_images.image_count = 0;
-		common_images.image_capacity = 128;
-		common_images.images = new vulkan_image[common_images.image_capacity]();
-		common_images.memory_size = 0;
-		common_images.memory_capacity = m_megabytes(64);
-		common_images.memory = allocate_vulkan_memory(vulkan, common_images.memory_capacity, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		m_assert(common_images.memory, "");
 
 		vulkan_image_memory_region &level_images = vulkan->memory_regions.level_images;
 		level_images.image_count = 0;
@@ -1455,9 +1425,9 @@ void initialize_vulkan_render_passes(vulkan *vulkan, VkSampleCountFlagBits sampl
 		m_vk_assert(vkCreateRenderPass(vulkan->device.device, &render_pass_create_info, nullptr, &vulkan->render_passes.shadow_map_render_passes[1]));
 		m_vk_assert(vkCreateRenderPass(vulkan->device.device, &render_pass_create_info, nullptr, &vulkan->render_passes.shadow_map_render_passes[2]));
 	}
-	{ // main render pass
+	{ // color render pass
 		VkAttachmentDescription attachments[3] = {};
-		attachments[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+		attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
 		attachments[0].samples = sample_count;
 		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1554,14 +1524,13 @@ void initialize_vulkan_render_passes(vulkan *vulkan, VkSampleCountFlagBits sampl
 	}
 }
 
-void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample_count) {
+void initialize_vulkan_framebuffers(vulkan *vulkan, vulkan_framebuffer_sizes framebuffer_sizes) {
 	// shadow map, blur1, blur2
-	vulkan->framebuffers.shadow_map_framebuffer_width = 1024;
-	vulkan->framebuffers.shadow_map_framebuffer_height = 1024;
+	vulkan->framebuffers.shadow_map_framebuffer_width = framebuffer_sizes.shadow_map_framebuffer_width;
+	vulkan->framebuffers.shadow_map_framebuffer_height = framebuffer_sizes.shadow_map_framebuffer_height;
 	for (uint32 i = 0; i < m_countof(vulkan->framebuffers.shadow_map_framebuffers); i += 1) {
 		vulkan_framebuffer &framebuffer = vulkan->framebuffers.shadow_map_framebuffers[i];
 		framebuffer = {};
-		framebuffer.sample_count = VK_SAMPLE_COUNT_1_BIT;
 		framebuffer.color_attachment_count = 1;
 
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -1615,7 +1584,6 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 	for (uint32 i = 0; i < m_countof(vulkan->framebuffers.shadow_map_blur_1_framebuffers); i += 1) {
 		vulkan_framebuffer &framebuffer = vulkan->framebuffers.shadow_map_blur_1_framebuffers[i];
 		framebuffer = {};
-		framebuffer.sample_count = VK_SAMPLE_COUNT_1_BIT;
 		framebuffer.color_attachment_count = 1;
 
 		VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -1650,7 +1618,6 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 	for (uint32 i = 0; i < m_countof(vulkan->framebuffers.shadow_map_blur_2_framebuffers); i += 1) {
 		vulkan_framebuffer &framebuffer = vulkan->framebuffers.shadow_map_blur_2_framebuffers[i];
 		framebuffer = {};
-		framebuffer.sample_count = VK_SAMPLE_COUNT_1_BIT;
 		framebuffer.color_attachment_count = 1;
 		framebuffer.color_attachment_images[0] = vulkan->framebuffers.shadow_map_framebuffers[i].color_attachment_images[0];
 
@@ -1665,20 +1632,20 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 		m_vk_assert(vkCreateFramebuffer(vulkan->device.device, &framebuffer_info, nullptr, &framebuffer.framebuffer));
 	}
 	// color
-	vulkan->framebuffers.color_framebuffer_width = 1920; //vulkan->swap_chain.width;
-	vulkan->framebuffers.color_framebuffer_height = 1080; // vulkan->swap_chain.height;
+	vulkan->framebuffers.color_framebuffer_sample_count = framebuffer_sizes.color_framebuffer_sample_count;
+	vulkan->framebuffers.color_framebuffer_width = framebuffer_sizes.color_framebuffer_width;
+	vulkan->framebuffers.color_framebuffer_height = framebuffer_sizes.color_framebuffer_height;
 	for (uint32 i = 0; i < m_countof(vulkan->framebuffers.color_framebuffers); i += 1) {
 		vulkan_framebuffer &framebuffer = vulkan->framebuffers.color_framebuffers[i];
-		framebuffer.sample_count = sample_count;
 		framebuffer.color_attachment_count = 1;
 		{
 			VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 			image_info.imageType = VK_IMAGE_TYPE_2D;
-			image_info.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 			image_info.extent = {vulkan->framebuffers.color_framebuffer_width, vulkan->framebuffers.color_framebuffer_height, 1};
 			image_info.mipLevels = 1;
 			image_info.arrayLayers = 1;
-			image_info.samples = sample_count;
+			image_info.samples = framebuffer_sizes.color_framebuffer_sample_count;
 			image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 			image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 			image_info.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1698,7 +1665,7 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 			image_info.extent = {vulkan->framebuffers.color_framebuffer_width, vulkan->framebuffers.color_framebuffer_height, 1};
 			image_info.mipLevels = 1;
 			image_info.arrayLayers = 1;
-			image_info.samples = sample_count;
+			image_info.samples = framebuffer_sizes.color_framebuffer_sample_count;
 			image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
 			image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 			image_info.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -1711,10 +1678,10 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 			uint32 image_index = append_vulkan_level_images(vulkan, image_info, image_view_info, nullptr, 0, 1, 4);
 			framebuffer.depth_stencil_attachment_image = &vulkan->memory_regions.level_images.images[image_index];
 		}
-		if (sample_count != VK_SAMPLE_COUNT_1_BIT) {
+		if (framebuffer_sizes.color_framebuffer_sample_count != VK_SAMPLE_COUNT_1_BIT) {
 			VkImageCreateInfo image_info = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
 			image_info.imageType = VK_IMAGE_TYPE_2D;
-			image_info.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 			image_info.extent = {vulkan->framebuffers.color_framebuffer_width, vulkan->framebuffers.color_framebuffer_height, 1};
 			image_info.mipLevels = 1;
 			image_info.arrayLayers = 1;
@@ -1733,12 +1700,12 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 		}
 		{
 			VkImageView image_views[3] = {framebuffer.color_attachment_images[0]->view, framebuffer.depth_stencil_attachment_image->view, nullptr};
-			if (sample_count != VK_SAMPLE_COUNT_1_BIT) {
+			if (framebuffer_sizes.color_framebuffer_sample_count != VK_SAMPLE_COUNT_1_BIT) {
 				image_views[2] = framebuffer.color_resolve_attachment_image->view;
 			}
 			VkFramebufferCreateInfo framebuffer_info = {VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
 			framebuffer_info.renderPass = vulkan->render_passes.color_render_pass;
-			framebuffer_info.attachmentCount = (sample_count == VK_SAMPLE_COUNT_1_BIT) ? 2 : 3;
+			framebuffer_info.attachmentCount = (framebuffer_sizes.color_framebuffer_sample_count == VK_SAMPLE_COUNT_1_BIT) ? 2 : 3;
 			framebuffer_info.pAttachments = image_views;
 			framebuffer_info.width = vulkan->framebuffers.color_framebuffer_width;
 			framebuffer_info.height = vulkan->framebuffers.color_framebuffer_height;
@@ -1768,6 +1735,9 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, VkSampleCountFlagBits sample
 		vulkan->framebuffers.shadow_map_blur_2_descriptor_indices[i] = blur_2_descriptor_index;
 
 		VkImageView color_image_view = vulkan->framebuffers.color_framebuffers[i].color_attachment_images[0]->view;
+		if (framebuffer_sizes.color_framebuffer_sample_count != VK_SAMPLE_COUNT_1_BIT) {
+			color_image_view = vulkan->framebuffers.color_framebuffers[i].color_resolve_attachment_image->view;
+		}
 		uint32 color_descriptor_index = append_vulkan_combined_2d_image_samplers(vulkan, color_image_view, vulkan->samplers.color_framebuffer_sampler);
 		vulkan->framebuffers.color_descriptor_indices[i] = color_descriptor_index;
 	}
@@ -2526,7 +2496,8 @@ void initialize_vulkan(vulkan *vulkan, window *window) {
 	m_assert(vulkan->frame_memory_arena.memory, "");
 
 	bool vsync_on = false;
-	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
+	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_8_BIT;
+
 	initialize_vulkan_device(vulkan);
 	initialize_vulkan_swap_chain(vulkan, window, vsync_on);
 	initialize_vulkan_memory_regions(vulkan);
@@ -2535,7 +2506,7 @@ void initialize_vulkan(vulkan *vulkan, window *window) {
 	initialize_vulkan_samplers(vulkan);
 	initialize_vulkan_descriptors(vulkan);
 	initialize_vulkan_render_passes(vulkan, sample_count);
-	initialize_vulkan_framebuffers(vulkan, sample_count);
+	initialize_vulkan_framebuffers(vulkan, {sample_count, 1980, 1080, 1024, 1024});
 	initialize_vulkan_pipelines(vulkan, sample_count);
 
 	vulkan->frame_index = 0;
