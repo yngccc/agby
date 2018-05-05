@@ -857,6 +857,15 @@ int main(int argc, char **argv) {
 						} 
 						else if (collision_component->shape == collision_shape_terrain) {
 							ImGui::Text("terrain height map:");
+							const char *terrain_str = collision_component->terrain.index < level->terrain_count ? level->terrains[collision_component->terrain.index].gpk_file : "";
+							if (ImGui::BeginCombo("terrain##terrain_combo", terrain_str)) {
+								for (uint32 i = 0; i < level->terrain_count; i += 1) {
+									if (ImGui::Selectable(level->terrains[i].gpk_file, collision_component->terrain.index == i)) {
+										collision_component->terrain.index = i;
+									}
+								}
+								ImGui::EndCombo();
+							}
 						}
 						if (ImGui::Button("change##change_collision_shape_button")) {
 							ImGui::OpenPopup("##change_collision_shape_popup");
@@ -949,7 +958,7 @@ int main(int argc, char **argv) {
 						entity_terrain_component *old_terrain_component = entity_get_terrain_component(level, editor->entity_index);
 						entity_terrain_component *terrain_component = allocate_memory<struct entity_terrain_component>(&level->frame_memory_arena, 1);
 						memcpy(terrain_component, old_terrain_component, sizeof(struct entity_terrain_component));
-						const char *terrain_file_combo_name = (terrain_component->terrain_index < level->terrain_count) ? level->terrains[terrain_component->terrain_index].gpk_file : nullptr;
+						const char *terrain_file_combo_name = terrain_component->terrain_index < level->terrain_count ? level->terrains[terrain_component->terrain_index].gpk_file : nullptr;
 						if (ImGui::BeginCombo("terrains##terrains_combo", terrain_file_combo_name)) {
 							for (uint32 i = 0; i < level->terrain_count; i += 1) {
 								if (ImGui::Selectable(level->terrains[i].gpk_file, terrain_component->terrain_index == i)) {
@@ -958,6 +967,8 @@ int main(int argc, char **argv) {
 							}
 							ImGui::EndCombo();
 						}
+						ImGui::InputInt("offset_x##terrain_offset_x", &terrain_component->offset_x);
+						ImGui::InputInt("offset_z##terrain_offset_z", &terrain_component->offset_z);
 						ImGui::Separator();
 						if (memcmp(terrain_component, old_terrain_component, sizeof(struct entity_terrain_component))) {
 							level->entity_modifications[editor->entity_index].terrain_component = terrain_component;

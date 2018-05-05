@@ -405,7 +405,7 @@ void initialize_vulkan_device(vulkan *vulkan) {
 		VkInstanceCreateInfo instance_info = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
 		VkApplicationInfo application_info = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
 		application_info.pApplicationName = "agby";
-		application_info.apiVersion = VK_API_VERSION_1_0;
+		application_info.apiVersion = VK_MAKE_VERSION(1, 0, 0);
 		instance_info.pApplicationInfo = &application_info;
 		instance_info.enabledLayerCount = enabled_layer_count;
 		instance_info.ppEnabledLayerNames = enabled_layers;
@@ -914,6 +914,8 @@ void initialize_vulkan_memory_regions(vulkan *vulkan) {
 }
 
 uint32 append_vulkan_level_images(vulkan *vulkan, VkImageCreateInfo image_info, VkImageViewCreateInfo image_view_info, uint8 *image_data, uint32 image_data_size, uint32 format_block_dimension, uint32 format_block_size) {
+	vkWaitForFences(vulkan->device.device, m_countof(vulkan->syncs.graphic_queue_submit_fences), vulkan->syncs.graphic_queue_submit_fences, VK_TRUE, UINT64_MAX);
+
 	vulkan_image_memory_region &images = vulkan->memory_regions.level_images;
 	vulkan_buffer_memory_region &staging_buffer = vulkan->memory_regions.staging_buffer;
 
@@ -1013,6 +1015,8 @@ uint32 append_vulkan_level_images(vulkan *vulkan, VkImageCreateInfo image_info, 
 }
 
 void retrieve_vulkan_level_images(vulkan *vulkan, uint32 image_index, uint8* image_data, uint32 image_data_size) {
+	vkWaitForFences(vulkan->device.device, m_countof(vulkan->syncs.graphic_queue_submit_fences), vulkan->syncs.graphic_queue_submit_fences, VK_TRUE, UINT64_MAX);
+
 	vulkan_image_memory_region &images = vulkan->memory_regions.level_images;
 	vulkan_image &image = images.images[image_index];
 	vulkan_buffer_memory_region &staging_buffer = vulkan->memory_regions.staging_buffer;
@@ -1073,6 +1077,8 @@ void retrieve_vulkan_level_images(vulkan *vulkan, uint32 image_index, uint8* ima
 }
 
 void update_vulkan_level_images(vulkan *vulkan, uint32 image_index, uint8 *image_data, uint32 image_data_size) {
+	vkWaitForFences(vulkan->device.device, m_countof(vulkan->syncs.graphic_queue_submit_fences), vulkan->syncs.graphic_queue_submit_fences, VK_TRUE, UINT64_MAX);
+
 	vulkan_image_memory_region &images = vulkan->memory_regions.level_images;
 	vulkan_image &image = images.images[image_index];
 	vulkan_buffer_memory_region &staging_buffer = vulkan->memory_regions.staging_buffer;
@@ -1743,7 +1749,7 @@ void initialize_vulkan_framebuffers(vulkan *vulkan, vulkan_framebuffer_sizes fra
 	}
 }
 
-void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_count) {
+void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits color_framebuffer_sample_count) {
 	auto shader_module_from_file = [vulkan](const char *file_path) {
 		VkShaderModule shader_module = {};
 		file_mapping file_mapping = {};
@@ -1804,7 +1810,7 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		rasterization_state.lineWidth = 1;
 
 		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = sample_count;
+		multisample_state.rasterizationSamples = color_framebuffer_sample_count;
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
 		depth_stencil_state.depthTestEnable = VK_TRUE;
@@ -1879,7 +1885,7 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		rasterization_state.lineWidth = 1;
 
 		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = sample_count;
+		multisample_state.rasterizationSamples = color_framebuffer_sample_count;
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
 		depth_stencil_state.depthTestEnable = VK_TRUE;
@@ -2085,7 +2091,7 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		rasterization_state.lineWidth = 1;
 
 		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = sample_count;
+		multisample_state.rasterizationSamples = color_framebuffer_sample_count;
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
 		depth_stencil_state.depthTestEnable = VK_TRUE;
@@ -2157,7 +2163,7 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		rasterization_state.lineWidth = 1;
 
 		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = sample_count;
+		multisample_state.rasterizationSamples = color_framebuffer_sample_count;
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
 		depth_stencil_state.depthTestEnable = VK_TRUE;
@@ -2306,7 +2312,7 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		rasterization_state.lineWidth = 1;
 
 		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = sample_count;
+		multisample_state.rasterizationSamples = color_framebuffer_sample_count;
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
 		depth_stencil_state.depthTestEnable = VK_TRUE;
@@ -2381,7 +2387,7 @@ void initialize_vulkan_pipelines(vulkan *vulkan, VkSampleCountFlagBits sample_co
 		rasterization_state.lineWidth = 4;
 
 		VkPipelineMultisampleStateCreateInfo multisample_state = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-		multisample_state.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+		multisample_state.rasterizationSamples = color_framebuffer_sample_count;
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
 		depth_stencil_state.depthTestEnable = VK_TRUE;
@@ -2496,7 +2502,7 @@ void initialize_vulkan(vulkan *vulkan, window *window) {
 	m_assert(vulkan->frame_memory_arena.memory, "");
 
 	bool vsync_on = false;
-	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_8_BIT;
+	VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_4_BIT;
 
 	initialize_vulkan_device(vulkan);
 	initialize_vulkan_swap_chain(vulkan, window, vsync_on);
@@ -2576,7 +2582,8 @@ void vulkan_end_render(vulkan *vulkan, bool screen_shot = false) {
 	queue_submit_info.pCommandBuffers = &cmd_buffer;
 	queue_submit_info.signalSemaphoreCount = 1;
 	queue_submit_info.pSignalSemaphores = &vulkan->syncs.graphic_queue_submit_semaphores[vulkan->frame_index];
-	m_vk_assert(vkQueueSubmit(vulkan->device.graphic_queue, 1, &queue_submit_info, vulkan->syncs.graphic_queue_submit_fences[vulkan->frame_index]));
+	VkResult submit_result = vkQueueSubmit(vulkan->device.graphic_queue, 1, &queue_submit_info, vulkan->syncs.graphic_queue_submit_fences[vulkan->frame_index]);
+	m_assert(submit_result == VK_SUCCESS, "");
 
 	if (screen_shot) {
 		vkWaitForFences(vulkan->device.device, 1, &vulkan->syncs.graphic_queue_submit_fences[vulkan->frame_index], VK_TRUE, UINT64_MAX);

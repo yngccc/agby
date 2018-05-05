@@ -11,12 +11,12 @@
 #include "gpk.cpp"
 #include "vulkan.cpp"
 
-#include "../vendor/include/json/json.hpp"
-
 #define BT_NO_SIMD_OPERATOR_OVERLOADS
 #include "../vendor/include/bullet/btBulletCollisionCommon.h"
 #include "../vendor/include/bullet/btBulletDynamicsCommon.h"
 #include "../vendor/include/bullet/BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h"
+
+#include "../vendor/include/json/json.hpp"
 
 const uint32 level_max_entity_count = 1024;
 const uint32 level_max_directional_light_count = 1;
@@ -167,19 +167,12 @@ struct point_light {
 	float attenuation;
 };
 
-enum collision_shape {
-	collision_shape_sphere,
-	collision_shape_capsule,
-	collision_shape_box,
-	collision_shape_terrain
-};
-
 struct entity_info {
 	char name[32];
 };
 
 enum entity_component_flag {
-	entity_component_flag_model    = 1,
+	entity_component_flag_model     = 1,
 	entity_component_flag_collision = 2,
 	entity_component_flag_physics   = 4,
 	entity_component_flag_light     = 8,
@@ -194,21 +187,20 @@ struct entity_model_component {
 	bool hide;
 };
 
+enum collision_shape {
+	collision_shape_sphere,
+	collision_shape_capsule,
+	collision_shape_box,
+	collision_shape_terrain
+};
+
 struct entity_collision_component {
 	collision_shape shape;
 	union {
-		struct {
-			float radius;
-		} sphere;
-		struct {
-			float height, radius;
-		} capsule;
-		struct {
-			vec3 size;
-		} box;
-		struct {
-			uint32 terrain_index;
-		};
+		struct { float radius; } sphere;
+		struct { float height, radius; } capsule;
+		struct { vec3 size; } box;
+		struct { uint32 index; } terrain;
 	};
 	btCollisionObject *bt_collision_object;
 };
@@ -231,7 +223,8 @@ struct entity_light_component {
 
 struct entity_terrain_component {
 	uint32 terrain_index;
-	transform transform;
+	int32 offset_x;
+	int32 offset_z;
 };
 
 struct entity_modification {
@@ -1070,8 +1063,7 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 	try {
 		json = nlohmann::json::parse(level_json_file_mapping.ptr, level_json_file_mapping.ptr + level_json_file_mapping.size);
 	} catch (nlohmann::json::exception &e) {
-		printf("%s\n", e.what());
-		m_assert(false, "");
+		m_assert(false, "%s", e.what());
 	}
 	close_file_mapping(&level_json_file_mapping);
 	{
@@ -1198,15 +1190,15 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 			}
 			else if (shape == "terrain") {
 				collision_component->shape = collision_shape_terrain;
-				collision_component->terrain_index = UINT32_MAX;
+				collision_component->terrain.index = UINT32_MAX;
 				const std::string &gpk_file = json["gpk_file"];
 				for (uint32 i = 0; i < level->terrain_count; i += 1) {
 					if (!strcmp(gpk_file.c_str(), level->terrains[i].gpk_file)) {
-						collision_component->terrain_index = i;
+						collision_component->terrain.index = i;
 						break;
 					}
 				}
-				m_assert(collision_component->terrain_index != UINT32_MAX, "");
+				m_assert(collision_component->terrain.index != UINT32_MAX, "");
 			}
 			else {
 				m_assert(false, "");
@@ -1255,14 +1247,10 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 		};
 		auto read_terrain_component = [level, read_transform](const nlohmann::json &json, entity_terrain_component *terrain_component) {
 			const std::string &gpk_file = json["gpk_file"];
+			std::array<int32, 2> offset = json["offset"];
 			terrain_component->terrain_index = level_get_terrain_index(level, gpk_file.c_str());
-			auto transform_field = json.find("transform");
-			if (transform_field != json.end()) {
-				read_transform(*transform_field, &terrain_component->transform);
-			}
-			else {
-				terrain_component->transform = transform_identity();
-			}
+			terrain_component->offset_x = offset[0];
+			terrain_component->offset_z = offset[1];
 		};
 
 		uint32 model_component_index = 0;
@@ -1331,8 +1319,8 @@ void level_read_json(level *level, vulkan *vulkan, const char *level_json_file, 
 					collision_object->setCollisionShape(new btBoxShape(btVector3(collision_component->box.size.x / 2, collision_component->box.size.y / 2, collision_component->box.size.z / 2)));
 				}
 				else if (collision_component->shape == collision_shape_terrain) {
-					m_assert(collision_component->terrain_index < level->terrain_count, "");
-					collision_object->setCollisionShape(level->terrains[collision_component->terrain_index].bt_terrain_shape);
+					m_assert(collision_component->terrain.index < level->terrain_count, "");
+					collision_object->setCollisionShape(level->terrains[collision_component->terrain.index].bt_terrain_shape);
 				}
 			}
 			else if (physics_component_field != entity_json.end()) {
@@ -1434,7 +1422,7 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 				else if (collision_component->shape == collision_shape_terrain) {
 					entity_json["collision_component"] = {
 						{"shape", "terrain"},
-						{"gpk_file", level->terrains[collision_component->terrain_index].gpk_file}
+						{"gpk_file", level->terrains[collision_component->terrain.index].gpk_file}
 					};
 				}
 				else {
@@ -1475,14 +1463,10 @@ void level_write_json(level *level, const char *json_file_path, F extra_write) {
 			}
 			if (flags & entity_component_flag_terrain) {
 				entity_terrain_component *terrain_component = entity_get_terrain_component(level, i);
-				transform &tfm = terrain_component->transform;
+				m_assert(terrain_component->terrain_index < level->terrain_count, "");
 				entity_json["terrain_component"] = {
-					{"gpk_file", terrain_component->terrain_index < level->terrain_count ? level->terrains[terrain_component->terrain_index].gpk_file : ""},
-					{"transform", {
-						{"scale", {m_unpack3(tfm.scale)}}, 
-						{"rotate", {m_unpack4(tfm.rotate)}},
-						{"translate", {m_unpack3(tfm.translate)}}}
-					}
+					{"gpk_file", level->terrains[terrain_component->terrain_index].gpk_file},
+					{"offset", {terrain_component->offset_x, terrain_component->offset_z}}
 				};
 			}
 			entities.push_back(entity_json);

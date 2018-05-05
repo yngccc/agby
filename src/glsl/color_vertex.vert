@@ -8,8 +8,8 @@ out gl_PerVertex {
   vec4 gl_Position;
 };
 
-m_declare_uniform_buffer
 m_declare_color_vertex_push_constant
+m_declare_uniform_buffer
 m_declare_2d_texture_array
 
 void main() {
