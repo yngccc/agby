@@ -71,11 +71,11 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
-    <IncludePath>$(SolutionDir)..\..\vendor\include;$(VULKAN_SDK)\include;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
     <LibraryPath>$(SolutionDir)..\..\vendor\lib\windows;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(SolutionDir)..\..\vendor\include;$(VULKAN_SDK)\include;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
     <LibraryPath>$(SolutionDir)..\..\vendor\lib\windows;$(LibraryPath)</LibraryPath>
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
   </PropertyGroup>

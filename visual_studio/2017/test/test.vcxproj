@@ -72,11 +72,11 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
     <LibraryPath>$(SolutionDir)..\..\vendor\lib\windows;$(LibraryPath)</LibraryPath>
-    <IncludePath>$(SolutionDir)..\..\vendor\include;$(VULKAN_SDK)\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)..\..\vendor\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
-    <IncludePath>$(SolutionDir)..\..\vendor\include;$(VULKAN_SDK)\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)..\..\vendor\include;$(IncludePath)</IncludePath>
     <LibraryPath>$(SolutionDir)..\..\vendor\lib\windows;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
