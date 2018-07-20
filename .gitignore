@@ -1,9 +1,9 @@
 build/
 src/TAGS
 src/.tags
-src/codegen.gen.cpp
+src/flatbuffers/world_generated.h
+src/ispc/simple.ispc.h
 agby.sublime-workspace
-compile_commands.json
 .cquery_cached_index/
 
 *.suo

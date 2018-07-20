@@ -1,6 +1,6 @@
 #version 450
 
-#include "../shader_type.cpp"
+#include "common.h"
 
 layout(location = 0) in vec2 position_in;
 layout(location = 1) in vec2 uv_in;
@@ -13,15 +13,18 @@ out gl_PerVertex {
   vec4 gl_Position;
 };
 
-m_declare_imgui_push_constant
+layout(push_constant) uniform push_constant {
+  uint framebuffer_width;
+  uint framebuffer_height;
+  uint texture_index;                   
+} pc;
 
 void main() {
   uv_out = uv_in;
   color_out = color_in;
+	color_out.xyz = pow(color_out.xyz, vec3(2.2, 2.2, 2.2));
 
 	float px = position_in.x / pc.framebuffer_width;
 	float py = position_in.y / pc.framebuffer_height;
-	px = pc.swap_chain_framebuffer_region.x + pc.swap_chain_framebuffer_region.z * px;
-	py = pc.swap_chain_framebuffer_region.y + pc.swap_chain_framebuffer_region.w * py;
 	gl_Position = vec4(px * 2 - 1, py * 2 - 1, 0, 1);
 } 

@@ -1,0 +1,27 @@
+[
+	{ 
+		"directory": "c:/work/agby",
+		"command": "clang-cl src/editor.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"file": "src/editor.cpp"
+	},
+	{ 
+		"directory": "c:/work/agby",
+		"command": "clang-cl src/game.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"file": "src/game.cpp"
+	},
+	{ 
+		"directory": "c:/work/agby",
+		"command": "clang-cl src/import.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"file": "src/import.cpp"
+	},
+	{ 
+		"directory": "c:/work/agby",
+		"command": "clang-cl src/ray_tracer.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"file": "src/ray_tracer.cpp"
+	},
+	{ 
+		"directory": "c:/work/agby",
+		"command": "clang-cl src/test.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"file": "src/test.cpp"
+	}
+]

@@ -6,45 +6,45 @@ call "C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary
 mkdir "%~dp0/build" 2>nul
 pushd "%~dp0/build"
 
-printf "\ncompiling glsl..."
-rmdir /s /q shaders 2>nul
-mkdir shaders
-pushd "../src/glsl"
-start /b forfiles /c "cmd /c %VULKAN_SDK%/bin/glslc.exe -o ../../build/shaders/@file.spv @file"
-popd
+echo compiling hlsl...
+rmdir /s /q hlsl 2>nul
+mkdir hlsl
+start /b forfiles /p ..\src\hlsl /m *.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_0 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.fxc @PATH >nul" >nul
+start /b forfiles /p ..\src\hlsl /m *.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_0 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.fxc @PATH >nul" >nul
 
-printf "\ncompiling ispc...\n"
-where /q ispc
-if not errorlevel 0 (
-  printf "Error: cannot find ispc.exe\n"
-  exit 1
-)
+echo compiling ispc...
 del *.ispc.* 2>nul
-ispc ../src/ispc/simple.ispc -o simple.ispc.obj -h simple.ispc.h --target=sse4-i32x4
+..\vendor\bin\ispc.exe ..\src\ispc\simple.ispc -o simple.ispc.obj -h ..\src\ispc\simple.ispc.h --target=sse4-i32x4 >nul
+
+echo compiling flatbuffers...
+del ..\src\flatbuffers\world_generated.h 2>nul
+..\vendor\bin\flatc.exe --cpp -o ..\src\flatbuffers\ ..\src\flatbuffers\world.fbs
 
 rmdir /s /q compiler_output 2>nul
 mkdir compiler_output
 
-printf "\ncompiling c++...\n"
-set flags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3 /WX
+echo compiling cpp...
+set cflags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3 /WX
 if "%~2"=="clang" (
-  set flags=%flags% -Wno-missing-braces -Wno-microsoft-include -mssse3
+  set cflags=%cflags% -Wno-missing-braces -Wno-microsoft-include -mssse3
 )
-set dirs=/I %VULKAN_SDK%/include /link /LIBPATH:../vendor/lib/windows
-set libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib Comdlg32.lib
-set bullet_libs=BulletCollision.lib BulletDynamics.lib BulletInverseDynamics.lib BulletSoftBody.lib LinearMath.lib
+set dirs=/I ..\vendor\include /I ..\vendor\include\bullet /link /LIBPATH:..\vendor\lib\windows
+set windows_libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib Comdlg32.lib d3d11.lib
+set bullet_libs=BulletCollision.lib BulletDynamics.lib LinearMath.lib
 rem set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
 
-set compile_editor_cmd=start /b cmd /c "cl ../src/editor.cpp %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/editor.txt"
-set compile_game_cmd=start /b cmd /c "cl ../src/game.cpp %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/game.txt"
-set compile_import_cmd=start /b cmd /c "cl ../src/import.cpp %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
-set compile_test_cmd=start /b cmd /c "cl ../src/test.cpp %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
+set compile_editor_cmd=start /b cmd /c "cl ..\src\editor.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% > compiler_output\editor.txt"
+set compile_game_cmd=start /b cmd /c "cl ..\src\game.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% > compiler_output\game.txt"
+set compile_import_cmd=start /b cmd /c "cl ..\src\import.cpp %cflags% %dirs% %windows_libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
+set compile_ray_tracer_cmd=start /b cmd /c "cl ..\src\ray_tracer.cpp %cflags% /O2 %dirs% %windows_libs% > compiler_output\ray_tracer.txt"
+set compile_test_cmd=start /b cmd /c "cl ..\src\test.cpp %cflags% %dirs% %windows_libs% simple.ispc.obj > compiler_output\test.txt"
 
 if "%~2"=="clang" (
-  set compile_editor_cmd=start /b cmd /c "clang-cl ../src/editor.cpp -o editor.clang.exe %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/editor.txt"
-  set compile_game_cmd=start /b cmd /c "clang-cl ../src/game.cpp -o game.clang.exe %flags% %dirs% %libs% %bullet_libs% %no_console% > compiler_output/game.txt"
-  set compile_import_cmd=start /b cmd /c "clang-cl ../src/import.cpp -o import.clang.exe %flags% %dirs% %libs% nvtt.lib ispc_texcomp.lib > compiler_output/import.txt"
-  set compile_test_cmd=start /b cmd /c "clang-cl ../src/test.cpp -o test.clang.exe %flags% %dirs% %libs% simple.ispc.obj> compiler_output/test.txt"
+  set compile_editor_cmd=start /b cmd /c "clang-cl ..\src\editor.cpp -o editor.clang.exe %cflags% %dir% %no_console% %windows_libs% > compiler_output\editor.txt"
+  set compile_game_cmd=start /b cmd /c "clang-cl ..\src\game.cpp -o game.clang.exe %cflags% %dir% %no_console% %windows_libs% > compiler_output\game.txt"
+  set compile_import_cmd=start /b cmd /c "clang-cl ..\src\import.cpp -o import.clang.exe %cflags% %dir% %windows_libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
+  set compile_ray_tracer_cmd=start /b cmd /c "clang-cl ..\src\ray_tracer.cpp /O2 -o ray_tracer.clang.exe %cflags% %dir% %windows_libs% > compiler_output\ray_tracer.txt"
+  set compile_test_cmd=start /b cmd /c "clang-cl ..\src\test.cpp -o test.clang.exe %cflags% %dir% %windows_libs% simple.ispc.obj> compiler_output\test.txt"
 )
 
 if "%~1"=="" set compile_all=true
@@ -53,11 +53,13 @@ if "%compile_all%"=="true" (
   set compile_editor=true
   set compile_game=true
   set compile_import=true
+  set compile_ray_tracer=true
   set compile_test=true
 
 	%compile_editor_cmd%
 	%compile_game_cmd%
 	%compile_import_cmd%
+	%compile_ray_tracer_cmd%
 	%compile_test_cmd%
 )
 if "%~1"=="editor" (
@@ -72,6 +74,10 @@ if "%~1"=="import" (
   set compile_import=true
 	%compile_import_cmd%
 )
+if "%~1"=="ray_tracer" (
+  set compile_ray_tracer=true
+	%compile_ray_tracer_cmd%
+)
 if "%~1"=="test" (
   set compile_test=true
 	%compile_test_cmd%
@@ -79,37 +85,41 @@ if "%~1"=="test" (
 
 if "%compile_editor%"=="true" (
   :wait_editor_txt
-	if not exist compiler_output/editor.txt goto :wait_editor_txt
-	2>nul (>>compiler_output/editor.txt echo off) || goto :wait_editor_txt
+	if not exist compiler_output\editor.txt goto :wait_editor_txt
+	2>nul (>>compiler_output\editor.txt echo off) || goto :wait_editor_txt
 	type compiler_output\editor.txt
 )
 if "%compile_game%"=="true" (
   :wait_game_txt
-	if not exist compiler_output/game.txt goto :wait_game_txt
-	2>nul (>>compiler_output/game.txt echo off) || goto :wait_game_txt
+	if not exist compiler_output\game.txt goto :wait_game_txt
+	2>nul (>>compiler_output\game.txt echo off) || goto :wait_game_txt
 	type compiler_output\game.txt
 )
 if "%compile_import%"=="true" (
   :wait_import_txt
-	if not exist compiler_output/import.txt goto :wait_import_txt
-	2>nul (>>compiler_output/import.txt echo off) || goto :wait_import_txt
+	if not exist compiler_output\import.txt goto :wait_import_txt
+	2>nul (>>compiler_output\import.txt echo off) || goto :wait_import_txt
 	type compiler_output\import.txt
+)
+if "%compile_ray_tracer%"=="true" (
+  :wait_ray_tracer_txt
+	if not exist compiler_output\ray_tracer.txt goto :wait_ray_tracer_txt
+	2>nul (>>compiler_output\ray_tracer.txt echo off) || goto :wait_ray_tracer_txt
+	type compiler_output\ray_tracer.txt
 )
 if "%compile_test%"=="true" (
   :wait_test_txt
-	if not exist compiler_output/test.txt goto :wait_test_txt
-	2>nul (>>compiler_output/test.txt echo off) || goto :wait_test_txt
+	if not exist compiler_output\test.txt goto :wait_test_txt
+	2>nul (>>compiler_output\test.txt echo off) || goto :wait_test_txt
 	type compiler_output\test.txt
 )
 
 copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >nul
 copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >nul
 
-if not exist "assets" mkdir "assets"
-pushd "assets"
-if not exist "models" mkdir "models"
-if not exist "skyboxes" mkdir "skyboxes"
-if not exist "terrains" mkdir "terrains"
-popd
+if not exist assets mkdir assets
+if not exist assets\models mkdir assets\models
+if not exist assets\skyboxes mkdir assets\skyboxes
+if not exist assets\terrains mkdir assets\terrains
 
 popd

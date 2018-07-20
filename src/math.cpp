@@ -8,26 +8,24 @@
 
 union vec2 {
 	struct { float x, y; };
-	struct { float u, v; };
-	struct { float width, height; };
-	struct { float min, max; };
 	float e[2];
 
-	bool operator==(const vec2 &v) const { return (x == v.x) && (y == v.y); }
-	bool operator!=(const vec2 &v) const { return !(*this == v); }
-	vec2 operator+(const vec2 &v) const { return vec2{x + v.x, y + v.y}; }
+	bool operator==(vec2 v) const { return (x == v.x) && (y == v.y); }
+	bool operator!=(vec2 v) const { return !(*this == v); }
+	vec2 operator+(vec2 v) const { return vec2{x + v.x, y + v.y}; }
+	vec2 operator+(float f) const { return vec2{x + f, y + f}; }
 	vec2 operator-() const { return vec2{-x, -y}; }
-	vec2 operator-(const vec2 &v) const { return vec2{x - v.x, y - v.y}; }
+	vec2 operator-(vec2 v) const { return vec2{x - v.x, y - v.y}; }
 	vec2 operator-(float d) const { return vec2{x - d, y - d}; }
 	vec2 operator*(float d) const { return vec2{x * d, y * d}; }
-	vec2 operator*(const vec2 &v) const { return vec2{x * v.x, y * v.y}; }
+	vec2 operator*(vec2 v) const { return vec2{x * v.x, y * v.y}; }
 	vec2 operator/(float d) const { return vec2{x / d, y / d}; }
-	vec2 operator/(const vec2 &v) const { return vec2{x / v.x, y / v.y}; }
-	void operator+=(const vec2 &v) { x += v.x; y += v.y; }
-	void operator-=(const vec2 &v) { x -= v.x; y -= v.y; }
-	void operator*=(const vec2 &v) { x *= v.x; y *= v.y; }
+	vec2 operator/(vec2 v) const { return vec2{x / v.x, y / v.y}; }
+	void operator+=(vec2 v) { x += v.x; y += v.y; }
+	void operator-=(vec2 v) { x -= v.x; y -= v.y; }
+	void operator*=(vec2 v) { x *= v.x; y *= v.y; }
 	void operator*=(float f) { x *= f; y *= f; }
-	void operator/=(const vec2 &v) { x /= v.x; y /= v.y; }
+	void operator/=(vec2 v) { x /= v.x; y /= v.y; }
 	void operator/=(float f) { x /= f; y /= f; }
 	float& operator[](uint32 i) { return e[i]; }
 	const float& operator[](uint32 i) const { return e[i]; }
@@ -35,55 +33,50 @@ union vec2 {
 
 union vec3 {
 	struct { float x, y, z; };
-	struct { float r, g, b; };
-	struct { float s, t, p; };
-	struct { float u, v, w; };
-	struct { float pitch, yaw, roll; };
 	float e[3];
 
-	bool operator==(const vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
-	bool operator!=(const vec3 &v) const { return !(*this == v); }
-	vec3 operator+(const vec3 &v) const { return vec3{x + v.x, y + v.y, z + v.z}; }
+	bool operator==(vec3 v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
+	bool operator!=(vec3 v) const { return !(*this == v); }
+	vec3 operator+(vec3 v) const { return vec3{x + v.x, y + v.y, z + v.z}; }
 	vec3 operator-() const { return vec3{-x, -y, -z}; }
-	vec3 operator-(const vec3 &v) const { return vec3{x - v.x, y - v.y, z - v.z}; }
+	vec3 operator-(vec3 v) const { return vec3{x - v.x, y - v.y, z - v.z}; }
 	vec3 operator-(float d) const { return vec3{x - d, y - d, z - d}; }
 	vec3 operator*(float d) const { return vec3{x * d, y * d, z * d}; }
-	vec3 operator*(const vec3 &v) const { return vec3{x * v.x, y * v.y, z * v.z}; }
+	vec3 operator*(vec3 v) const { return vec3{x * v.x, y * v.y, z * v.z}; }
 	vec3 operator/(float d) const { return vec3{x / d, y / d, z / d}; }
-	vec3 operator/(const vec3 &v) const { return vec3{x / v.x, y / v.y, z / v.z}; }
-	void operator+=(const vec3 &v) { x += v.x; y += v.y; z += v.z; }
-	void operator-=(const vec3 &v) { x -= v.x; y -= v.y; z -= v.z; }
-	void operator*=(const vec3 &v) { x *= v.x; y *= v.y; z *= v.z; }
+	vec3 operator/(vec3 v) const { return vec3{x / v.x, y / v.y, z / v.z}; }
+	void operator+=(vec3 v) { x += v.x; y += v.y; z += v.z; }
+	void operator-=(vec3 v) { x -= v.x; y -= v.y; z -= v.z; }
+	void operator*=(vec3 v) { x *= v.x; y *= v.y; z *= v.z; }
 	void operator*=(float f) { x *= f; y *= f; z *= f; }
-	void operator/=(const vec3 &v) { x /= v.x; y /= v.y; z /= v.z; }
+	void operator/=(vec3 v) { x /= v.x; y /= v.y; z /= v.z; }
 	void operator/=(float f) { x /= f; y /= f; z /= f; }
 	float& operator[](uint32 i) { return e[i]; }
 	const float& operator[](uint32 i) const { return e[i]; }
-	vec2 xy() { return vec2{x, y}; };
+	vec2 xy() { return vec2{x, y}; }
+	vec2 xz() { return vec2{x, z}; }
+	vec3 zxy() { return vec3{z, x, y}; }
 };
 
 union vec4 {
 	struct { float x, y, z, w; };
-	struct { float r, g, b, a; };
-	struct { float s, t, p, q; };
-	struct { float x0, y0, x1, y1; };
 	float e[4];
 
-	bool operator==(const vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
-	bool operator!=(const vec4 &v) const { return !(*this == v); }
-	vec4 operator+(const vec4 &v) const { return vec4{x + v.x, y + v.y, z + v.z, w + v.w}; }
+	bool operator==(vec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(vec4 v) const { return !(*this == v); }
+	vec4 operator+(vec4 v) const { return vec4{x + v.x, y + v.y, z + v.z, w + v.w}; }
 	vec4 operator-() const { return vec4{-x, -y, -z, -w}; }
-	vec4 operator-(const vec4 &v) const { return vec4{x - v.x, y - v.y, z - v.z, w - v.w}; }
+	vec4 operator-(vec4 v) const { return vec4{x - v.x, y - v.y, z - v.z, w - v.w}; }
 	vec4 operator-(float d) const { return vec4{x - d, y - d, z - d, w - d}; }
 	vec4 operator*(float d) const { return vec4{x * d, y * d, z * d, w * d}; }
-	vec4 operator*(const vec4 &v) const { return vec4{x * v.x, y * v.y, z * v.z, w * v.w}; }
+	vec4 operator*(vec4 v) const { return vec4{x * v.x, y * v.y, z * v.z, w * v.w}; }
 	vec4 operator/(float d) const { return vec4{x / d, y / d, z / d, w / d}; }
-	vec4 operator/(const vec4 &v) const { return vec4{x / v.x, y / v.y, z / v.z, w / v.w}; }
-	void operator+=(const vec4 &v) { x += v.x; y += v.y; z += v.z; w += v.w; }
-	void operator-=(const vec4 &v) { x -= v.x; y -= v.y; z -= v.z; w -= v.w; }
-	void operator*=(const vec4 &v) { x *= v.x; y *= v.y; z *= v.z; w *= v.w; }
+	vec4 operator/(vec4 v) const { return vec4{x / v.x, y / v.y, z / v.z, w / v.w}; }
+	void operator+=(vec4 v) { x += v.x; y += v.y; z += v.z; w += v.w; }
+	void operator-=(vec4 v) { x -= v.x; y -= v.y; z -= v.z; w -= v.w; }
+	void operator*=(vec4 v) { x *= v.x; y *= v.y; z *= v.z; w *= v.w; }
 	void operator*=(float f) { x *= f; y *= f; z *= f; w *= f; }
-	void operator/=(const vec4 &v) { x /= v.x; y /= v.y; z /= v.z; w /= v.w; }
+	void operator/=(vec4 v) { x /= v.x; y /= v.y; z /= v.z; w /= v.w; }
 	void operator/=(float f) { x /= f; y /= f; z /= f; w /= f; }
 	float& operator[](uint32 i) { return e[i]; }
 	const float& operator[](uint32 i) const { return e[i]; }
@@ -92,44 +85,40 @@ union vec4 {
 
 union i8vec3 {
 	struct { int8 x, y, z; };
-	struct { int8 r, g, b; };
 	int8 e[3];
 
-	bool operator==(const i8vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
-	bool operator!=(const i8vec3 &v) const { return !(*this == v); }
+	bool operator==(i8vec3 v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
+	bool operator!=(i8vec3 v) const { return !(*this == v); }
 	int8& operator[](uint32 i) { return e[i]; }
 	const int8& operator[](uint32 i) const { return e[i]; }
 };
 
 union u8vec3 {
 	struct { uint8 x, y, z; };
-	struct { uint8 r, g, b; };
 	uint8 e[3];
 
-	bool operator==(const u8vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
-	bool operator!=(const u8vec3 &v) const { return !(*this == v); }
+	bool operator==(u8vec3 v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
+	bool operator!=(u8vec3 v) const { return !(*this == v); }
 	uint8& operator[](uint32 i) { return e[i]; }
 	const uint8& operator[](uint32 i) const { return e[i]; }
 };
 
 union i8vec4 {
 	struct { int8 x, y, z, w; };
-	struct { int8 r, g, b, a; };
 	int8 e[4];
 
-	bool operator==(const i8vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
-	bool operator!=(const i8vec4 &v) const { return !(*this == v); }
+	bool operator==(i8vec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(i8vec4 v) const { return !(*this == v); }
 	int8& operator[](uint32 i) { return e[i]; }
 	const int8& operator[](uint32 i) const { return e[i]; }
 };
 
 union u8vec4 {
 	struct { uint8 x, y, z, w; };
-	struct { uint8 r, g, b, a; };
 	uint8 e[4];
 
-	bool operator==(const u8vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
-	bool operator!=(const u8vec4 &v) const { return !(*this == v); }
+	bool operator==(u8vec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(u8vec4 v) const { return !(*this == v); }
 	uint8& operator[](uint32 i) { return e[i]; }
 	const uint8& operator[](uint32 i) const { return e[i]; }
 };
@@ -138,30 +127,28 @@ union i16vec3 {
 	struct { int16 x, y, z; };
 	int16 e[3];
 
-	bool operator==(const i16vec3 &v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
-	bool operator!=(const i16vec3 &v) const { return !(*this == v); }
+	bool operator==(i16vec3 v) const { return (x == v.x) && (y == v.y) && (z == v.z); }
+	bool operator!=(i16vec3 v) const { return !(*this == v); }
 	int16& operator[](uint32 i) { return e[i]; }
 	const int16& operator[](uint32 i) const { return e[i]; }
 };
 
 union i16vec4 {
 	struct { int16 x, y, z, w; };
-	struct { int16 r, g, b, a; };
 	int16 e[4];
 
-	bool operator==(const i16vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
-	bool operator!=(const i16vec4 &v) const { return !(*this == v); }
+	bool operator==(i16vec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(i16vec4 v) const { return !(*this == v); }
 	int16& operator[](uint32 i) { return e[i]; }
 	const int16& operator[](uint32 i) const { return e[i]; }
 };
 
 union u16vec4 {
 	struct { uint16 x, y, z, w; };
-	struct { uint16 r, g, b, a; };
 	uint16 e[4];
 
-	bool operator==(const u16vec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
-	bool operator!=(const u16vec4 &v) const { return !(*this == v); }
+	bool operator==(u16vec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(u16vec4 v) const { return !(*this == v); }
 	uint16& operator[](uint32 i) { return e[i]; }
 	const uint16& operator[](uint32 i) const { return e[i]; }
 };
@@ -170,8 +157,8 @@ union uvec4 {
 	struct { uint32 x, y, z, w; };
 	uint32 e[4];
 
-	bool operator==(const uvec4 &v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
-	bool operator!=(const uvec4 &v) const { return !(*this == v); }
+	bool operator==(uvec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(uvec4 v) const { return !(*this == v); }
 	uint32& operator[](uint32 i) { return e[i]; }
 	const uint32& operator[](uint32 i) const { return e[i]; }
 };
@@ -179,11 +166,10 @@ union uvec4 {
 union mat3 {
 	struct { vec3 c1, c2, c3; };
 	vec3 columns[3];
-	vec3 e[3];
 
-	bool operator==(const mat3 &m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3); }
-	bool operator!=(const mat3 &m) const { return !(*this == m); }
-	mat3 operator+(const mat3 &m) const { return mat3{c1 + m.c1, c2 + m.c2, c3 + m.c3}; }
+	bool operator==(mat3 m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3); }
+	bool operator!=(mat3 m) const { return !(*this == m); }
+	mat3 operator+(mat3 m) const { return mat3{c1 + m.c1, c2 + m.c2, c3 + m.c3}; }
 	mat3 operator*(float f) const { return mat3{c1 * f, c2 * f, c3 * f}; }
 	vec3 operator*(vec3 v) const {
 		float v0 = c1.x * v.x;
@@ -197,7 +183,7 @@ union mat3 {
 		v2 += c3.z * v.z;
 		return vec3{v0, v1, v2};
 	}
-	mat3 operator*(const mat3 &m) const {
+	mat3 operator*(mat3 m) const {
 		mat3 result;
 		result.c1.x = c1.x * m.c1.x + c2.x * m.c1.y + c3.x * m.c1.z;
 		result.c1.y = c1.y * m.c1.x + c2.y * m.c1.y + c3.y * m.c1.z;
@@ -210,8 +196,8 @@ union mat3 {
 		result.c3.z = c1.z * m.c3.x + c2.z * m.c3.y + c3.z * m.c3.z;
 		return result;		
 	}
-	vec3& operator[](uint32 i) { return e[i]; }
-	const vec3& operator[](uint32 i) const { return e[i]; }
+	vec3& operator[](uint32 i) { return columns[i]; }
+	const vec3& operator[](uint32 i) const { return columns[i]; }
 	explicit operator float*() { return &c1.x; }
 	explicit operator const float*() const { return &c1.x; }
 };
@@ -219,11 +205,10 @@ union mat3 {
 union mat4 {
 	struct { vec4 c1, c2, c3, c4; };
 	vec4 columns[4];
-	vec4 e[4];
 
-	bool operator==(const mat4 &m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3) && (c4 == m.c4); }
-	bool operator!=(const mat4 &m) const { return !(*this == m); }
-	mat4 operator+(const mat4 &m) const { return mat4{c1 + m.c1, c2 + m.c2, c3 + m.c3, c4 + m.c4}; }
+	bool operator==(mat4 m) const { return (c1 == m.c1) && (c2 == m.c2) && (c3 == m.c3) && (c4 == m.c4); }
+	bool operator!=(mat4 m) const { return !(*this == m); }
+	mat4 operator+(mat4 m) const { return mat4{c1 + m.c1, c2 + m.c2, c3 + m.c3, c4 + m.c4}; }
 	mat4 operator*(float f) const { return mat4{c1 * f, c2 * f, c3 * f, c4 * f}; }
 	vec4 operator*(vec4 v) const {
 		float v0 = c1.x * v.x;
@@ -245,7 +230,7 @@ union mat4 {
 		return vec4{v0, v1, v2, v3};
 	}
 	vec3 operator*(vec3 v) const { vec4 v4 = *this * vec4{v.x, v.y, v.z, 1}; return vec3{v4.x, v4.y, v4.z}; }
-	mat4 operator*(const mat4 &m) const {
+	mat4 operator*(mat4 m) const {
 		mat4 result;
 		result.c1 = c1 * m.c1.x + c2 * m.c1.y + c3 * m.c1.z + c4 * m.c1.w;
 		result.c2 = c1 * m.c2.x + c2 * m.c2.y + c3 * m.c2.z + c4 * m.c2.w;
@@ -253,24 +238,26 @@ union mat4 {
 		result.c4 = c1 * m.c4.x + c2 * m.c4.y + c3 * m.c4.z + c4 * m.c4.w;
 		return result;
 	}
-	vec4& operator[](uint32 i) { return e[i]; }
-	const vec4& operator[](uint32 i) const { return e[i]; }
+	vec4& operator[](uint32 i) { return columns[i]; }
+	const vec4& operator[](uint32 i) const { return columns[i]; }
 	explicit operator float*() { return &c1.x; }
 	explicit operator const float*() const { return &c1.x; }
 };
 
 union quat {
 	struct { float x, y, z, w; };
-	struct { float q1, q2, q3, q0; };
 	float e[4];
 
-	bool operator==(const quat &q) const { return x == q.x && y == q.y && z == q.z && w == q.w; }
-	bool operator!=(const quat &q) const { return !(*this == q); }
-	quat operator+(const quat &q) const { return quat{x + q.x, y + q.y, z + q.z, w + q.w}; }
+	bool operator==(quat q) const { return x == q.x && y == q.y && z == q.z && w == q.w; }
+	bool operator!=(quat q) const { return !(*this == q); }
+	quat operator+(quat q) const { return quat{x + q.x, y + q.y, z + q.z, w + q.w}; }
 	quat operator-() const { return quat{-x, -y, -z, -w}; }
 	quat operator*(float d) const { return quat{x * d, y * d, z * d, w * d}; }
-	vec3 operator*(const vec3 &v) const { mat3 mat3_from_rotate(quat); return mat3_from_rotate(*this) * v; }
-	quat operator*(const quat &q) const {
+	vec3 operator*(vec3 v) const {
+		mat3 mat3_from_rotate(quat);
+		return mat3_from_rotate(*this) * v;
+	}
+	quat operator*(quat q) const {
 		quat result = {
 			w * q.x + x * q.w + y * q.z - z * q.y,
 			w * q.y + y * q.w + z * q.x - x * q.z,
@@ -279,6 +266,7 @@ union quat {
 		};
 		return result;
 	}
+	void operator*=(quat q) { *this = (*this * q); }
 	quat operator/(float d) const { return quat{x / d, y / d, z / d, w / d}; }
 	float& operator[](uint32 i) { return e[i]; }
 	const float& operator[](uint32 i) const { return e[i]; }
@@ -289,15 +277,15 @@ struct transform {
 	quat rotate;
 	vec3 translate;
 
-	bool operator==(const transform &t) const { return scale == t.scale && rotate == t.rotate && translate == t.translate; }
-	bool operator!=(const transform &t) const { return !(*this == t); }
+	bool operator==(transform t) const { return scale == t.scale && rotate == t.rotate && translate == t.translate; }
+	bool operator!=(transform t) const { return !(*this == t); }
 };
 
 struct camera {
 	vec3 position;
 	vec3 view;
-	float fovy;
 	float aspect;
+	float fovy;
 	float znear;
 	float zfar;
 };
@@ -308,9 +296,7 @@ struct plane {
 };
 
 struct triangle {
-	vec3 a;
-	vec3 b;
-	vec3 c;
+	vec3 points[3];
 };
 
 struct sphere {
@@ -337,7 +323,7 @@ struct aabb {
 
 struct ray {
 	vec3 origin;
-	vec3 direction;
+	vec3 dir;
 	float len;
 };
 
@@ -388,7 +374,7 @@ vec4 vec4_normalize(vec4 v) {
 	return v / len;
 }
 
-mat3 mat3_transpose(const mat3 &m) {
+mat3 mat3_transpose(mat3 m) {
 	mat3 mat;
 	for (int i = 0; i < 3; i += 1) {
 		for (int j = 0; j < 3; j += 1) {
@@ -398,29 +384,27 @@ mat3 mat3_transpose(const mat3 &m) {
 	return mat;
 }
 
-mat3 mat3_inverse(const mat3 &m) {
-	float one_over_determinant = 1 / (+m.e[0].e[0] * (m.e[1].e[1] * m.e[2].e[2] - m.e[2].e[1] * m.e[1].e[2])
-		- m.e[1].e[0] * (m.e[0].e[1] * m.e[2].e[2] - m.e[2].e[1] * m.e[0].e[2])
-		+ m.e[2].e[0] * (m.e[0].e[1] * m.e[1].e[2] - m.e[1].e[1] * m.e[0].e[2]));
+mat3 mat3_inverse(mat3 m) {
+	float one_over_determinant = 1.0f / (+m[0][0] * (m[1][1] * m[2][2] - m[2][1] * m[1][2]) - m[1][0] * (m[0][1] * m[2][2] - m[2][1] * m[0][2]) + m[2][0] * (m[0][1] * m[1][2] - m[1][1] * m[0][2]));
 	mat3 inverse;
-	inverse.e[0].e[0] = +(m.e[1].e[1] * m.e[2].e[2] - m.e[2].e[1] * m.e[1].e[2]) * one_over_determinant;
-	inverse.e[1].e[0] = -(m.e[1].e[0] * m.e[2].e[2] - m.e[2].e[0] * m.e[1].e[2]) * one_over_determinant;
-	inverse.e[2].e[0] = +(m.e[1].e[0] * m.e[2].e[1] - m.e[2].e[0] * m.e[1].e[1]) * one_over_determinant;
-	inverse.e[0].e[1] = -(m.e[0].e[1] * m.e[2].e[2] - m.e[2].e[1] * m.e[0].e[2]) * one_over_determinant;
-	inverse.e[1].e[1] = +(m.e[0].e[0] * m.e[2].e[2] - m.e[2].e[0] * m.e[0].e[2]) * one_over_determinant;
-	inverse.e[2].e[1] = -(m.e[0].e[0] * m.e[2].e[1] - m.e[2].e[0] * m.e[0].e[1]) * one_over_determinant;
-	inverse.e[0].e[2] = +(m.e[0].e[1] * m.e[1].e[2] - m.e[1].e[1] * m.e[0].e[2]) * one_over_determinant;
-	inverse.e[1].e[2] = -(m.e[0].e[0] * m.e[1].e[2] - m.e[1].e[0] * m.e[0].e[2]) * one_over_determinant;
-	inverse.e[2].e[2] = +(m.e[0].e[0] * m.e[1].e[1] - m.e[1].e[0] * m.e[0].e[1]) * one_over_determinant;
+	inverse[0][0] = +(m[1][1] * m[2][2] - m[2][1] * m[1][2]) * one_over_determinant;
+	inverse[1][0] = -(m[1][0] * m[2][2] - m[2][0] * m[1][2]) * one_over_determinant;
+	inverse[2][0] = +(m[1][0] * m[2][1] - m[2][0] * m[1][1]) * one_over_determinant;
+	inverse[0][1] = -(m[0][1] * m[2][2] - m[2][1] * m[0][2]) * one_over_determinant;
+	inverse[1][1] = +(m[0][0] * m[2][2] - m[2][0] * m[0][2]) * one_over_determinant;
+	inverse[2][1] = -(m[0][0] * m[2][1] - m[2][0] * m[0][1]) * one_over_determinant;
+	inverse[0][2] = +(m[0][1] * m[1][2] - m[1][1] * m[0][2]) * one_over_determinant;
+	inverse[1][2] = -(m[0][0] * m[1][2] - m[1][0] * m[0][2]) * one_over_determinant;
+	inverse[2][2] = +(m[0][0] * m[1][1] - m[1][0] * m[0][1]) * one_over_determinant;
 	return inverse;
 }
 
-vec3 mat3_get_scale(const mat3 &m) {
+vec3 mat3_get_scale(mat3 m) {
 	vec3 scaling = {vec3_len(m.columns[0]), vec3_len(m.columns[1]), vec3_len(m.columns[2])};
 	return scaling;
 }
 
-quat mat3_get_rotate(const mat3 &m) {
+quat mat3_get_rotate(mat3 m) {
 	float four_x_squared_minus_1 = m[0][0] - m[1][1] - m[2][2];
 	float four_y_squared_minus_1 = m[1][1] - m[0][0] - m[2][2];
 	float four_z_squared_minus_1 = m[2][2] - m[0][0] - m[1][1];
@@ -452,15 +436,21 @@ quat mat3_get_rotate(const mat3 &m) {
 
 mat3 mat3_from_scale(vec3 scale) {
 	mat3 mat = {};
-	mat.c1.x = scale.x; mat.c2.y = scale.y; mat.c3.z = scale.z;
+	mat.c1.x = scale.x;
+	mat.c2.y = scale.y;
+	mat.c3.z = scale.z;
 	return mat;
 }
 
-mat3 mat3_from_rotate(vec3 axis, float angle) {
+mat3 mat3_from_scale(float scale) {
+	return mat3_from_scale(vec3{scale, scale, scale});
+}
+
+mat3 mat3_from_axis_rotate(vec3 axis, float angle) {
 	m_debug_assert(fabsf(vec3_len(axis) - 1.0f) < 0.000001f, "");
-	const float c = cosf(angle);
-	const float c_1 = 1 - c;
-	const float s = sinf(angle);
+	float c = cosf(angle);
+	float c_1 = 1 - c;
+	float s = sinf(angle);
 	mat3 mat = {};
 	mat.c1.x = c + axis.x * axis.x * c_1;
 	mat.c1.y = axis.y * axis.x * c_1 + axis.z * s;
@@ -491,7 +481,7 @@ mat3 mat3_from_rotate(quat q) {
 	return m;
 }
 
-mat3 mat3_from_mat4(const mat4 &m) {
+mat3 mat3_from_mat4(mat4 m) {
 	mat3 mat = {vec3{m.c1.x, m.c1.y, m.c1.z}, vec3{m.c2.x, m.c2.y, m.c2.z}, vec3{m.c3.x, m.c3.y, m.c3.z}};
 	return mat;
 }
@@ -500,7 +490,7 @@ mat4 mat4_identity() {
 	return mat4{vec4{1, 0, 0, 0}, vec4{0, 1, 0, 0}, vec4{0, 0, 1, 0}, vec4{0, 0, 0, 1}};
 }
 
-mat4 mat4_transpose(const mat4 &m) {
+mat4 mat4_transpose(mat4 m) {
 	mat4 mat;
 	for (int i = 0; i < 4; i += 1) {
 		for (int j = 0; j < 4; j += 1) {
@@ -510,7 +500,7 @@ mat4 mat4_transpose(const mat4 &m) {
 	return mat;
 }
 
-mat4 mat4_inverse(const mat4 &m) {
+mat4 mat4_inverse(mat4 m) {
 	float coef00 = m.c3.z * m.c4.w - m.c4.z * m.c3.w;
 	float coef02 = m.c2.z * m.c4.w - m.c4.z * m.c2.w;
 	float coef03 = m.c2.z * m.c3.w - m.c3.z * m.c2.w;
@@ -562,6 +552,10 @@ mat4 mat4_from_scale(vec3 scale) {
 	return mat;
 }
 
+mat4 mat4_from_scale(float scale) {
+	return mat4_from_scale(vec3{scale, scale, scale});
+}
+
 mat4 mat4_from_translate(vec3 translate) {
 	mat4 mat = mat4_identity();
 	mat.c4.x = translate.x; 
@@ -570,11 +564,11 @@ mat4 mat4_from_translate(vec3 translate) {
 	return mat;
 }
 
-mat4 mat4_from_rotate(vec3 axis, float angle) {
+mat4 mat4_from_axis_rotate(vec3 axis, float angle) {
 	m_debug_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2), "");
-	const float c = cosf(angle);
-	const float c_1 = 1 - c;
-	const float s = sinf(angle);
+	float c = cosf(angle);
+	float c_1 = 1 - c;
+	float s = sinf(angle);
 	mat4 mat = {};
 	mat.c1.x = c + axis.x * axis.x * c_1;
 	mat.c1.y = axis.y * axis.x * c_1 + axis.z * s;
@@ -607,11 +601,11 @@ mat4 mat4_from_rotate(quat q) {
 	return m;
 }
 
-mat4 mat4_from_transform(const transform &t) {
+mat4 mat4_from_transform(transform t) {
 	return mat4_from_translate(t.translate) * mat4_from_rotate(t.rotate) * mat4_from_scale(t.scale);
 }
 
-vec3 mat4_get_scale(const mat4 &m) {
+vec3 mat4_get_scale(mat4 m) {
 	vec3 scaling = {
 		vec3_len(vec3{m.columns[0].x, m.columns[0].y, m.columns[0].z}),
 		vec3_len(vec3{m.columns[1].x, m.columns[1].y, m.columns[1].z}),
@@ -620,7 +614,7 @@ vec3 mat4_get_scale(const mat4 &m) {
 	return scaling;
 }
 
-quat mat4_get_rotate(const mat4 &m) {
+quat mat4_get_rotate(mat4 m) {
 	vec3 scaling = mat4_get_scale(m);
 	mat3 m3 = mat3_from_mat4(m);
 	m3[0] /= scaling.x;
@@ -632,12 +626,12 @@ quat mat4_get_rotate(const mat4 &m) {
 	return q / q_len;
 }
 
-vec3 mat4_get_translate(const mat4 &m) {
+vec3 mat4_get_translate(mat4 m) {
 	vec3 translation = {m.columns[3].x, m.columns[3].y, m.columns[3].z};
 	return translation;
 }
 
-transform mat4_get_transform(const mat4 &m) {
+transform mat4_get_transform(mat4 m) {
 	transform t = {};
 	t.scale = mat4_get_scale(m);
 	t.rotate = mat4_get_rotate(m);
@@ -645,7 +639,7 @@ transform mat4_get_transform(const mat4 &m) {
 	return t;
 }
 
-mat4 mat4_orthographic_projection(float left, float right, float bottom, float top, float near, float far) {
+mat4 mat4_orthographic_project(float left, float right, float bottom, float top, float near, float far) {
 	mat4 mat = {};
 	mat.c1.x = 2 / (right - left);
 	mat.c2.y = 2 / (top - bottom);
@@ -657,7 +651,7 @@ mat4 mat4_orthographic_projection(float left, float right, float bottom, float t
 	return mat;
 }
 
-mat4 mat4_perspective_projection(float fovy, float aspect, float znear, float zfar) {
+mat4 mat4_perspective_project(float fovy, float aspect, float znear, float zfar) {
 	float f = 1 / tanf(fovy / 2);
 	mat4 mat = {};
 	mat.c1.x = f / aspect;
@@ -694,7 +688,7 @@ mat4 mat4_look_at(vec3 eye, vec3 center) {
 	return mat;
 }
 
-vec3 mat4_unproject(vec3 window_coord, const mat4 &view_mat, const mat4 &proj_mat, vec4 view_port) {
+vec3 mat4_unproject(vec3 window_coord, mat4 view_mat, mat4 proj_mat, vec4 view_port) {
 	mat4 inverse_mat = mat4_inverse(proj_mat * view_mat);
 	vec4 tmp = vec4{window_coord.x, window_coord.y, window_coord.z, 1};
 	tmp.x = (tmp.x - view_port.x) / view_port.z;
@@ -728,18 +722,33 @@ quat quat_inverse(quat q) {
 	return quat{q.x, q.y, q.z, -q.w};
 }
 
-vec3 quat_to_euler_angles(quat q) {
-	return vec3{
-		atan2f(2 * (q.q0 * q.q1 + q.q2 * q.q3), 1 - 2 * (q.q1 * q.q1 + q.q2 * q.q2)),
-		asinf(2 * (q.q0 * q.q2 - q.q3 * q.q1)),
-		atan2f(2 * (q.q0 * q.q3 + q.q1 * q.q2), 1 - 2 * (q.q2 * q.q2 + q.q3 * q.q3))
-	};
+float quat_get_pitch(quat q) {
+	float y = 2 * (q.y * q.z + q.w * q.x);
+	float x = q.w * q.w - q.x * q.x - q.y * q.y + q.z * q.z;
+	if (y == 0 && x == 0) {
+		return 2 * atan2f(q.x, q.w);
+	}
+	else {
+		return atan2f(y, x);
+	}
 }
 
-quat quat_from_euler_angles(float x, float y, float z) {
-	vec3 euler_angles = {x * 0.5f, y * 0.5f, z *0.5f};
-	vec3 c = vec3{cosf(euler_angles.x), cosf(euler_angles.y), cosf(euler_angles.z)};
-	vec3 s = vec3{sinf(euler_angles.x), sinf(euler_angles.y), sinf(euler_angles.z)};
+float quat_get_yaw(quat q) {
+	return asinf(clamp(2 * (q.w * q.y - q.x * q.z), -1.0f, 1.0f));
+}
+
+float quat_get_roll(quat q) {
+	return atan2f(2 * (q.w * q.z + q.x * q.y), q.w * q.w + q.x * q.x - q.y * q.y - q.z * q.z);
+}
+
+vec3 quat_get_euler_angles(quat q) {
+	return vec3{quat_get_pitch(q), quat_get_yaw(q), quat_get_roll(q)};
+}
+
+quat quat_from_euler_angles(vec3 angles) {
+	angles *= 0.5f;
+	vec3 c = vec3{cosf(angles.x), cosf(angles.y), cosf(angles.z)};
+	vec3 s = vec3{sinf(angles.x), sinf(angles.y), sinf(angles.z)};
 	quat q;
 	q.w = c.x * c.y * c.z + s.x * s.y * s.z;
 	q.x = s.x * c.y * c.z - c.x * s.y * s.z;
@@ -748,7 +757,7 @@ quat quat_from_euler_angles(float x, float y, float z) {
 	return q;
 }
 
-quat quat_from_rotation(vec3 axis, float angle) {
+quat quat_from_axis_rotate(vec3 axis, float angle) {
 	axis = vec3_normalize(axis);
 	float sin = sinf(angle / 2);
 	float cos = cosf(angle / 2);
@@ -767,7 +776,7 @@ quat quat_from_between(vec3 a, vec3 b) {
 		if (vec3_len(txa) < 0.000001) {
 			txa = vec3_cross(vec3{0, 1, 0}, a);
 		}
-		return quat_from_rotation(txa, (float)M_PI);
+		return quat_from_axis_rotate(txa, (float)M_PI);
 	}
 	else if (adb > 0.999999f) {
 		return quat{0, 0, 0, 1};
@@ -804,23 +813,19 @@ transform transform_identity() {
 	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, vec3{0, 0, 0}};
 }
 
-transform transform_from_translation(vec3 t) {
-	return transform{vec3{1, 1, 1}, quat{0, 0, 0, 1}, t};
+mat4 camera_project_mat4(camera camera) {
+	return mat4_perspective_project(camera.fovy, camera.aspect, camera.znear, camera.zfar);
 }
 
-mat4 camera_projection_mat4(const camera &camera) {
-	return mat4_perspective_projection(camera.fovy, camera.aspect, camera.znear, camera.zfar);
-}
-
-mat4 camera_view_mat4(const camera &camera) {
+mat4 camera_view_mat4(camera camera) {
 	return mat4_look_at(camera.position, camera.position + camera.view);
 }
 
-mat4 camera_view_projection_mat4(const camera &camera) {
-	return camera_projection_mat4(camera) * camera_view_mat4(camera);
+mat4 camera_view_project_mat4(camera camera) {
+	return camera_project_mat4(camera) * camera_view_mat4(camera);
 }
 
-mat4 camera_billboard_mat4(const camera &camera) {
+mat4 camera_billboard_mat4(camera camera) {
 	mat3 mat = mat3_transpose(mat3_from_mat4(camera_view_mat4(camera)));
 	return mat4{
 		vec4{mat.columns[0].x, mat.columns[0].y, mat.columns[0].z, 0},
@@ -830,7 +835,7 @@ mat4 camera_billboard_mat4(const camera &camera) {
 	};
 }
 
-mat4 camera_shadow_map_projection_mat4(const camera &camera, vec3 directional_light) {
+mat4 camera_shadow_map_project_mat4(camera camera, vec3 directional_light) {
 	// directional_light = vec3_normalize(directional_light);
 
 	// vec3 camera_right = vec3_cross(camera.view, camera.up);
@@ -870,260 +875,10 @@ mat4 camera_shadow_map_projection_mat4(const camera &camera, vec3 directional_li
 	// 	bound_max.z = max(bound_max.z, view_frustum_corners[i].z);
 	// }
 
-	// return mat4_orthographic_projection(bound_min.x, bound_max.x, bound_min.y, bound_max.y, -bound_max.z, -bound_min.z) * light_view_mat4;
+	// return mat4_orthographic_project(bound_min.x, bound_max.x, bound_min.y, bound_max.y, -bound_max.z, -bound_min.z) * light_view_mat4;
 
 	mat4 light_view_mat4 = mat4_look_at(directional_light * 50, {0, 0, 0});
-	return mat4_orthographic_projection(-50, 50, -50, 50, 0, 100) * light_view_mat4;
-}
-
-float aabb_volume(const aabb &bound) {
-	return fabsf(bound.min.x - bound.max.x) * fabsf(bound.min.y - bound.max.y) * fabsf(bound.min.z - bound.max.z);
-}
-
-vec3 aabb_size(const aabb &bound) {
-	return vec3{bound.max.x - bound.min.x, bound.max.y - bound.min.y, bound.max.z - bound.min.z};
-}
-
-vec3 aabb_center(const aabb &bound) {
-	return (bound.min + bound.max) * 0.5f;
-}
-
-vec3 aabb_bottom_center(const aabb &bound) {
-	return vec3{bound.min.x + (bound.max.x - bound.min.x) / 2, bound.min.y, bound.min.z + (bound.max.z - bound.min.z) / 2};
-}
-
-aabb aabb_translate(const aabb &bound, vec3 v) {
-	return aabb{bound.min + v, bound.max + v};
-}
-
-aabb aabb_scale(const aabb &bound, vec3 v) {
-	return aabb{bound.min * v, bound.max * v};
-}
-
-aabb aabb_rotate(const aabb &bound, quat quat) {
-	mat4 mat = mat4_from_rotate(quat);
-	aabb new_bound = {};
-	for (int i = 0; i < 3; i += 1) {
-		for (int j = 0; j < 3; j += 1) {
-			float e = mat.columns[j].e[i] * bound.min.e[j];
-			float f = mat.columns[j].e[i] * bound.max.e[j];
-			if (e < f) {
-				new_bound.min.e[i] += e;
-				new_bound.max.e[i] += f;
-			}
-			else {
-				new_bound.min.e[i] += f;
-				new_bound.max.e[i] += e;
-			}
-		}
-	}
-	return new_bound;
-}
-
-bool aabb_intersect(const aabb &bound1, const aabb &bound2) {
-	if (bound1.max.x < bound2.min.x || bound1.min.x > bound2.max.x) {
-		return false;
-	}
-	if (bound1.max.y < bound2.min.y || bound1.min.y > bound2.max.y) {
-		return false;
-	}
-	if (bound1.max.z < bound2.min.z || bound1.min.z > bound2.max.z) {
-		return false;
-	}
-	return true;
-}
-
-aabb aabb_expand(const aabb &bound1, const aabb &bound2) {
-	aabb bound = bound1;
-	if (bound2.min.x < bound1.min.x || bound2.min.y < bound1.min.y || bound2.min.z < bound1.min.z) {
-		bound.min = bound2.min;
-	}
-	if (bound2.max.x > bound1.max.x || bound2.max.y > bound1.max.y || bound2.max.z > bound1.max.z) {
-		bound.max = bound2.max;
-	}
-	return bound;
-}
-
-bool ray_interect_plane(const ray &ray, const plane &plane, vec3 *intersection) {
-	float t = (plane.distance - vec3_dot(plane.normal, ray.origin)) / vec3_dot(plane.normal, ray.direction * ray.len);
-	if (t >= 0 && t <= 1) {
-		*intersection = ray.origin + ray.direction * ray.len * t;
-		return true;
-	}
-	return false;
-}
-
-bool ray_intersect_sphere(const ray &ray, const sphere &sphere, float *intersection = nullptr) {
-	vec3 m = ray.origin - sphere.center;
-	float b = vec3_dot(m, ray.direction);
-	float c = vec3_dot(m, m) - sphere.radius * sphere.radius;
-	if (b > 0 && c > 0) {
-		return false;
-	}
-	float discr = b * b - c;
-	if (discr < 0) {
-		return false;
-	}
-	if (intersection) {
-		float t = -b - sqrtf(discr);
-		*intersection = t < 0 ? 0 : t;
-	}
-	return true;
-}
-
-bool ray_intersect_capsule(const ray &ray, const capsule &capsule, float *intersection = nullptr) {
-	const vec3 sa = ray.origin;
-	const vec3 sb = ray.origin + ray.direction * ray.len;
-	const vec3 p = capsule.begin;
-	const vec3 q = capsule.end;
-	const float r = capsule.radius;
-
-	auto test_spheres = [&] {
-		return ray_intersect_sphere(ray, {p, r}, intersection) || ray_intersect_sphere(ray, {q, r}, intersection);
-	};
-
-	vec3 d = q - p, m = sa - p, n = sb - sa;
-  float md = vec3_dot(m, d);
-  float nd = vec3_dot(n, d);
-  float dd = vec3_dot(d, d);
-  if (md < 0 && md + nd < 0) {
-  	return test_spheres(); // Segment outside ’p’ side of cylinder
-  }
-  if (md > dd && md + nd > dd) {
-  	return test_spheres(); // Segment outside ’q’ side of cylinder
-  }
-  float t = 0;
-  float nn = vec3_dot(n, n);
-  float mn = vec3_dot(m, n);
-  float a = dd * nn - nd * nd;
-  float k = vec3_dot(m, m) - r * r;
-  float c = dd * k - md * md;
-  if (fabsf(a) < FLT_EPSILON) { // Segment runs parallel to cylinder axis
-    if (c > 0) {
-    	return test_spheres(); // ’a’ and thus the segment lie outside cylinder
-    }
-    if (md < 0) {
-	    t = -mn / nn; // Intersect segment against ’p’ endcap
-	  }
-    else if (md > dd) {
-    	t = (nd - mn) / nn; // Intersect segment against ’q’ endcap
-    }
-    else {
-	    t = 0; // ’a’ lies inside cylinder
-	  }
-  }
-  else {
-	  float b = dd * mn - nd * md;
-	  float discr = b * b - a * c;
-	  if (discr < 0) {
-		  return test_spheres(); // No real roots; no intersection
-		}
-	  t = (-b - sqrtf(discr)) / a;
-	  if (t < 0 || t > 1) {
-	  	return test_spheres(); // Intersection lies outside segment
-	  }
-	  if (md + t * nd < 0) { // Intersection outside cylinder on ’p’ side
-	    if (nd <= 0) {
-	    	return test_spheres(); // Segment pointing away from endcap
-	    }
-	    t = -md / nd;
-	    // Keep intersection if Dot(S(t) - p, S(t) - p) <= r∧2
-	    if (k + 2 * t * (mn + t * nn) > 0) {
-	    	return test_spheres();
-	    }
-	  }
-	  else if (md + t * nd > dd) { // Intersection outside cylinder on ’q’ side
-	    if (nd >= 0) {
-	    	return test_spheres(); // Segment pointing away from endcap
-	    }
-	    t = (dd - md) / nd;
-	    // Keep intersection if Dot(S(t) - q, S(t) - q) <= r∧2
-	    if (k + dd - 2 * md + t * (2 * (mn - nd) + t * nn) > 0) {
-	    	return test_spheres();
-	    }
-	  }
-	}
-  // Segment intersects cylinder between the endcaps; t is correct
-	if (intersection) {
-		*intersection = ray.len * t;
-	}
-	return true;
-}
-
-bool ray_intersect_bound(const ray &ray, const aabb &bound, vec2 *intersection = nullptr) {
-	float t0 = 0;
-	float t1 = ray.len;
-	for (uint32 i = 0; i < 3; i += 1) {
-		float fnear = (bound.min[i] - ray.origin[i]) / ray.direction[i];
-		float ffar = (bound.max[i] - ray.origin[i]) / ray.direction[i];
-		if (fnear > ffar) {
-			float fnear2 = fnear;
-			fnear = ffar;
-			ffar = fnear2;
-		}
-		if (fnear > t0) {
-			t0 = fnear;
-		}
-		if (ffar < t1) {
-			t1 = ffar;
-		}
-		if (t0 > t1) {
-			return false;
-		}
-	}
-	if (intersection) {
-		intersection->x = t0;
-		intersection->y = t1;
-	}
-	return true;
-}
-
-uint32 ray_intersect_bounds_nearest(const ray &ray, const aabb *bounds, uint32 bound_count) {
-	float nearest = INFINITY;
-	uint32 bound_index = UINT32_MAX;
-	for (uint32 i = 0; i < bound_count; i += 1) {
-		vec2 intersection = {};
-		if (ray_intersect_bound(ray, bounds[i], &intersection) && intersection.x < nearest) {
-			nearest = intersection.x;
-			bound_index = i;
-		}
-	}
-	return bound_index;
-}
-
-bool ray_intersect_triangle(const ray &ray, vec3 a, vec3 b, vec3 c, float *distance = nullptr, vec3 *barycentric_coord = nullptr) {
-	vec3 ab = b - a;
-	vec3 ac = c - a;
-	vec3 qp = -ray.direction * ray.len;
-	vec3 n = vec3_cross(ab, ac);
-	float d = vec3_dot(qp, n);
-	if (d <= 0) {
-		return false;
-	}
-	vec3 ap = ray.origin - a;
-	float t = vec3_dot(ap, n);
-	if (t < 0 || t > d) {
-		return false;
-	}
-	vec3 e = vec3_cross(qp, ap);
-	float v = vec3_dot(ac, e);
-	if (v < 0 || v > d) {
-		return false;
-	}
-	float w = -vec3_dot(ab, e);
-	if (w < 0 || v + w > d) {
-		return false;
-	}
-	float ood = 1 / d;
-	if (distance) {
-		*distance = t * ood * ray.len;
-	}
-	if (barycentric_coord) {
-		barycentric_coord->v = v * ood;
-		barycentric_coord->w = w * ood;
-		barycentric_coord->u = 1 - barycentric_coord->v - barycentric_coord->w;
-	}
-	return true;
+	return mat4_orthographic_project(-50, 50, -50, 50, 0, 100) * light_view_mat4;
 }
 
 float degree_to_radian(float degree) {
@@ -1131,7 +886,7 @@ float degree_to_radian(float degree) {
 }
 
 float radian_to_degree(float radian) {
-	return radian / (float)M_PI * 180;
+	return radian * 180 / (float)M_PI;
 }
 
 float wrap_angle(float angle) {
@@ -1140,6 +895,11 @@ float wrap_angle(float angle) {
 		angle += (float)M_PI * 2;
 	}
 	return angle;
+}
+
+float hfov_to_vfov(float hfov, float aspect_ratio) {
+	float vfov = 2.0f * atanf(tanf(hfov * 0.5f) / aspect_ratio);
+	return vfov;
 }
 
 uint32 mipmap_levels(uint32 width, uint32 height) {
@@ -1187,205 +947,271 @@ bool point_inside_rect(int point_x, int point_y, int rect_x, int rect_y, int rec
 
 vec4 fit_rect_into_rect(float rect_outer_width, float rect_outer_height, float rect_inner_width, float rect_inner_height) {
 	float scale = min(rect_outer_width / rect_inner_width, rect_outer_height / rect_inner_height);
-	rect_inner_width *= scale;
-	rect_inner_height *= scale;
-	float x = (rect_outer_width - rect_inner_width) / 2;
-	float y = (rect_outer_height - rect_inner_height) / 2;
-	vec4 rect;
-	rect[0] = x / rect_outer_width;
-	rect[1] = y / rect_outer_height;
-	rect[2] = rect_inner_width / rect_outer_width;
-	rect[3] = rect_inner_height / rect_outer_height;
-	return rect;
+	float width = rect_inner_width * scale;
+	float height = rect_inner_height * scale;
+	float x = (rect_outer_width - width) / 2;
+	float y = (rect_outer_height - height) / 2;
+	return {x, y, width, height};
 }
 
-void flip_rgba_image(void *image, uint32 w, uint32 h) {
-	for (uint32 i = 0; i < (h / 2); i += 1) {
-		uint32 *row_1 = (uint32 *)image + i * w;
-		uint32 *row_2 = (uint32 *)image + (h - 1 - i) * w;
-		for (uint32 i = 0; i < w; i += 1) {
-			uint32 tmp_pixel = row_1[i];
-			row_1[i] = row_2[i];
-			row_2[i] = tmp_pixel;
+vec3 uniform_sample_hemisphere(float u1, float u2) {
+	float r = sqrtf(1 - u1 * u1);
+	float phi = 2 * (float)M_PI * u2;
+	return vec3{cosf(phi) * r, u1, -sinf(phi) * r};
+}
+
+vec3 cosine_sample_hemisphere(float u1, float u2) {
+	float r = sqrtf(u1);
+	float theta = 2 * (float)M_PI * u2;
+	return vec3{r * cosf(theta), sqrtf(max(0.0f, 1 - u1)), -r * sinf(theta)};
+}
+
+float aabb_volume(aabb bound) {
+	return fabsf(bound.min.x - bound.max.x) * fabsf(bound.min.y - bound.max.y) * fabsf(bound.min.z - bound.max.z);
+}
+
+vec3 aabb_size(aabb bound) {
+	return vec3{bound.max.x - bound.min.x, bound.max.y - bound.min.y, bound.max.z - bound.min.z};
+}
+
+vec3 aabb_center(aabb bound) {
+	return (bound.min + bound.max) * 0.5f;
+}
+
+vec3 aabb_bottom_center(aabb bound) {
+	return vec3{bound.min.x + (bound.max.x - bound.min.x) / 2, bound.min.y, bound.min.z + (bound.max.z - bound.min.z) / 2};
+}
+
+aabb aabb_translate(aabb bound, vec3 v) {
+	return aabb{bound.min + v, bound.max + v};
+}
+
+aabb aabb_scale(aabb bound, vec3 v) {
+	return aabb{bound.min * v, bound.max * v};
+}
+
+aabb aabb_rotate(aabb bound, quat quat) {
+	mat4 mat = mat4_from_rotate(quat);
+	aabb new_bound = {};
+	for (int i = 0; i < 3; i += 1) {
+		for (int j = 0; j < 3; j += 1) {
+			float e = mat.columns[j].e[i] * bound.min.e[j];
+			float f = mat.columns[j].e[i] * bound.max.e[j];
+			if (e < f) {
+				new_bound.min.e[i] += e;
+				new_bound.max.e[i] += f;
+			}
+			else {
+				new_bound.min.e[i] += f;
+				new_bound.max.e[i] += e;
+			}
 		}
+	}
+	return new_bound;
+}
+
+bool aabb_intersect(aabb bound1, aabb bound2) {
+	if (bound1.max.x < bound2.min.x || bound1.min.x > bound2.max.x) {
+		return false;
+	}
+	if (bound1.max.y < bound2.min.y || bound1.min.y > bound2.max.y) {
+		return false;
+	}
+	if (bound1.max.z < bound2.min.z || bound1.min.z > bound2.max.z) {
+		return false;
+	}
+	return true;
+}
+
+aabb aabb_expand(aabb bound1, aabb bound2) {
+	aabb bound = bound1;
+	if (bound2.min.x < bound1.min.x || bound2.min.y < bound1.min.y || bound2.min.z < bound1.min.z) {
+		bound.min = bound2.min;
+	}
+	if (bound2.max.x > bound1.max.x || bound2.max.y > bound1.max.y || bound2.max.z > bound1.max.z) {
+		bound.max = bound2.max;
+	}
+	return bound;
+}
+
+bool ray_hit_plane(ray ray, plane plane, float *hit = nullptr, vec3 *hit_point = nullptr) {
+	float t = (plane.distance - vec3_dot(plane.normal, ray.origin)) / vec3_dot(plane.normal, ray.dir * ray.len);
+	if (t >= 0 && t <= 1) {
+		if (hit) {
+			*hit = t;
+		}
+		if (hit_point) {
+			*hit_point = ray.origin + ray.dir * ray.len * t;
+		}
+		return true;
+	}
+	else {
+		return false;
 	}
 }
 
-void convert_rgba_image_to_bgra(uint8 *image, uint32 width, uint32 height) {
-	for (uint32 i = 0; i < height; i += 1) {
-		uint8 *row = image + i * width * 4;
-		for (uint32 i = 0; i < width; i += 1) {
-			uint8 *pixel = row + i * 4;
-			uint8 r = pixel[0];
-			pixel[0] = pixel[2];
-			pixel[2] = r;
-		}
+bool ray_hit_sphere(ray ray, sphere sphere, float *hit = nullptr, vec3 *hit_point = nullptr) {
+	vec3 m = ray.origin - sphere.center;
+	float b = vec3_dot(m, ray.dir);
+	float c = vec3_dot(m, m) - sphere.radius * sphere.radius;
+	if (b > 0 && c > 0) {
+		return false;
 	}
+	float discr = b * b - c;
+	if (discr < 0) {
+		return false;
+	}
+	float d = -b - sqrtf(discr);
+	d = d < 0 ? 0 : d;
+	if (hit) {
+		*hit = d / ray.len;
+	}
+	if (hit_point) {
+		*hit_point = ray.origin + ray.dir * d;
+	}
+	return true;
 }
 
-#define m_quad_verts_xyz_st(buf, x, y, z, w, h, s0, t0, s1, t1)                       \
-  float buf[] = {x, y, z, s0, t0, x + w, y, z, s1, t0, x, y + h, z, s0, t1,           \
-                 x, y + h, z, s0, t1, x + w, y, z, s1, t0, x + w, y + h, z, s1, t1};
+bool ray_hit_capsule(ray ray, capsule capsule, vec3 *hit = nullptr) {
+	vec3 sa = ray.origin;
+	vec3 sb = ray.origin + ray.dir * ray.len;
+	vec3 p = capsule.begin;
+	vec3 q = capsule.end;
+	float r = capsule.radius;
 
-#define m_quad_verts_xyz_rgba_st(buf, x, y, z, w, h, r, g, b, a, s0, t0, s1, t1)                                          \
-  float buf[] = {x, y, z, r, g, b, a, s0, t0, x + w, y, z, r, g, b, a, s1, t0, x, y + h, z, r, g, b, a, s0, t1,           \
-                 x, y + h, z, r, g, b, a, s0, t1, x + w, y, z, r, g, b, a, s1, t0, x + w, y + h, z, r, g, b, a, s1, t1};
+	auto test_spheres = [&] {
+		return ray_hit_sphere(ray, {p, r}, nullptr, hit) || ray_hit_sphere(ray, {q, r}, nullptr, hit);
+	};
 
-#define m_cube_verts_xyz(buf, x, y, z, w, h, d)                                           \
-  float buf[] = {x, y, z, x, y, z + d, x, y + h, z + d, x + w, y + h, z,                  \
-                 x, y, z, x, y + h, z, x + w, y, z + d, x, y, z,                          \
-                 x + w, y, z, x + w, y + h, z, x + w, y, z, x, y, z,                      \
-                 x, y, z, x, y + h, z + d, x, y + h, z, x + w, y, z + d,                  \
-                 x, y, z + d, x, y, z, x, y + h, z + d, x, y, z + d,                      \
-                 x + w, y, z + d, x + w, y + h, z + d, x + w, y, z, x + w, y + h, z,      \
-                 x + w, y, z, x + w, y + h, z + d, x + w, y, z + d, x + w, y + h, z + d,  \
-                 x + w, y + h, z, x, y + h, z, x + w, y + h, z + d, x, y + h, z,          \
-                 x, y + h, z + d, x + w, y + h, z + d, x, y + h, z + d, x + w, y, z + d};
-
-#define m_cube_verts_xyz_rgb(buf, x, y, z, w, h, d, r, g, b)                                                                  \
-  float buf[] = {x, y, z, r, g, b, x, y, z + d, r, g, b, x, y + h, z + d, r, g, b, x + w, y + h, z, r, g, b,                  \
-                 x, y, z, r, g, b, x, y + h, z, r, g, b, x + w, y, z + d, r, g, b, x, y, z, r, g, b,                          \
-                 x + w, y, z, r, g, b, x + w, y + h, z, r, g, b, x + w, y, z, r, g, b, x, y, z, r, g, b,                      \
-                 x, y, z, r, g, b, x, y + h, z + d, r, g, b, x, y + h, z, r, g, b, x + w, y, z + d, r, g, b,                  \
-                 x, y, z + d, r, g, b, x, y, z, r, g, b, x, y + h, z + d, r, g, b, x, y, z + d, r, g, b,                      \
-                 x + w, y, z + d, r, g, b, x + w, y + h, z + d, r, g, b, x + w, y, z, r, g, b, x + w, y + h, z, r, g, b,      \
-                 x + w, y, z, r, g, b, x + w, y + h, z + d, r, g, b, x + w, y, z + d, r, g, b, x + w, y + h, z + d, r, g, b,  \
-                 x + w, y + h, z, r, g, b, x, y + h, z, r, g, b, x + w, y + h, z + d, r, g, b, x, y + h, z, r, g, b,          \
-                 x, y + h, z + d, r, g, b, x + w, y + h, z + d, r, g, b, x, y + h, z + d, r, g, b, x + w, y, z + d, r, g, b};
-
-#define m_cube_verts_xyz_line_strip(buf, x, y, z, w, h, d)                            \
-  float buf[] = {x, y, z + d, x + w, y, z + d, x + w, y + h, z + d, x, y + h, z + d,  \
-                 x, y, z + d, x, y, z, x, y + h, z, x, y + h, z + d,                  \
-                 x + w, y + h, z + d, x + w, y + h, z, x, y + h, z, x, y, z,          \
-                 x + w, y, z, x + w, y + h, z, x + w, y, z, x + w, y, z + d};
-
-#define m_cube_verts_xyz_rgb_line_strip(buf, x, y, z, w, h, d, r, g, b)                                                   \
-  float buf[] = {x, y, z + d, r, g, b, x + w, y, z + d, r, g, b, x + w, y + h, z + d, r, g, b, x, y + h, z + d, r, g, b,  \
-                 x, y, z + d, r, g, b, x, y, z, r, g, b, x, y + h, z, r, g, b, x, y + h, z + d, r, g, b,                  \
-                 x + w, y + h, z + d, r, g, b, x + w, y + h, z, r, g, b, x, y + h, z, r, g, b, x, y, z, r, g, b,          \
-                 x + w, y, z, r, g, b, x + w, y + h, z, r, g, b, x + w, y, z, r, g, b, x + w, y, z + d, r, g, b};
-
-#define m_circle_verts_xyz(buf, x, y, z, radius, slices)   \
-  float buf[slices * 9];                                   \
-  {                                                        \
-    float delta = (M_PI * 2) / slices;                     \
-    float angle = delta;                                   \
-    float prev_x = x + radius;                             \
-    float prev_y = y;                                      \
-    float prev_z = z;                                      \
-    for (uint i = 0; i < slices; i += 1) {                 \
-      float new_x = x + cosf(angle) * radius;              \
-      float new_y = y + sinf(angle) * radius;              \
-      float new_z = z;                                     \
-      buf[i * 9 + 0] = x;                                  \
-      buf[i * 9 + 1] = y;                                  \
-      buf[i * 9 + 2] = z;                                  \
-      buf[i * 9 + 3] = prev_x;                             \
-      buf[i * 9 + 4] = prev_y;                             \
-      buf[i * 9 + 5] = prev_z;                             \
-      buf[i * 9 + 6] = new_x;                              \
-      buf[i * 9 + 7] = new_y;                              \
-      buf[i * 9 + 8] = new_z;                              \
-      prev_x = new_x;                                      \
-      prev_y = new_y;                                      \
-      angle += delta;                                      \
-    }                                                      \
+	vec3 d = q - p, m = sa - p, n = sb - sa;
+  float md = vec3_dot(m, d);
+  float nd = vec3_dot(n, d);
+  float dd = vec3_dot(d, d);
+  if (md < 0 && md + nd < 0) {
+  	return test_spheres();
   }
-
-#define m_circle_verts_xyz_rgb(buf, x, y, z, radius, r, g, b, slices)   \
-  float buf[slices * 18];                                               \
-  {                                                                     \
-   float delta = ((float)M_PI * 2) / slices;                            \
-   float angle = delta;                                                 \
-   float prev_x = x + radius;                                           \
-   float prev_y = y;                                                    \
-   float prev_z = z;                                                    \
-   for (uint i = 0; i < slices; i += 1) {                               \
-     float new_x = x + cosf(angle) * radius;                            \
-     float new_y = y + sinf(angle) * radius;                            \
-     float new_z = z;                                                   \
-     buf[i * 18 + 0] = x;                                               \
-     buf[i * 18 + 1] = y;                                               \
-     buf[i * 18 + 2] = z;                                               \
-     buf[i * 18 + 3] = r;                                               \
-     buf[i * 18 + 4] = g;                                               \
-     buf[i * 18 + 5] = b;                                               \
-     buf[i * 18 + 6] = prev_x;                                          \
-     buf[i * 18 + 7] = prev_y;                                          \
-     buf[i * 18 + 8] = prev_z;                                          \
-     buf[i * 18 + 9] = r;                                               \
-     buf[i * 18 + 10] = g;                                              \
-     buf[i * 18 + 11] = b;                                              \
-     buf[i * 18 + 12] = new_x;                                          \
-     buf[i * 18 + 13] = new_y;                                          \
-     buf[i * 18 + 14] = new_z;                                          \
-     buf[i * 18 + 15] = r;                                              \
-     buf[i * 18 + 16] = g;                                              \
-     buf[i * 18 + 17] = b;                                              \
-     prev_x = new_x;                                                    \
-     prev_y = new_y;                                                    \
-     angle += delta;                                                    \
-   }                                                                    \
+  if (md > dd && md + nd > dd) {
+  	return test_spheres();
   }
-
-#define m_hollow_circle_verts_xyz_rgb(buf, x, y, z, radius1, radius2, r, g, b, slices)          \
-  float buf[6 * 6 * slices];                                                                    \
-  {                                                                                             \
-   float delta = ((float)M_PI * 2) / slices;                                                    \
-   float angle = delta;                                                                         \
-   vec6 prev_verts[2] = {{x + radius1, y, z, r, g, b}, {x + radius2, y, z, r, g, b}};           \
-   for (uint i = 0; i < slices; i += 1) {                                                       \
-     vec6 new_verts[2] = {{x + cosf(angle) * radius1, y + sinf(angle) * radius1, z, r, g, b},   \
-                          {x + cosf(angle) * radius2, y + sinf(angle) * radius2, z, r, g, b}};  \
-     ((vec6*)buf)[i * 6 + 0] = prev_verts[0];                                                   \
-     ((vec6*)buf)[i * 6 + 1] = prev_verts[1];                                                   \
-     ((vec6*)buf)[i * 6 + 2] = new_verts[0];                                                    \
-     ((vec6*)buf)[i * 6 + 3] = new_verts[0];                                                    \
-     ((vec6*)buf)[i * 6 + 4] = prev_verts[1];                                                   \
-     ((vec6*)buf)[i * 6 + 5] = new_verts[1];                                                    \
-     prev_verts[0] = new_verts[0];                                                              \
-     prev_verts[1] = new_verts[1];                                                              \
-     angle += delta;                                                                            \
-   }                                                                                            \
+  float t = 0;
+  float nn = vec3_dot(n, n);
+  float mn = vec3_dot(m, n);
+  float a = dd * nn - nd * nd;
+  float k = vec3_dot(m, m) - r * r;
+  float c = dd * k - md * md;
+  if (fabsf(a) < FLT_EPSILON) {
+    if (c > 0) {
+    	return test_spheres();
+    }
+    if (md < 0) {
+	    t = -mn / nn;
+	  }
+    else if (md > dd) {
+    	t = (nd - mn) / nn;
+    }
+    else {
+	    t = 0;
+	  }
   }
+  else {
+	  float b = dd * mn - nd * md;
+	  float discr = b * b - a * c;
+	  if (discr < 0) {
+		  return test_spheres();
+		}
+	  t = (-b - sqrtf(discr)) / a;
+	  if (t < 0 || t > 1) {
+	  	return test_spheres();
+	  }
+	  if (md + t * nd < 0) {
+	    if (nd <= 0) {
+	    	return test_spheres();
+	    }
+	    t = -md / nd;
+	    if (k + 2 * t * (mn + t * nn) > 0) {
+	    	return test_spheres();
+	    }
+	  }
+	  else if (md + t * nd > dd) {
+	    if (nd >= 0) {
+	    	return test_spheres();
+	    }
+	    t = (dd - md) / nd;
+	    if (k + dd - 2 * md + t * (2 * (mn - nd) + t * nn) > 0) {
+	    	return test_spheres();
+	    }
+	  }
+	}
+	if (hit) {
+		*hit = ray.origin + ray.dir * ray.len * t;
+	}
+	return true;
+}
 
-#define m_cone_verts_xyz(buf, x, y, z, radius, height, sectors)           \
-  float buf[sectors * 18];                                                \
-  {                                                                       \
-    float delta_angle = (M_PI * 2) / sectors;                             \
-    vec3 top = {x, y + height, z};                                        \
-    vec3 prev = {x + radius, y, z};                                       \
-    int size = 0;                                                         \
-    for (uint i = 1; i <= sectors; i += 1) {                              \
-      float angle = i * delta_angle;                                      \
-      float dx = radius * cosf(angle);                                    \
-      float dz = -radius * sinf(angle);                                   \
-      vec3 point = {x + dx, y, z + dz};                                   \
-      vec3 tmp_buf[] = {vec3{x, y, z}}, point, prev, prev, point, top};   \
-      memcpy(buf + size, tmp_buf, sizeof(tmp_buf));                       \
-      size += sizeof(tmp_buf) / sizeof(float);                            \
-      prev = point;                                                       \
-    }                                                                     \
-  }
+bool ray_hit_aabb(ray ray, aabb bound, vec3 *hit_a = nullptr, vec3 *hit_b = nullptr) {
+	float t0 = 0;
+	float t1 = ray.len;
+	for (uint32 i = 0; i < 3; i += 1) {
+		float fnear = (bound.min[i] - ray.origin[i]) / ray.dir[i];
+		float ffar = (bound.max[i] - ray.origin[i]) / ray.dir[i];
+		if (fnear > ffar) {
+			float fnear2 = fnear;
+			fnear = ffar;
+			ffar = fnear2;
+		}
+		if (fnear > t0) {
+			t0 = fnear;
+		}
+		if (ffar < t1) {
+			t1 = ffar;
+		}
+		if (t0 > t1) {
+			return false;
+		}
+	}
+	if (hit_a) {
+		*hit_a = ray.origin + ray.dir * t0;
+	}
+	if (hit_b) {
+		*hit_b = ray.origin + ray.dir * t1;
+	}
+	return true;
+}
 
-#define m_cone_verts_xyz_rgb(buf, x, y, z, radius, height, r, g, b, sectors)                             \
-  float buf[sectors * 36];                                                                               \
-  {                                                                                                      \
-   vec3 center = {x, y, z};                                                                              \
-   vec3 color = {r, g, b};                                                                               \
-   float delta_angle = ((float)M_PI * 2) / sectors;                                                      \
-   vec3 top = {x, y + height, z};                                                                        \
-   vec3 prev = {x + radius, y, z};                                                                       \
-   int size = 0;                                                                                         \
-   for (uint i = 1; i <= sectors; i += 1) {                                                              \
-     float angle = i * delta_angle;                                                                      \
-     float dx = radius * cosf(angle);                                                                    \
-     float dz = -radius * sinf(angle);                                                                   \
-     vec3 point = {x + dx, y, z + dz};                                                                   \
-     vec3 tmp_buf[] = {center, color, point, color, prev, color, prev, color, point, color, top, color}; \
-     memcpy(buf + size, tmp_buf, sizeof(tmp_buf));                                                       \
-     size += sizeof(tmp_buf) / sizeof(float);                                                            \
-     prev = point;                                                                                       \
-   }                                                                                                     \
-  }
-
+bool ray_hit_triangle(ray ray, vec3 a, vec3 b, vec3 c, float *hit = nullptr, vec3 *hit_point = nullptr, vec3 *barycentric_coord = nullptr) {
+	vec3 ab = b - a;
+	vec3 ac = c - a;
+	vec3 qp = -ray.dir * ray.len;
+	vec3 n = vec3_cross(ab, ac);
+	float d = vec3_dot(qp, n);
+	if (d <= 0) {
+		return false;
+	}
+	vec3 ap = ray.origin - a;
+	float t = vec3_dot(ap, n);
+	if (t < 0 || t > d) {
+		return false;
+	}
+	vec3 e = vec3_cross(qp, ap);
+	float v = vec3_dot(ac, e);
+	if (v < 0 || v > d) {
+		return false;
+	}
+	float w = -vec3_dot(ab, e);
+	if (w < 0 || v + w > d) {
+		return false;
+	}
+	float ood = 1 / d;
+	if (hit) {
+		*hit = t * ood;
+	}
+	if (hit_point) {
+		*hit_point = ray.origin + ray.dir * ray.len * t * ood;
+	}
+	if (barycentric_coord) {
+		barycentric_coord->y = v * ood;
+		barycentric_coord->z = w * ood;
+		barycentric_coord->x = 1 - barycentric_coord->y - barycentric_coord->z;
+	}
+	return true;
+}

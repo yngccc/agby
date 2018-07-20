@@ -10,9 +10,12 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <windowsx.h>
 #include <wtsapi32.h>
 #include <shellscalingapi.h>
 #include <commdlg.h>
+#include <initguid.h>
+#include <comdef.h>
 #undef far
 #undef near
 
@@ -27,6 +30,8 @@
 #include <cfloat>
 
 #include <array>
+#include <stack>
+#include <vector>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -37,8 +42,6 @@ typedef uint16_t uint16;
 typedef uint32_t uint32;
 typedef uint64_t uint64;
 typedef unsigned int uint;
-typedef long long llong;
-typedef unsigned long long ullong;
 
 #define m_countof(x) (sizeof(x) / sizeof(x[0]))
 
@@ -48,19 +51,18 @@ typedef unsigned long long ullong;
 #define m_megabytes(n) (n * 1024 * 1024)
 #define m_gigabytes(n) (n * 1024 * 1024 * 1024)
 
-#define m_unpack3(array) (array)[0], (array)[1], (array)[2]
-#define m_unpack4(array) (array)[0], (array)[1], (array)[2], (array)[3]
+#define m_unpack2(a) (a)[0], (a)[1]
+#define m_unpack3(a) (a)[0], (a)[1], (a)[2]
+#define m_unpack4(a) (a)[0], (a)[1], (a)[2], (a)[3]
 
 #define m_concat_macros(t1, t2) t1##t2
 #define m_concat_macros_2(t1, t2) m_concat_macros(t1, t2)
 
-#ifdef _WIN32
-#define m_assert(expr, fmt, ...) if (!(expr)) { fatal("Assertion!\n\nExpr: %s\nFile:  %s\nLine: %d\nDetail: " fmt, #expr, __FILE__, __LINE__, __VA_ARGS__); };
-#ifdef NO_DEBUG_ASSERT
-#define m_debug_assert(expr, fmt, ...) (void(0))
+#define m_assert(expr, fmt, ...) if (!(expr)) { fatal("Expr: %s\nFile:  %s\nLine: %d\nDetail: " fmt, #expr, __FILE__, __LINE__, __VA_ARGS__); }
+#ifndef NO_DEBUG_ASSERT
+#define m_debug_assert(expr, fmt, ...) if (!(expr)) { fatal("Expr: %s\nFile:  %s\nLine: %d\nDetail: " fmt, #expr, __FILE__, __LINE__, __VA_ARGS__); }
 #else
-#define m_debug_assert(expr, fmt, ...) if (!(expr)) { fatal("Assertion!\n\nExpr: %s\nFile:  %s\nLine: %d\nDetail: " fmt, #expr, __FILE__, __LINE__, __VA_ARGS__); };
-#endif
+#define m_debug_assert(expr, fmt, ...) (void(0))
 #endif
 
 void fatal(const char* fmt, ...) {
@@ -79,16 +81,6 @@ void fatal(const char* fmt, ...) {
 	}
 	ExitProcess(1);
 }
-
-template <typename F>
-struct scope_exit {
-	F func;
-	scope_exit(F f) : func(f) {}
-	~scope_exit() { func(); }
-};
-template <typename F> scope_exit<F> scope_exit_create(F f) { return scope_exit<F>(f); }
-#define m_scope_exit(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit_create([&] {code;})
-#define m_scope_exit_copy(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit_create([=] {code;})
 
 template <typename T>
 T max(T a, T b) {
@@ -124,11 +116,11 @@ void round_up(T *n, T multi) {
 	}
 }
 
-bool is_pow_2(uint64 n) {
+bool is_pow2(uint64 n) {
 	return n && !(n & (n - 1));
 }
 
-uint32 next_pow_2(uint32 n) {
+uint32 next_pow2(uint32 n) {
 	if (n == 0) {
 		return 1;
 	}
@@ -138,7 +130,7 @@ uint32 next_pow_2(uint32 n) {
 	return n;
 }
 
-uint64 next_pow_2(uint64 n) {
+uint64 next_pow2(uint64 n) {
 	if (n == 0) {
 		return 1;
 	}
@@ -148,30 +140,43 @@ uint64 next_pow_2(uint64 n) {
 	return n;
 }
 
+template <typename F>
+struct scope_exit {
+	F func;
+	scope_exit(F f) : func(f) {}
+	~scope_exit() { func(); }
+};
+template <typename F> scope_exit<F> scope_exit_create(F f) { return scope_exit<F>(f); }
+#define m_scope_exit(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit_create([&] { code; });
+
 template <typename T>
 struct range {
 	range(T *first, T *last) : begin_{first}, end_{last} {}
 	range(T *first, uint64 size) : begin_{first}, end_{first + size} {}
-	T* begin() const noexcept { return begin_; }
-	T* end() const noexcept { return end_; }
+	T* begin() const { return begin_; }
+	T* end() const { return end_; }
+private:
 	T* begin_;
 	T* end_;
 };
 
 template <typename T>
-range<T> make_range(T *first, uint64 size) noexcept { return range<T>{first, size}; }
+range<T> make_range(T *first, T *last) { return range<T>{first, last}; }
+
+template <typename T>
+range<T> make_range(T *first, uint64 size) { return range<T>{first, size}; }
 
 template <typename T, uint32 N>
 void array_set(T (&array)[N], const T &value) {
 	for (uint32 i = 0; i < N; i += 1) {
-    array[i] = value;
-  }
+		array[i] = value;
+	}
 }
 
 template <typename T, uint32 dst_size, uint32 src_size>
 void array_copy(T(&dst_array)[dst_size], const T(&src_array)[src_size]) {
-  static_assert(src_size == dst_size, "");
-  memcpy(dst_array, src_array, src_size * sizeof(T));
+	static_assert(src_size == dst_size, "");
+	memcpy(dst_array, src_array, src_size * sizeof(T));
 }
 
 template <typename T>
@@ -234,146 +239,150 @@ void list_remove(T **list_head, T *node) {
 	}
 }
 
-struct string {
-	char *buf;
-	uint64 len;
-	uint64 capacity;
-};
-
-template <uint32 N>
-string string_from_array(char (&array)[N]) {
-	return string{array, (uint32)strlen(array), N};
-}
-
-void string_cat(string *str, char c) {
-	if ((str->capacity - str->len) > 1) {
-		str->buf[str->len] = c;
-		str->buf[str->len + 1] = '\0';
-		str->len += 1;
+const char *get_file_name(const char *path) {
+	const char *ptr_0 = strrchr(path, '/');
+	const char *ptr_1 = strrchr(path, '\\');
+	if (ptr_0 && ptr_1) {
+		return ptr_0 > ptr_1 ? ptr_0 : ptr_1;
+	}
+	else if (ptr_0) {
+		return ptr_0 + 1;
+	}
+	else if (ptr_1) {
+		return ptr_1 + 1;
+	}
+	else {
+		return path;
 	}
 }
 
-void string_cat(string *str, const char *str2, uint64 str2_len) {
-	uint64 n = min(str->capacity - str->len - 1, str2_len);
-	memcpy(str->buf + str->len, str2, n);
-	str->len += n;
-	str->buf[str->len] = '\0';
+void *allocate_virtual_memory(uint64 size) {
+	static SYSTEM_INFO system_info = [] {
+		SYSTEM_INFO system_info;
+		GetSystemInfo(&system_info);
+		return system_info;
+	}();
+	size = round_up(size, (uint64)system_info.dwPageSize);
+	char *mem = (char *)VirtualAlloc(nullptr, size + 2 * system_info.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	if (!mem) {
+		return nullptr;
+	}
+	DWORD old_protect;
+	if (!VirtualProtect(mem, system_info.dwPageSize, PAGE_NOACCESS, &old_protect) ||
+		  !VirtualProtect(mem + system_info.dwPageSize + size, system_info.dwPageSize, PAGE_NOACCESS, &old_protect)) {
+		VirtualFree(mem, 0, MEM_RELEASE);
+		return nullptr;
+	}
+	return mem + system_info.dwPageSize;
 }
 
-void string_catf(string *str, const char *fmt, ...) {
-	uint64 capacity_left = str->capacity - str->len;
-	if (capacity_left <= 1) {
-		return;
-	}
-	va_list args;
-	va_start(args, fmt);
-	int n = vsnprintf(str->buf + str->len, capacity_left, fmt, args);
-	va_end(args);
-	if (n >= 0) {
-		if ((uint32)n < capacity_left) {
-			str->len += n;
-		}
-		else {
-			str->len += (capacity_left - 1);
-		}
-	}
-}
-
-void string_pop_back_n(string *str, uint64 n) {
-	n = min(str->len, n);
-	str->len -= n;
-	str->buf[str->len] = '\0';
-}
-
-void string_pop_back(string *str, char c) {
-	uint64 len = str->len;
-	while (len > 0) {
-		uint64 i = len - 1;
-		if (str->buf[i] == c) {
-			str->buf[i + 1] = '\0';
-			str->len = len;
-			break;
-		}
-		len -= 1;
-	}
-}
-
-void string_pop_back(string *str, char c1, char c2) {
-	uint64 len = str->len;
-	while (len > 0) {
-		uint64 i = len - 1;
-		if (str->buf[i] == c1 || str->buf[i] == c2) {
-			str->buf[i + 1] = '\0';
-			str->len = len;
-			break;
-		}
-		len -= 1;
-	}
+void free_virtual_memory(void *memory) {
+	static SYSTEM_INFO system_info = [] {
+		SYSTEM_INFO system_info;
+		GetSystemInfo(&system_info);
+		return system_info;
+	}();
+	VirtualFree((char *)memory - system_info.dwPageSize, 0, MEM_RELEASE);
 }
 
 struct memory_arena {
-	void *memory;
+	uint8 *memory;
 	uint64 size;
 	uint64 capacity;
-	const char *name;
 };
 
+bool initialize_memory_arena(uint64 capacity, memory_arena *arena) {
+	arena->memory = (uint8 *)allocate_virtual_memory(capacity);
+	arena->size = 0;
+	arena->capacity = capacity;
+	return arena->memory != nullptr;
+}
+
+void destroy_memory_arena(memory_arena *arena) {
+	free_virtual_memory(arena->memory);
+	*arena = {};
+}
+
 template <typename T>
-T *allocate_memory(memory_arena *memory_arena, uint64 num_t, uint64 alignment = alignof(T)) {
-	m_debug_assert(num_t > 0 && is_pow_2(alignment), "");
+T *allocate_memory(memory_arena *memory_arena, uint64 count, uint64 alignment = alignof(T)) {
+	m_debug_assert(is_pow2(alignment), "");
+	if (count == 0) {
+		return nullptr;
+	}
 	uint8 *memory = (uint8 *)memory_arena->memory + memory_arena->size;
 	uint64 remainder = (uintptr_t)memory % alignment;
 	uint64 offset = (remainder == 0) ? 0 : (alignment - remainder);
-	uint64 new_arena_size = memory_arena->size + offset + num_t * sizeof(T);
+	uint64 new_arena_size = memory_arena->size + offset + count * sizeof(T);
 	m_assert(new_arena_size <= memory_arena->capacity, "");
 	memory_arena->size = new_arena_size;
-	memset(memory + offset, 0, num_t * sizeof(T));
+	memset(memory + offset, 0, count * sizeof(T));
 	return (T *)(memory + offset);
 }
 
-#define m_memory_arena_undo_allocations_at_scope_exit(memory_arena)         \
-  const uint64 memory_arena_size_to_restore__ = (memory_arena)->size;       \
-  m_scope_exit_copy((memory_arena)->size = memory_arena_size_to_restore__);
+struct undo_allocation_scope_exit {
+	memory_arena *arena;
+	uint64 restore_size;
+	undo_allocation_scope_exit(memory_arena *a) : arena(a), restore_size(a->size) {};
+	~undo_allocation_scope_exit() { arena->size = restore_size; }
+};
 
 struct memory_pool {
 	void *free_block;
-	uint64 free_block_count;
-	uint64 block_count;
-	uint64 block_size;
+	uint32 free_block_count;
+	uint32 block_count;
+	uint32 block_size;
+	uint32 block_alignment;
 	void *memory;
-	const char *name;
 };
 
-bool initialize_memory_pool(memory_pool *pool, void *memory, uint64 memory_size, uint64 block_size, uint64 block_count, const char *name) {
-	m_debug_assert(memory && (uintptr_t)memory % 16 == 0, "");
-	m_debug_assert(block_size >= sizeof(void*) && is_pow_2(block_size), "");
-	m_debug_assert(block_count > 0, "");
-	m_debug_assert(block_size * block_count <= memory_size, "");
-
-	char *free_block = (char *)memory;
-	for (uint64 i = 0; i < (block_count - 1); i += 1) {
-		*(void **)free_block = free_block + block_size;
-		free_block = free_block + block_size;
+void clear_memory_pool(memory_pool *pool) {
+	char *free_block = (char *)pool->memory;
+	for (uint64 i = 0; i < (pool->block_count - 1); i += 1) {
+		*(void **)free_block = free_block + pool->block_size;
+		free_block += pool->block_size;
 	}
 	*(void **)free_block = nullptr;
-	pool->free_block = memory;
-	pool->free_block_count = block_count;
-	pool->block_count = block_count;
+	pool->free_block = pool->memory;
+	pool->free_block_count = pool->block_count;
+}
+
+bool initialize_memory_pool(memory_pool *pool, uint32 block_count, uint32 block_size, uint32 block_alignment) {
+	m_debug_assert(block_count > 0, "");
+	block_alignment = max(block_alignment, (uint32)sizeof(void *));
+	m_debug_assert(is_pow2(block_alignment), "");
+	round_up(&block_size, block_alignment);
+	uint64 memory_size = block_size * block_count;
 	pool->block_size = block_size;
-	pool->memory = memory;
-	pool->name = name;
+	pool->block_count = block_count;
+	pool->memory = allocate_virtual_memory(memory_size);
+	if (!pool->memory) {
+		return false;
+	}
+	clear_memory_pool(pool);
 	return true;
 }
 
-void *allocate_memory(memory_pool *memory_pool) {
-	m_debug_assert(memory_pool->free_block && memory_pool->free_block_count > 0, "");
-	void *block = memory_pool->free_block;
-	memory_pool->free_block = *(void **)memory_pool->free_block;
+void destroy_memory_pool(memory_pool *pool) {
+	free_virtual_memory(pool->memory);
+	*pool = {};
+}
+
+template <typename T>
+T *allocate_block(memory_pool *memory_pool) {
+	m_debug_assert(sizeof(T) <= memory_pool->block_size, "");
+	T *block = (T *)memory_pool->free_block;
+	if (!block) {
+		return block;
+	}
+	memory_pool->free_block = *(T **)block;
 	memory_pool->free_block_count -= 1;
+	m_debug_assert((uintptr_t)block % alignof(T) == 0, "");
 	return block;
 }
 
-void free_memory(memory_pool *memory_pool, void *block) {
+void free_block(memory_pool *memory_pool, void *block) {
+	m_debug_assert((uintptr_t)block >= (uintptr_t)memory_pool->memory, "");
+	m_debug_assert((uintptr_t)block < (uintptr_t)memory_pool->memory + memory_pool->block_count * memory_pool->block_size, "");
 	*(void **)block = memory_pool->free_block;
 	memory_pool->free_block = block;
 	memory_pool->free_block_count += 1;
@@ -404,7 +413,7 @@ std::array<char, 16> pretty_print_bytes(uint64 bytes) {
   return str;
 }
 
-std::array<char, 256> get_last_error_string() {
+std::array<char, 256> get_winapi_err_str() {
   std::array<char, 256> str_buf;
   FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), &str_buf[0], (DWORD)str_buf.max_size(), nullptr);
   return str_buf;
@@ -417,17 +426,6 @@ void show_console() {
     freopen("CONOUT$", "w", stdout);
     freopen("CONOUT$", "w", stderr); 
   }
-}
-
-void console(const char *fmt, ...) {
-	char buffer[4096];
-	va_list vl;
-	va_start(vl, fmt);
-	int n1 = vsnprintf(buffer, sizeof(buffer), fmt, vl);
-	va_end(vl);
-	int n2 = (n1 < (int)sizeof(buffer) - 1) ? n1 : ((int)sizeof(buffer) - 1);
-	DWORD n3;
-	WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), buffer, n2, &n3, nullptr);
 }
 
 struct timer {
@@ -447,23 +445,22 @@ void stop_timer(timer *timer) {
 	QueryPerformanceCounter(&timer->performance_counters[1]);
 }
 
-uint64 get_timer_duration_microsecs(timer timer) {
-	LONGLONG ticks = timer.performance_counters[1].QuadPart - timer.performance_counters[0].QuadPart;
-	return (ticks * 1000000) / timer.performance_frequency.QuadPart;
-}
-
 double get_timer_duration_secs(timer timer) {
 	LONGLONG ticks = timer.performance_counters[1].QuadPart - timer.performance_counters[0].QuadPart;
 	return (double)ticks / (double)timer.performance_frequency.QuadPart;
 }
 
-bool get_current_dir(char *buffer, uint32 buffer_size) {
-	DWORD d = GetCurrentDirectoryA(buffer_size, buffer);
+bool get_current_dir(char *dir, uint32 dir_buf_size) {
+	DWORD d = GetCurrentDirectoryA(dir_buf_size, dir);
 	return d > 0;
 }
 
-bool set_exe_dir_as_current() {
-	char path[2048];
+bool set_current_dir(char *dir) {
+	return SetCurrentDirectoryA(dir);
+}
+
+bool set_current_dir_to_exe_dir() {
+	char path[512];
 	DWORD n = GetModuleFileNameA(nullptr, path, sizeof(path));
 	if (n == sizeof(path) && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
 		return false;
@@ -477,35 +474,6 @@ bool set_exe_dir_as_current() {
 		return false;
 	}
 	return true;
-}
-
-void *allocate_virtual_memory(uint64 size) {
-	static SYSTEM_INFO system_info = [] {
-		SYSTEM_INFO system_info;
-		GetSystemInfo(&system_info);
-		return system_info;
-	}();
-	size = round_up(size, (uint64)system_info.dwPageSize);
-	char *mem = (char *)VirtualAlloc(nullptr, size + 2 * system_info.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-	if (!mem) {
-		return nullptr;
-	}
-	DWORD old_protect;
-	if (!VirtualProtect(mem, system_info.dwPageSize, PAGE_NOACCESS, &old_protect) ||
-		  !VirtualProtect(mem + system_info.dwPageSize + size, system_info.dwPageSize, PAGE_NOACCESS, &old_protect)) {
-		VirtualFree(mem, 0, MEM_RELEASE);
-		return nullptr;
-	}
-	return mem + system_info.dwPageSize;
-}
-
-void free_virtual_memory(void *memory) {
-	static SYSTEM_INFO system_info = [] {
-		SYSTEM_INFO system_info;
-		GetSystemInfo(&system_info);
-		return system_info;
-	}();
-	VirtualFree((char *)memory - system_info.dwPageSize, 0, MEM_RELEASE);
 }
 
 bool file_exists(const char *path) {
@@ -557,8 +525,10 @@ bool create_file_mapping(const char *file_name, uint64 file_size, file_mapping *
 	return true;
 }
 
-bool open_file_mapping(const char *file_name, file_mapping *file_mapping) {
-	HANDLE file_handle = CreateFileA(file_name, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+bool open_file_mapping(const char *file_name, file_mapping *file_mapping, bool read_only) {
+	DWORD access_flags = read_only ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE);
+	DWORD share_flags = read_only ? FILE_SHARE_READ : 0;
+	HANDLE file_handle = CreateFileA(file_name, access_flags, share_flags, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (file_handle == INVALID_HANDLE_VALUE) {
 		return false;
 	}
@@ -567,12 +537,12 @@ bool open_file_mapping(const char *file_name, file_mapping *file_mapping) {
 		CloseHandle(file_handle);
 		return false;
 	}
-	HANDLE mapping_handle = CreateFileMappingA(file_handle, nullptr, PAGE_READWRITE, 0, 0, nullptr);
+	HANDLE mapping_handle = CreateFileMappingA(file_handle, nullptr, read_only ? PAGE_READONLY : PAGE_READWRITE, 0, 0, nullptr);
 	if (!mapping_handle) {
 		CloseHandle(file_handle);
 		return false;
 	}
-	uint8 *mapping_ptr = (uint8 *)MapViewOfFile(mapping_handle, FILE_MAP_WRITE, 0, 0, 0);
+	uint8 *mapping_ptr = (uint8 *)MapViewOfFile(mapping_handle, read_only ? FILE_MAP_READ : FILE_MAP_WRITE, 0, 0, 0);
 	if (!mapping_ptr) {
 		CloseHandle(file_handle);
 		CloseHandle(mapping_handle);
@@ -608,32 +578,59 @@ void flush_file_mapping(file_mapping file_mapping) {
 	m_assert(FlushFileBuffers(file_mapping.file_handle), "");
 }
 
-void close_file_mapping(file_mapping *file_mapping) {
-	m_assert(UnmapViewOfFile(file_mapping->ptr), "");
-	m_assert(CloseHandle(file_mapping->mapping_handle), "");
-	m_assert(CloseHandle(file_mapping->file_handle), "");
-	*file_mapping = {};
+void close_file_mapping(file_mapping file_mapping) {
+	m_assert(UnmapViewOfFile(file_mapping.ptr), "");
+	m_assert(CloseHandle(file_mapping.mapping_handle), "");
+	m_assert(CloseHandle(file_mapping.file_handle), "");
 }
 
-bool open_file_dialog(char *file_name_buffer, uint32 file_name_buffer_size) {
-	memset(file_name_buffer, 0, file_name_buffer_size);
-	OPENFILENAME open_file_name = {};
-	open_file_name.lStructSize = sizeof(open_file_name);
-	open_file_name.lpstrFile = file_name_buffer;
-	open_file_name.nMaxFile = file_name_buffer_size;
-	BOOL b = GetOpenFileNameA(&open_file_name);
-	set_exe_dir_as_current();
-	return b;
+template <typename T>
+bool iterate_files_in_dir(const char *dir, T func) {
+	char dir_buf[256];
+	snprintf(dir_buf, sizeof(dir_buf), "%s\\*", dir);
+
+	WIN32_FIND_DATAA find_data;
+	HANDLE find_handle = FindFirstFileA(dir_buf, &find_data);
+	m_scope_exit(FindClose(find_handle));
+	if (find_handle == INVALID_HANDLE_VALUE) {
+		return false;
+	} 
+	do {
+		if (!(find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+			func(find_data.cFileName);
+		}
+	}
+	while (FindNextFile(find_handle, &find_data) != 0);
+ 
+	DWORD error = GetLastError();
+	if (error != ERROR_NO_MORE_FILES)  {
+		return false;
+	}
+	return true;
 }
 
-bool save_file_dialog(char *file_name_buffer, uint32 file_name_buffer_size) {
-	memset(file_name_buffer, 0, file_name_buffer_size);
+bool open_file_dialog(char *file, uint32 file_buf_size) {
+	char cur_dir[512];
+	m_assert(get_current_dir(cur_dir, sizeof(cur_dir)), "");
+	m_scope_exit(set_current_dir(cur_dir));
+
 	OPENFILENAME open_file_name = {};
 	open_file_name.lStructSize = sizeof(open_file_name);
-	open_file_name.lpstrFile = file_name_buffer;
-	open_file_name.nMaxFile = file_name_buffer_size;
-	BOOL b = GetSaveFileNameA(&open_file_name);
-	return b;
+	open_file_name.lpstrFile = file;
+	open_file_name.nMaxFile = file_buf_size;
+	return GetOpenFileNameA(&open_file_name);
+}
+
+bool save_file_dialog(char *file, uint32 file_buf_size) {
+	char cur_dir[512];
+	m_assert(get_current_dir(cur_dir, sizeof(cur_dir)), "");
+	m_scope_exit(set_current_dir(cur_dir));
+
+	OPENFILENAME open_file_name = {};
+	open_file_name.lStructSize = sizeof(open_file_name);
+	open_file_name.lpstrFile = file;
+	open_file_name.nMaxFile = file_buf_size;
+	return GetSaveFileNameA(&open_file_name);
 }
 
 struct window {
@@ -646,13 +643,11 @@ struct window {
 	int16 mouse_y;
 	int32 raw_mouse_dx;
 	int32 raw_mouse_dy;
-
-	// uint32 keycode;
-	// uint16 input_char;
-	// float mouse_wheel;
 };
 
-bool initialize_window(window *window, LRESULT (*message_handle_func)(HWND, UINT, WPARAM, LPARAM)) {
+void initialize_window(window *window, LRESULT (*message_handle_func)(HWND, UINT, WPARAM, LPARAM)) {
+	*window = {};
+
 	SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE);
 	HMODULE instance_handle = GetModuleHandle(nullptr);
 	WNDCLASSA window_class = {};
@@ -663,21 +658,17 @@ bool initialize_window(window *window, LRESULT (*message_handle_func)(HWND, UINT
 	window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
 	window_class.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
 	window_class.lpszClassName = "agby_window_class";
-	if (!RegisterClassA(&window_class)) {
-		return false;
-	}
+	m_assert(RegisterClassA(&window_class), "");
 
-	int32 window_x = (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.18);
-	int32 window_y = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.15);
-	int32 window_width = (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.64);
-	int32 window_height = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.7);
+	int32 window_x = (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.15f);
+	int32 window_y = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.15f);
+	int32 window_width = (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.7f);
+	int32 window_height = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.7f);
 	DWORD window_style = WS_OVERLAPPEDWINDOW;
 	char window_title[128];
-	snprintf(window_title, sizeof(window_title), "AGBY %dx%d", window_width, window_height);
+	snprintf(window_title, sizeof(window_title), "%dx%d", window_width, window_height);
 	HWND window_handle = CreateWindowExA(0, window_class.lpszClassName, window_title, window_style, window_x, window_y, window_width, window_height, nullptr, nullptr, instance_handle, window);
-	if (!window_handle) {
-		return false;
-	}
+	m_assert(window_handle, "");
 
 	RAWINPUTDEVICE raw_input_device;
 	raw_input_device.usUsagePage = 0x01;
@@ -689,11 +680,21 @@ bool initialize_window(window *window, LRESULT (*message_handle_func)(HWND, UINT
 	*window = {};
 	window->handle = window_handle;
 	window->placement = {sizeof(WINDOWPLACEMENT)};
-	return true;
+	window->width = window_width;
+	window->height = window_height;
 };
 
 void show_window(window *window) {
 	ShowWindow(window->handle, SW_SHOW);
+}
+
+void set_window_title(window *window, const char* fmt, ...) {
+	char buf[256];
+	va_list vl;
+	va_start(vl, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, vl);
+	va_end(vl);
+	SetWindowText(window->handle, buf);
 }
 
 void handle_window_messages(window *window) {
@@ -722,6 +723,14 @@ void set_window_fullscreen(window *window, bool fullscreen) {
 	window->fullscreen = fullscreen;
 }
 
+bool cursor_inside_window(window *window) {
+	return
+		(window->mouse_x >= 0) &&
+		(window->mouse_x <= (int16)window->width) &&
+		(window->mouse_y >= 0) &&
+		(window->mouse_y <= (int16)window->height);
+}
+
 void show_cursor(bool show) {
 	ShowCursor(show);
 }
@@ -746,34 +755,57 @@ void pin_cursor(bool pin) {
 	}
 }
 
-bool rgba_image_to_bmp_file(const char *file_name, uint8 *image, uint32 image_width, uint32 image_height) {
+void flip_image(uint8 *image, uint32 w, uint32 h) {
+	for (uint32 i = 0; i < (h / 2); i += 1) {
+		uint32 *row_1 = (uint32 *)image + i * w;
+		uint32 *row_2 = (uint32 *)image + (h - 1 - i) * w;
+		for (uint32 i = 0; i < w; i += 1) {
+			uint32 tmp_pixel = row_1[i];
+			row_1[i] = row_2[i];
+			row_2[i] = tmp_pixel;
+		}
+	}
+}
+
+void convert_rgba_image_to_bgra(uint8 *image, uint32 width, uint32 height) {
+	for (uint32 i = 0; i < height; i += 1) {
+		uint8 *row = image + i * width * 4;
+		for (uint32 i = 0; i < width; i += 1) {
+			uint8 *pixel = row + i * 4;
+			uint8 r = pixel[0];
+			pixel[0] = pixel[2];
+			pixel[2] = r;
+		}
+	}
+}
+
+bool rgba_image_to_bmp_file(void *image, uint32 image_width, uint32 image_height, const char *bmp_file) {
 	uint32 image_size = image_width * image_height * 4;
 
+	BITMAPV4HEADER bmp_info_header = {};
+	bmp_info_header.bV4Size = sizeof(bmp_info_header);
+	bmp_info_header.bV4Width = image_width;
+	bmp_info_header.bV4Height = image_height;
+	bmp_info_header.bV4Planes = 1; 
+	bmp_info_header.bV4BitCount = 32;
+	bmp_info_header.bV4V4Compression = BI_BITFIELDS;
+	bmp_info_header.bV4RedMask = 0x000000ff;
+	bmp_info_header.bV4GreenMask = 0x0000ff00;
+	bmp_info_header.bV4BlueMask = 0x00ff0000;
+	bmp_info_header.bV4AlphaMask = 0xff000000;
+
 	BITMAPFILEHEADER bmp_file_header = {};
-	bmp_file_header.bfOffBits = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
-	bmp_file_header.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + image_size;
 	bmp_file_header.bfType = 0x4D42;
+	bmp_file_header.bfSize = sizeof(bmp_file_header) + sizeof(bmp_info_header) + image_size;
+	bmp_file_header.bfOffBits = (DWORD)sizeof(bmp_file_header) + (DWORD)sizeof(bmp_info_header);
 
-	BITMAPINFOHEADER bmp_info_header = {};
-	bmp_info_header.biSize = sizeof(BITMAPINFOHEADER);
-	bmp_info_header.biWidth = image_width;
-	bmp_info_header.biHeight = image_height;
-	bmp_info_header.biPlanes = 1; 
-	bmp_info_header.biBitCount = 32;
-	bmp_info_header.biCompression = BI_RGB;
-	bmp_info_header.biSizeImage = 0;
-	bmp_info_header.biXPelsPerMeter = 0;
-	bmp_info_header.biYPelsPerMeter = 0;    
-	bmp_info_header.biClrUsed = 0;
-	bmp_info_header.biClrImportant = 0;
-
-	HANDLE file_handle = CreateFileA(file_name, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	HANDLE file_handle = CreateFileA(bmp_file, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (!file_handle) {
 		return false;
 	}
 	DWORD bytes_written = 0;
-	WriteFile(file_handle, (LPSTR)&bmp_file_header, sizeof(BITMAPFILEHEADER), &bytes_written, nullptr);
-	WriteFile(file_handle, (LPSTR)&bmp_info_header, sizeof(BITMAPINFOHEADER), &bytes_written, nullptr);
+	WriteFile(file_handle, (LPSTR)&bmp_file_header, sizeof(bmp_file_header), &bytes_written, nullptr);
+	WriteFile(file_handle, (LPSTR)&bmp_info_header, sizeof(bmp_info_header), &bytes_written, nullptr);
 	WriteFile(file_handle, (LPSTR)image, image_size, &bytes_written, NULL);
 	CloseHandle(file_handle);
 	return true;

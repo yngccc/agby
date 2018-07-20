@@ -6,7 +6,7 @@
 #include "math.cpp"
 #include "simd.cpp"
 
-#include "../build/simple.ispc.h"
+#include "ispc/simple.ispc.h"
 
 struct test_guard {
 	uint32 counter;
@@ -127,75 +127,43 @@ int main(int argc, char **argv) {
       }
     }
   }
-  m_test(string) {
-    m_case(cat) {
-      {
-        char path0[32] = "apple";
-        char path1[32] = " orange";
-        string path0_str = string_from_array(path0);
-        string_cat(&path0_str, path1, (uint32)strlen(path1));
-        m_assert(!(strcmp(path0, "apple orange")));
-        m_assert(path0_str.len == strlen(path0));
-      }
-      {
-        char path0[6] = "apple";
-        char path1[32] = " orange";
-        string path0_str = string_from_array(path0);
-        string_cat(&path0_str, path1, (uint32)strlen(path1));
-        m_assert(!(strcmp(path0, "apple")));
-        m_assert(path0_str.len == strlen("apple"));
-      }
-      {
-        char path0[10] = "apple";
-        char path1[32] = " orange";
-        string path0_str = string_from_array(path0);
-        string_cat(&path0_str, path1, (uint32)strlen(path1));
-        m_assert(!(strcmp(path0, "apple ora")));
-        m_assert(path0_str.len == strlen("apple ora"));
-      }
-    }
-    m_case(pop_back) {
-      {
-        char path[256] = "c:/sdk/include/foo.h";
-        string path_str = string_from_array(path);
-        string_pop_back(&path_str, '/');
-        m_assert(!strcmp(path, "c:/sdk/include/"));
-        m_assert(path_str.len == (uint32)strlen(path));
-        string_pop_back(&path_str, '/');
-        m_assert(!strcmp(path, "c:/sdk/include/"));
-        m_assert(path_str.len == (uint32)strlen(path));
-        string_pop_back(&path_str, ':');
-        m_assert(!strcmp(path, "c:"));
-        m_assert(path_str.len == (uint32)strlen(path));
-      }
-      {
-        char path[256] = "";
-        string path_str = string_from_array(path);
-        string_pop_back(&path_str, 'x');
-        m_assert(!strcmp(path, ""));
-        m_assert(path_str.len == 0);
-      }
-      {
-        char path[256] = "1234567890";
-        string path_str = string_from_array(path);
-        string_pop_back(&path_str, 'x');
-        m_assert(!strcmp(path, "1234567890"));
-        m_assert(path_str.len == (uint32)strlen(path));
-      }
-    }
-  }
-  m_test(math) {
-    m_case(ray_intersect_triangle) {
+	m_test(memory_pool) {
+		memory_pool memory_pool = {};
+		uint32 block_count = 1024;
+		uint32 block_size = sizeof(mat4);
+		uint32 block_alignment = alignof(mat4);
+		initialize_memory_pool(&memory_pool, block_count, block_size, block_alignment);
+		m_scope_exit(destroy_memory_pool(&memory_pool));
+		m_case(allocate_free_allocate_same_block) {
+			mat4 *block = allocate_block<mat4>(&memory_pool);
+			uintptr_t block_addr = (uintptr_t)block;
+			free_block(&memory_pool, block);
+			block = allocate_block<mat4>(&memory_pool);
+			m_assert(block_addr == (uintptr_t)block);
+			clear_memory_pool(&memory_pool);
+		}
+		m_case(allocate_until_empty) {
+			for (uint32 i = 0; i < block_count; i += 1) {
+				mat4 *block = allocate_block<mat4>(&memory_pool);
+				m_assert(block);
+			}
+			mat4 *block = allocate_block<mat4>(&memory_pool);
+			m_assert(!block);
+			clear_memory_pool(&memory_pool);
+		}
+	}
+  m_test(collision) {
+    m_case(ray_hit_triangle) {
       vec3 a = {-1, -1, 0};
       vec3 b = {1, -1, 0};
       vec3 c = {0, 1, 0};
       ray ray = {};
       ray.origin = {0, 0, 1};
-      ray.direction = {0, 0, -1};
+      ray.dir = {0, 0, -1};
       ray.len = 10;
-      float intersect_distance = 0;
-      bool intersect = ray_intersect_triangle(ray, a, b, c, &intersect_distance);
-      m_assert(intersect);
+      vec3 hit_point = {};
+      bool hit = ray_hit_triangle(ray, a, b, c, nullptr, &hit_point);
+      m_assert(hit);
     }
   }
   m_test(simd) {
@@ -208,27 +176,17 @@ int main(int argc, char **argv) {
       for (uint32 i = 0; i < array_size; i += 1) {
         in[i] = (float)(rand() % 10);
       }
-      timer timer = {};
-      initialize_timer(&timer);
       uint32 count = 0;
       {
-        start_timer(&timer);
         for (uint32 i = 0; i < array_size; i += 1) {
           if (in[i] <= (float)test_num) {
             out[count++] = in[i];
           }
         }
-        stop_timer(&timer);
-        uint64 duration = get_timer_duration_microsecs(timer);
-        printf("\n%llu\n", duration);
       }
       {
-        start_timer(&timer);
         uint32 n = simd_filter_floats(in, out_simd, array_size, (float)test_num, compare_op_le);
         // uint32 n = ispc::filter_floats(in, out_simd, array_size, (float)test_num);
-        stop_timer(&timer);
-        uint64 duration = get_timer_duration_microsecs(timer);
-        printf("%llu\n", duration);
         m_assert(n == count);
         for (uint32 i = 0; i < count; i += 1) {
           m_assert(out_simd[i] == out[i]);
@@ -239,6 +197,6 @@ int main(int argc, char **argv) {
       delete []out_simd;
     }
   }
-
+	
   printf("Performed %d tests\n", num_test_performed);
 }

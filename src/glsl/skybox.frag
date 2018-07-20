@@ -1,14 +1,16 @@
 #version 450
 
-#include "../shader_type.cpp"
+#include "common.h"
 
 layout(location = 0) in vec3 uv_in;
 
 layout(location = 0) out vec4 color_out;
 
-m_declare_cube_texture_array
-m_declare_skybox_push_constant
+layout(push_constant) uniform push_constant {
+  mat4 view_proj_mat; 
+  uint cube_map_index;
+} pc;
 
 void main() {
-  color_out = texture(m_cube_map, uv_in);
+  color_out = texture(texture_cubes[pc.cube_map_index], uv_in);
 }

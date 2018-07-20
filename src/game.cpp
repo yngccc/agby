@@ -2,80 +2,33 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#include "level.cpp"
+#include "common.cpp"
+#include "math.cpp"
+#include "d3d11.cpp"
+#include "world.cpp"
 
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-#include "../vendor/include/imgui/imgui_draw.cpp"
-#include "../vendor/include/imgui/imgui.cpp"
-
-#include <atomic>
-
-struct game {
-	ImGuiContext *imgui_context;
-	ImGuiIO *imgui_io;
-	
-	camera player_camera;
-	float player_camera_r;
-	float player_camera_theta;
-	float player_camera_phi;
-};
-
-void initialize_game(game *game, vulkan *vulkan) {
-	{ // imgui
-		game->imgui_context = ImGui::CreateContext();
-		game->imgui_io = &ImGui::GetIO();
-		game->imgui_io->KeyMap[ImGuiKey_Tab] = VK_TAB;
-		game->imgui_io->KeyMap[ImGuiKey_LeftArrow] = VK_LEFT;
-		game->imgui_io->KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
-		game->imgui_io->KeyMap[ImGuiKey_UpArrow] = VK_UP;
-		game->imgui_io->KeyMap[ImGuiKey_DownArrow] = VK_DOWN;
-		game->imgui_io->KeyMap[ImGuiKey_PageUp] = VK_PRIOR;
-		game->imgui_io->KeyMap[ImGuiKey_PageDown] = VK_NEXT;
-		game->imgui_io->KeyMap[ImGuiKey_Home] = VK_HOME;
-		game->imgui_io->KeyMap[ImGuiKey_End] = VK_END;
-		game->imgui_io->KeyMap[ImGuiKey_Backspace] = VK_BACK;
-		game->imgui_io->KeyMap[ImGuiKey_Enter] = VK_RETURN;
-		game->imgui_io->KeyMap[ImGuiKey_Escape] = VK_ESCAPE;
-		game->imgui_io->KeyMap[ImGuiKey_A] = 'A';
-		game->imgui_io->KeyMap[ImGuiKey_C] = 'C';
-		game->imgui_io->KeyMap[ImGuiKey_V] = 'V';
-		game->imgui_io->KeyMap[ImGuiKey_X] = 'X';
-		game->imgui_io->KeyMap[ImGuiKey_Y] = 'Y';
-		game->imgui_io->KeyMap[ImGuiKey_Z] = 'Z';
-		game->imgui_io->DisplaySize = {(float)vulkan->swap_chain.width, (float)vulkan->swap_chain.height};
-		game->imgui_io->MousePos = {-1, -1};
-
-		uint8* font_atlas_image = nullptr;
-		int32 font_atlas_image_width = 0;
-		int32 font_atlas_image_height = 0;
-		game->imgui_io->Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
-		game->imgui_io->Fonts->ClearTexData();
-	}
-	{ // player
-		game->player_camera_r = 8;
-		game->player_camera_theta = 0.5f;
-		game->player_camera_phi = 0;
-	}
-}
+#include <imgui/imgui.cpp>
+#include <imgui/imgui_draw.cpp>
 
 struct {
 	bool initialized;
 	bool quit;
 	window *window;
-	game *game;
+	d3d *d3d;
 } window_message_channel = {};
 
-LRESULT window_message_handle_func(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+LRESULT handle_window_message(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = 0;
 	if (!window_message_channel.initialized) {
 		result = DefWindowProcA(hwnd, msg, wparam, lparam);
 	}
 	else {
 		window *window = window_message_channel.window;
-		ImGuiIO *imgui_io = window_message_channel.game->imgui_io;
+		d3d *d3d = window_message_channel.d3d;
 		switch (msg) {
-			default: { 
-				result = DefWindowProcA(hwnd, msg, wparam, lparam); 
+			default: {
+				result = DefWindowProcA(hwnd, msg, wparam, lparam);
 			} break;
 			case WM_CLOSE:
 			case WM_QUIT: {
@@ -87,6 +40,8 @@ LRESULT window_message_handle_func(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lp
 			case WM_SIZE: {
 				window->width = LOWORD(lparam);
 				window->height = HIWORD(lparam);
+				set_window_title(window, "%dx%d", window->width, window->height);
+				resize_d3d_swap_chain(d3d, window->width, window->height);
 			} break;
 			case WM_SHOWWINDOW : {
 			} break;
@@ -95,20 +50,20 @@ LRESULT window_message_handle_func(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lp
 			case WM_KEYUP:
 			case WM_SYSKEYUP: {
 				bool down = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
-				imgui_io->KeysDown[wparam] = down;
+				ImGui::GetIO().KeysDown[wparam] = down;
 				if (wparam == VK_SHIFT) {
-					imgui_io->KeyShift = down;
+					ImGui::GetIO().KeyShift = down;
 				}
 				else if (wparam == VK_CONTROL) {
-					imgui_io->KeyCtrl = down;
+					ImGui::GetIO().KeyCtrl = down;
 				}
 				else if (wparam == VK_MENU) {
-					imgui_io->KeyAlt = down;
+					ImGui::GetIO().KeyAlt = down;
 				}
 			} break;
 			case WM_CHAR:
 			case WM_SYSCHAR: {
-				imgui_io->AddInputCharacter((ImWchar)wparam);
+				ImGui::GetIO().AddInputCharacter((ImWchar)wparam);
 			} break;
 			case WM_MOUSEMOVE: {
 				window->mouse_x = LOWORD(lparam);
@@ -116,18 +71,18 @@ LRESULT window_message_handle_func(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lp
 			} break;
 			case WM_LBUTTONDOWN:
 			case WM_LBUTTONUP: {
-				imgui_io->MouseDown[0] = (msg == WM_LBUTTONDOWN);
+				ImGui::GetIO().MouseDown[0] = (msg == WM_LBUTTONDOWN);
 			} break;
 			case WM_RBUTTONDOWN:
 			case WM_RBUTTONUP: {
-				imgui_io->MouseDown[1] = (msg == WM_RBUTTONDOWN);
+				ImGui::GetIO().MouseDown[1] = (msg == WM_RBUTTONDOWN);
 			} break;
 			case WM_MBUTTONDOWN:
 			case WM_MBUTTONUP: {
-				imgui_io->MouseDown[2] = (msg == WM_MBUTTONDOWN);
+				ImGui::GetIO().MouseDown[2] = (msg == WM_MBUTTONDOWN);
 			} break;
 			case WM_MOUSEWHEEL: {
-				imgui_io->MouseWheel = (float)WHEEL_DELTA / (float)GET_WHEEL_DELTA_WPARAM(wparam);
+				ImGui::GetIO().MouseWheel = (float)WHEEL_DELTA / (float)GET_WHEEL_DELTA_WPARAM(wparam);
 			} break;
 			case WM_INPUT: {
 				RAWINPUT raw_input;
@@ -146,197 +101,339 @@ LRESULT window_message_handle_func(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lp
 	return result;
 }
 
-int main(int argc, char **argv) {
-	set_exe_dir_as_current();
+struct game {
+	bool quit;
 
-	memory_arena general_memory_arena = {};
-	general_memory_arena.name = "general";
-	general_memory_arena.capacity = m_megabytes(16);
-	general_memory_arena.memory = allocate_virtual_memory(general_memory_arena.capacity);
-	m_assert(general_memory_arena.memory, "");
+	timer timer;
+	double last_frame_time_secs;
+
+	ImGuiContext *imgui_context;
+
+	XMVECTOR camera_position;
+	XMVECTOR camera_view;
+	float camera_fovy;
+	float camera_znear;
+	float camera_zfar;
+	float camera_pitch;
+	float camera_yaw;
+	float camera_distance;
+	XMMATRIX camera_view_mat;
+	XMMATRIX camera_proj_mat;
+	XMMATRIX camera_view_proj_mat;
+};
+
+void initialize_game(game *game, d3d *d3d) {
+	*game = {};
 	
-	window *window = allocate_memory<struct window>(&general_memory_arena, 1);
-	m_assert(initialize_window(window, window_message_handle_func), "");
-
-	vulkan *vulkan = allocate_memory<struct vulkan>(&general_memory_arena, 1);
-	initialize_vulkan(vulkan, window);
-
-	game *game = allocate_memory<struct game>(&general_memory_arena, 1);
-	initialize_game(game, vulkan);
-
-	level *level = allocate_memory<struct level>(&general_memory_arena, 1);
-	initialize_level(level, vulkan);
-	level_read_json(level, vulkan, "assets/levels/level_save.json", [](nlohmann::json &json){}, false);
-	game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
-
-	btDiscreteDynamicsWorld *bt_world = nullptr;
+	initialize_timer(&game->timer);
 	{
-		auto *bt_collision_config = allocate_memory<btDefaultCollisionConfiguration>(&general_memory_arena, 1);
-		auto *bt_dispatcher = allocate_memory<btCollisionDispatcher>(&general_memory_arena, 1);
-		auto *bt_overlapping_pair_cache = allocate_memory<btDbvtBroadphase>(&general_memory_arena, 1);
-		auto *bt_solver = allocate_memory<btSequentialImpulseConstraintSolver>(&general_memory_arena, 1);
-		bt_world = allocate_memory<btDiscreteDynamicsWorld>(&general_memory_arena, 1);
+		game->imgui_context = ImGui::CreateContext();
+		ImGuiIO &imgui_io = ImGui::GetIO();
+		imgui_io.KeyMap[ImGuiKey_Tab] = VK_TAB;
+		imgui_io.KeyMap[ImGuiKey_LeftArrow] = VK_LEFT;
+		imgui_io.KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
+		imgui_io.KeyMap[ImGuiKey_UpArrow] = VK_UP;
+		imgui_io.KeyMap[ImGuiKey_DownArrow] = VK_DOWN;
+		imgui_io.KeyMap[ImGuiKey_PageUp] = VK_PRIOR;
+		imgui_io.KeyMap[ImGuiKey_PageDown] = VK_NEXT;
+		imgui_io.KeyMap[ImGuiKey_Home] = VK_HOME;
+		imgui_io.KeyMap[ImGuiKey_End] = VK_END;
+		imgui_io.KeyMap[ImGuiKey_Backspace] = VK_BACK;
+		imgui_io.KeyMap[ImGuiKey_Enter] = VK_RETURN;
+		imgui_io.KeyMap[ImGuiKey_Escape] = VK_ESCAPE;
+		imgui_io.KeyMap[ImGuiKey_A] = 'A';
+		imgui_io.KeyMap[ImGuiKey_C] = 'C';
+		imgui_io.KeyMap[ImGuiKey_V] = 'V';
+		imgui_io.KeyMap[ImGuiKey_X] = 'X';
+		imgui_io.KeyMap[ImGuiKey_Y] = 'Y';
+		imgui_io.KeyMap[ImGuiKey_Z] = 'Z';
+		imgui_io.DisplaySize = {(float)d3d->swap_chain_desc.Width, (float)d3d->swap_chain_desc.Height};
+		imgui_io.IniFilename = nullptr;
+		imgui_io.MousePos = {-1, -1};
 
-		new(bt_collision_config) btDefaultCollisionConfiguration();
-		new(bt_dispatcher) btCollisionDispatcher(bt_collision_config);
-		new(bt_overlapping_pair_cache) btDbvtBroadphase();
-		new(bt_solver) btSequentialImpulseConstraintSolver();
-		new(bt_world) btDiscreteDynamicsWorld(bt_dispatcher, bt_overlapping_pair_cache, bt_solver, bt_collision_config);
-
-		bt_world->setGravity({0, -9, 0});
-
-		for (uint32 i = 0; i < level->collision_component_count; i += 1) {
-			if (level->collision_components[i].bt_collision_object) {
-				bt_world->addCollisionObject(level->collision_components[i].bt_collision_object);
-			}
-		}
-		for (uint32 i = 0; i < level->physics_component_count; i += 1) {
-			if (level->physics_components[i].bt_rigid_body) {
-				bt_world->addRigidBody(level->physics_components[i].bt_rigid_body);
-			}
-		}
-
-		entity_get_physics_component(level, level->player_entity_index)->bt_rigid_body->setActivationState(DISABLE_DEACTIVATION);
+		uint8* font_atlas_image = nullptr;
+		int32 font_atlas_image_width = 0;
+		int32 font_atlas_image_height = 0;
+		imgui_io.Fonts->GetTexDataAsRGBA32(&font_atlas_image, &font_atlas_image_width, &font_atlas_image_height);
+		imgui_io.Fonts->ClearTexData();
 	}
+	{
+		game->camera_fovy = XMConvertToRadians(40);
+		game->camera_znear = 0.1f;
+		game->camera_zfar = 10000.0f;
+		game->camera_pitch = XMConvertToRadians(45);
+		game->camera_distance = 10;
+	}
+}
 
+void common_hotkeys(game *game, world *world, window *window) {
+	if (ImGui::IsKeyPressed(VK_F11)) {
+		set_window_fullscreen(window, !window->fullscreen);
+	}
+	if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
+		game->quit = true;
+	}
+}
+
+void player_input(game *game, world *world, d3d *d3d, window *window) {
+	// if (ImGui::IsKeyPressed(VK_TAB)) {
+	// 	world->camera_type = (world->camera_type == camera_type_player_first) ? camera_type_player_third : camera_type_player_first;
+	// }
+
+	// vec3 move_vec;
+	// if (world->camera_type == camera_type_player_first) {
+	// 	float x_sensitivity = 0.003f;
+	// 	float y_sensitivity = 0.003f;
+
+	// 	world->player_first_person_camera_pitch += window->raw_mouse_dy * y_sensitivity;
+	// 	world->player_first_person_camera_pitch = clamp(world->player_first_person_camera_pitch, -(float)M_PI / 3, (float)M_PI / 3);
+
+	// 	world->player_first_person_camera_yaw -= window->raw_mouse_dx * x_sensitivity;
+	// 	world->player_first_person_camera_yaw = wrap_angle(world->player_first_person_camera_yaw);
+
+	// 	quat yaw = quat_from_axis_rotate({0, 1, 0}, world->player_first_person_camera_yaw);
+	// 	world->player.bt_rigid_body->getWorldTransform().setRotation(btQuaternion(m_unpack4(yaw)));
+
+	// 	move_vec = vec3_normalize(yaw * vec3{0, 0, 1});
+	// }
+	// else if (world->camera_type == camera_type_player_third) {
+	// 	float x_sensitivity = 0.005f;
+	// 	float y_sensitivity = 0.005f;
+
+	// 	world->player_third_person_camera_pitch += window->raw_mouse_dy * y_sensitivity;
+	// 	world->player_third_person_camera_pitch = clamp(world->player_third_person_camera_pitch, -(float)M_PI / 3, (float)M_PI / 3);
+
+	// 	world->player_third_person_camera_yaw -= window->raw_mouse_dx * x_sensitivity;
+	// 	world->player_third_person_camera_yaw = wrap_angle(world->player_third_person_camera_yaw);
+	// 	world->player_third_person_camera_distance = clamp(world->player_third_person_camera_distance - ImGui::GetIO().MouseWheel, 4.0f, 30.0f);
+
+	// 	quat yaw = quat_from_axis_rotate(vec3{0, 1, 0}, world->player_third_person_camera_yaw);
+	// 	move_vec = vec3_normalize(yaw * vec3{0, 0, 1});
+	// }
+
+	// vec3 feet_position = world->player.transform.translate + vec3{0, world->player.feet_translate + 0.1f, 0};
+	// btVector3 ray_from(m_unpack3(feet_position));
+	// btVector3 ray_end = ray_from - btVector3(0, 0.2f, 0);
+	// btCollisionWorld::ClosestRayResultCallback ray_call_back(ray_from, ray_end);
+	// world->bt_dynamics_world->rayTest(ray_from, ray_end, ray_call_back);
+	// bool on_ground = ray_call_back.hasHit();
+		
+	// vec3 velocity = {0, 0, 0};
+	// float speed = 1.0f;
+	// if (ImGui::GetIO().KeyShift) {
+	// 	speed = 10.0f;
+	// }
+	// bool key_down = false;
+	// if (ImGui::IsKeyDown('W')) {
+	// 	velocity += move_vec * speed;
+	// 	key_down = true;
+	// }
+	// if (ImGui::IsKeyDown('S')) {
+	// 	velocity += -move_vec * speed;
+	// 	key_down = true;
+	// }
+	// if (ImGui::IsKeyDown('A')) {
+	// 	velocity += vec3{move_vec.z, 0, -move_vec.x} * speed;
+	// 	key_down = true;
+	// }
+	// if (ImGui::IsKeyDown('D')) {
+	// 	velocity += vec3{-move_vec.z, 0, move_vec.x} * speed;
+	// 	key_down = true;
+	// }
+	// if (on_ground && key_down) {
+	// 	world->player.bt_rigid_body->setLinearVelocity(btVector3(velocity.x, velocity.y, velocity.z));
+	// 	if (world->camera_type == camera_type_player_third) {
+	// 		quat yaw = quat_from_between(vec3{0, 0, 1}, vec3_normalize(velocity));
+	// 		world->player.bt_rigid_body->getWorldTransform().setRotation(btQuaternion(m_unpack4(yaw)));
+	// 	}
+	// }
+}
+
+void physics_step(game *game, world *world) {
+	world->bt_dynamics_world->stepSimulation((float)game->last_frame_time_secs);
+
+	if (world->player.bt_rigid_body) {
+		btVector3 t = world->player.bt_rigid_body->getWorldTransform().getOrigin();
+		btQuaternion q = world->player.bt_rigid_body->getWorldTransform().getRotation();
+		world->player.transform.translate = {t.x(), t.y(), t.z()};
+		world->player.transform.rotate = {q.x(), q.y(), q.z(), q.w()};
+	}
+	for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
+		dynamic_object *dynamic_object = &world->dynamic_objects[i];
+		if (dynamic_object->bt_rigid_body) {
+			btVector3 t = dynamic_object->bt_rigid_body->getWorldTransform().getOrigin();
+			btQuaternion q = dynamic_object->bt_rigid_body->getWorldTransform().getRotation();
+			dynamic_object->transform.translate = {t.x(), t.y(), t.z()};
+			dynamic_object->transform.rotate = {q.x(), q.y(), q.z(), q.w()};
+		}
+	}
+}
+
+void update_camera(game *game, world *world, window *window) {
+	{
+		float x_sensitivity = 0.005f;
+		float y_sensitivity = 0.005f;
+
+		game->camera_pitch += window->raw_mouse_dy * y_sensitivity;
+		game->camera_pitch = clamp(game->camera_pitch, -(float)M_PI / 3, (float)M_PI / 3);
+
+		game->camera_yaw -= window->raw_mouse_dx * x_sensitivity;
+		game->camera_yaw = wrap_angle(game->camera_yaw);
+		game->camera_distance = clamp(game->camera_distance - ImGui::GetIO().MouseWheel, 4.0f, 30.0f);
+
+		quat pitch_quat = quat_from_axis_rotate(vec3{1, 0, 0}, game->camera_pitch);
+		quat yaw_quat = quat_from_axis_rotate(vec3{0, 1, 0}, game->camera_yaw);
+		vec3 translate = yaw_quat * pitch_quat * vec3{0, 0, -game->camera_distance};
+		vec3 camera_position = world->player.transform.translate + translate;
+		vec3 camera_view = vec3_normalize(-translate);
+
+		game->camera_position = XMVectorSet(m_unpack3(camera_position), 0);
+		game->camera_view = XMVectorSet(m_unpack3(camera_view), 0);
+		game->camera_view_mat = XMMatrixLookAtRH(game->camera_position, XMVectorAdd(game->camera_position, game->camera_view), XMVectorSet(0, 1, 0, 0));
+		game->camera_proj_mat = XMMatrixPerspectiveFovRH(game->camera_fovy, (float)window->width / (float)window->height, game->camera_zfar, game->camera_znear);
+		game->camera_view_proj_mat = XMMatrixMultiply(game->camera_view_mat, game->camera_proj_mat);
+	}
+	// if (world->camera_type == camera_type_player_first) {
+	// 	quat pitch_quat = quat_from_axis_rotate(vec3{1, 0, 0}, world->player_first_person_camera_pitch);
+	// 	quat yaw_quat = quat_from_axis_rotate(vec3{0, 1, 0}, world->player_first_person_camera_yaw);
+	// 	vec3 facing = vec3_normalize(yaw_quat * vec3{0, 0, 1});
+	// 	vec3 view = vec3_normalize(yaw_quat * pitch_quat * vec3{0, 0, 1});
+				
+	// 	world->player_first_person_camera.position = world->player.transform.translate + facing * 1.0f;
+	// 	world->player_first_person_camera.view = view;
+	// 	world->player_first_person_camera.aspect = (float)vulkan->framebuffers.color_framebuffer_width / (float)vulkan->framebuffers.color_framebuffer_height;
+	// 	world->player_first_person_camera.fovy = hfov_to_vfov(degree_to_radian(80), world->player_first_person_camera.aspect);
+	// 	world->player_first_person_camera.znear = 0.1f;
+	// 	world->player_first_person_camera.zfar = 1000.0f;
+	// }
+}
+
+int main(int argc, char **argv) {
+	set_current_dir_to_exe_dir();
+	
+	window *window = new struct window;
+	initialize_window(window, handle_window_message);
+	// set_window_fullscreen(window, true);
+
+	d3d *d3d = new struct d3d;
+	initialize_d3d(d3d, window);
+
+	game *game = new struct game;
+	initialize_game(game, d3d);
+
+	world *world = new struct world;
+	initialize_world(world, d3d);
+	if (argc > 1) {
+		const char *world_file = argv[1];
+		m_assert(load_world(world, d3d, world_file), "");
+	}
+	
 	window_message_channel.window = window;
-	window_message_channel.game = game;
+	window_message_channel.d3d = d3d;
 	window_message_channel.initialized = true;
 	show_window(window);
 	pin_cursor(true);
 	show_cursor(false);
 
-	timer timer = {};
-	initialize_timer(&timer);
-	uint64 last_frame_time_microsec = 0;
-	double last_frame_time_sec = 0;
-
-	bool quit_game = false;
-	
-	while (!quit_game) {
-		start_timer(&timer);
+	while (!game->quit) {
+		start_timer(&game->timer);
 
 		window->raw_mouse_dx = 0;
 		window->raw_mouse_dy = 0;
 		handle_window_messages(window);
 
-		game->imgui_io->DeltaTime = (float)last_frame_time_sec;
-		{ // mouse position
-			float px = (float)window->mouse_x / vulkan->swap_chain.width;
-			float py = (float)window->mouse_y / vulkan->swap_chain.height;
-			vec4 region = vulkan->swap_chain_framebuffer_region;
-			if (px >= region.x && px <= (region.x + region.z) && py >= region.y && py <= (region.y + region.w)) {
-				game->imgui_io->MousePos.x = game->imgui_io->DisplaySize.x * (px - region.x) / region.z;
-				game->imgui_io->MousePos.y = game->imgui_io->DisplaySize.y * (py - region.y) / region.w;
-			}
-			else {
-				game->imgui_io->MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
-			}
-		}
 		ImGui::NewFrame();
-		{ // miscs
-			if (ImGui::IsKeyPressed(VK_F11) || (ImGui::IsKeyPressed(VK_RETURN) && ImGui::IsKeyDown(VK_MENU))) {
-				set_window_fullscreen(window, !window->fullscreen);
-			}
-			if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
-				quit_game = true;
-			}
-		}
-		{ // camera movement
-			float x_sensitivity = 0.005f;
-			float y_sensitivity = 0.005f;
-			game->player_camera_theta = clamp(game->player_camera_theta + window->raw_mouse_dy * y_sensitivity, -(float)M_PI / 3, (float)M_PI / 3);
-			game->player_camera_phi = wrap_angle(game->player_camera_phi - window->raw_mouse_dx * x_sensitivity);
-			game->player_camera_r = clamp(game->player_camera_r - game->imgui_io->MouseWheel, 4.0f, 30.0f);
-			game->player_camera = level_get_player_camera(level, vulkan, game->player_camera_r, game->player_camera_theta, game->player_camera_phi);
-		}
-		{ // player movement
-			entity_physics_component *physics_component = entity_get_physics_component(level, level->player_entity_index);
-			btVector3 linear_velocity = physics_component->bt_rigid_body->getLinearVelocity();
-			bool falling = fabsf(linear_velocity.y()) > 0.1f;
-
-			vec3 camera_vec = vec3_normalize(vec3{game->player_camera.view.x, 0, game->player_camera.view.z});
-			vec3 move_vec = {0, 0, 0};
-			if (ImGui::IsKeyDown('W')) {
-				move_vec += camera_vec;
-			}
-			if (ImGui::IsKeyDown('S')) {
-				move_vec -= camera_vec;
-			}
-			if (ImGui::IsKeyDown('A')) {
-				move_vec += vec3{camera_vec.z, 0, -camera_vec.x};
-			}
-			if (ImGui::IsKeyDown('D')) {
-				move_vec -= vec3{camera_vec.z, 0, -camera_vec.x};
-			}
-			if (vec3_len(move_vec) > 0.1f) {
-				quat rotate = quat_from_between(vec3{0, 0, 1}, vec3_normalize(move_vec));
-				btVector3 translate = physics_component->bt_rigid_body->getCenterOfMassTransform().getOrigin();
-				physics_component->bt_rigid_body->setCenterOfMassTransform(btTransform(btQuaternion(rotate.x, rotate.y, rotate.z, rotate.w), translate));
-				if (!falling) {
-					float move_speed = 2;
-					vec3 velocity = vec3_normalize(move_vec) * move_speed;
-					physics_component->bt_rigid_body->setLinearVelocity(btVector3(velocity.x, velocity.y, velocity.z));
-				}
-			}
-			if (!falling && ImGui::IsKeyPressed(' ')) {
-				physics_component->bt_rigid_body->setLinearVelocity(linear_velocity + btVector3(0, 10, 0));
-			}
-		}
-		{ // physics simulation
-			bt_world->stepSimulation((float)last_frame_time_sec);
-			uint32 physics_component_index = 0;
-			for (uint32 i = 0; i < level->entity_count; i += 1) {
-				if (level->entity_flags[i] & entity_component_flag_physics) {
-					transform *transform = &level->entity_transforms[i];
-					entity_physics_component *physics_component = &level->physics_components[physics_component_index++];
-
-					const btTransform &rigid_body_transform = physics_component->bt_rigid_body->getCenterOfMassTransform();
-					const btVector3 &rigid_body_velocity = physics_component->bt_rigid_body->getLinearVelocity();
-					btQuaternion rigid_body_rotate = rigid_body_transform.getRotation();
-					btVector3 rigid_body_translate = rigid_body_transform.getOrigin();
-
-					struct transform *new_transform = allocate_memory<struct transform>(&level->frame_memory_arena, 1);
-					struct entity_physics_component *new_physics_component = allocate_memory<struct entity_physics_component>(&level->frame_memory_arena, 1);
-
-					*new_transform = *transform;
-					*new_physics_component = *physics_component;
-					new_transform->rotate = {rigid_body_rotate.x(), rigid_body_rotate.y(), rigid_body_rotate.z(), rigid_body_rotate.w()};
-					new_transform->translate = {rigid_body_translate.x(), rigid_body_translate.y(), rigid_body_translate.z()};
-					new_physics_component->velocity = {rigid_body_velocity.x(), rigid_body_velocity.y(), rigid_body_velocity.z()};
-					level->entity_modifications[i].transform = new_transform;
-					level->entity_modifications[i].physics_component = new_physics_component;
-				}
-			}
-		}
-		{ // animations
-			uint32 model_component_index = 0;
-			for (uint32 i = 0; i < level->entity_count; i += 1) {
-				if (level->entity_flags[i] & entity_component_flag_model) {
-					entity_model_component *model_component = &level->model_components[model_component_index++];
-					if (model_component->model_index < level->model_count &&  model_component->animation_index < level->models[model_component->model_index].animation_count) {
-						entity_model_component *new_model_component = allocate_memory<struct entity_model_component>(&level->frame_memory_arena, 1);
-						*new_model_component = *model_component;
-						new_model_component->animation_time += last_frame_time_sec;
-						level->entity_modifications[i].model_component = new_model_component;
-					}
-				}
-			}
-		}
+ 		common_hotkeys(game, world, window);
+		player_input(game, world, d3d, window);
+		physics_step(game, world);
+		world->player.animation_time += game->last_frame_time_secs;
+		update_camera(game, world, window);
 		ImGui::EndFrame();
 
-		vulkan_begin_render(vulkan, window->width, window->height);
-		level_generate_render_data(level, vulkan, game->player_camera, []{});
-		level_generate_render_commands(level, vulkan, game->player_camera, []{}, []{});
-		vulkan_end_render(vulkan, false);
+		render_world_desc render_world_desc = {};
+		render_world_desc.camera_view_proj_mat = game->camera_view_proj_mat;
+		render_world_desc.camera_position = game->camera_position;
+		render_world_desc.camera_view = game->camera_view;
+		render_world_desc.render_models = true;
+		render_world_desc.render_terrain = true;
+		render_world_desc.render_skybox = true;
+		render_world(world, d3d, &render_world_desc);
 
-		level_update_entity_components(level);
-		level->frame_memory_arena.size = 0;
-		vulkan->frame_memory_arena.size = 0;
+		world->frame_memory_arena.size = 0;
 		
-		stop_timer(&timer);
-		last_frame_time_microsec = get_timer_duration_microsecs(timer);
-		last_frame_time_sec = get_timer_duration_secs(timer);
+		stop_timer(&game->timer);
+		game->last_frame_time_secs = get_timer_duration_secs(game->timer);
 	}
+
 	ImGui::DestroyContext(game->imgui_context);
 }
+
+// void player_physics_step(game *game, world *world) {
+// 	vec3 player_position = world->player.transform.translate;
+// 	if (world->player.model_index < world->model_count) {
+// 		model *model = &world->models[world->player.model_index];
+// 		if (model->collision.type == collision_type_sphere) {
+// 			player_position = world->player.transform.translate - vec3{0, model->collision.sphere.radius, 0};
+// 		}
+// 		else if (model->collision.type == collision_type_box) {
+// 			player_position = world->player.transform.translate - vec3{0, model->collision.box.extents.y * 0.5f, 0};
+// 		}
+// 	}
+// 	if (world->terrain_index < world->terrain_count) {
+// 		terrain *terrain = &world->terrains[world->terrain_index];
+// 		float u = (player_position.x + terrain->width / 2) / terrain->width;
+// 		float v = (player_position.z + terrain->height / 2) / terrain->height;
+// 		if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+// 			uint32 x = (uint32)(u * terrain->width * terrain->sample_per_meter);
+// 			uint32 y = (uint32)(v * terrain->height * terrain->sample_per_meter);
+// 			int16 h = terrain->height_map[y * terrain->width * terrain->sample_per_meter + x];
+// 			float height = ((float)h / (float)INT16_MAX) * terrain->max_height;
+// 			double frame_time_remain = game->last_frame_time_secs;
+// 			if (player_position.y > height) {
+// 				double drop_distance = player_position.y - height;
+// 				double drop_speed = 1;
+// 				double drop_time = drop_distance / drop_speed;
+// 				if (drop_time < game->last_frame_time_secs) {
+// 					world->player.transform.translate.y -= (float)drop_distance;
+// 					frame_time_remain = game->last_frame_time_secs - drop_time;
+// 				}
+// 				else {
+// 					world->player.transform.translate.y -= (float)(game->last_frame_time_secs * drop_speed);
+// 					frame_time_remain = 0;
+// 				}
+// 			}
+// 			if (frame_time_remain > 0 && world->player.velocity != vec3{0, 0, 0}) {
+// 				world->player.transform.rotate = quat_from_between(vec3{0, 0, 1}, vec3_normalize(world->player.velocity));
+
+// 				float prev_height = height;
+// 				double distance = vec3_len(world->player.velocity) * frame_time_remain;
+// 				float epsilon = 0.01f;
+// 				vec3 delta_velocity = vec3_normalize(world->player.velocity) * epsilon;
+// 				for (;;) {
+// 					player_position.x += delta_velocity.x;
+// 					player_position.z += delta_velocity.z;
+// 					float u = (player_position.x + terrain->width / 2) / terrain->width;
+// 					float v = (player_position.z + terrain->height / 2) / terrain->height;
+// 					if (u < 0 || u > 1 || v < 0 || v > 1) {
+// 						break;
+// 					}
+// 					uint32 x = (uint32)(u * terrain->width * terrain->sample_per_meter);
+// 					uint32 y = (uint32)(v * terrain->height * terrain->sample_per_meter);
+// 					int16 h = terrain->height_map[y * terrain->width * terrain->sample_per_meter + x];
+// 					float height = ((float)h / (float)INT16_MAX) * terrain->max_height;
+// 					float delta_height = height - prev_height;
+// 					float hypotenuse = sqrtf(epsilon * epsilon + delta_height * delta_height);
+// 					world->player.transform.translate.x += delta_velocity.x;
+// 					world->player.transform.translate.z += delta_velocity.z;
+// 					world->player.transform.translate.y += delta_height;
+// 					prev_height = height;
+// 					distance -= hypotenuse;
+// 					if (distance <= 0) {
+// 						break;
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
+// }
+

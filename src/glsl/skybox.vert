@@ -1,6 +1,6 @@
 #version 450
 
-#include "../shader_type.cpp"
+#include "common.h"
 
 out gl_PerVertex {
   vec4 gl_Position;
@@ -8,7 +8,10 @@ out gl_PerVertex {
 
 layout(location = 0) out vec3 uv_out;
 
-m_declare_skybox_push_constant
+layout(push_constant) uniform push_constant {
+  mat4 view_proj_mat; 
+  uint cube_map_index;
+} pc;
 
 const vec3 face_vertices[6][6] = vec3[][](
   vec3[](vec3(-1, 1, 1), vec3(-1, -1, 1), vec3(1, 1, 1), vec3(1, 1, 1), vec3(-1, -1, 1), vec3(1, -1, 1)),

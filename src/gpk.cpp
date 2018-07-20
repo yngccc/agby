@@ -37,6 +37,7 @@ struct gpk_model_node {
 	uint32 skin_index;
 	transform local_transform;
 	mat4 local_transform_mat;
+	mat4 global_transform_mat;
 	uint32 children[128];
 	uint32 child_count;
 };
@@ -47,7 +48,6 @@ struct gpk_model_mesh_primitive {
 	uint32 index_count;
 	uint32 vertices_offset;
 	uint32 vertex_count;
-	uint32 has_joints;
 };
 
 struct gpk_model_mesh {
@@ -60,12 +60,12 @@ struct gpk_model_mesh {
 struct gpk_model_vertex {
 	vec3 position;
 	vec2 uv;
-	i16vec3 normal;
-	i16vec3 tangent;
+	i16vec4 normal;
+	i16vec4 tangent;
 	u8vec4 joints;
 	u16vec4 weights;
 };
-static_assert(sizeof(gpk_model_vertex) == 44, "12 + 8 + 6 + 6 + 4 + 8");
+static_assert(sizeof(gpk_model_vertex) == 12 + 8 + 8 + 8 + 4 + 8, "");
 
 struct gpk_model_skin {
 	char name[64];
@@ -160,12 +160,11 @@ struct gpk_skybox {
 
 struct gpk_terrain {
 	char format_str[32];
-	uint32 height_map_width;
-	uint32 height_map_height;
-	uint32 height_map_size;
+	uint32 total_size;
+	uint32 width;
+	uint32 height;
+	float max_height;
+	uint32 sample_per_meter;
 	uint32 height_map_offset;
-	uint32 diffuse_map_width;
-	uint32 diffuse_map_height;
-	uint32 diffuse_map_size;
 	uint32 diffuse_map_offset;
 };

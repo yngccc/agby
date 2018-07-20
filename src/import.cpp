@@ -7,33 +7,32 @@
 #include "gpk.cpp"
 
 #define NVTT_SHARED 1
-#include "../vendor/include/nvtt/nvtt.h"
+#include <nvtt/nvtt.h>
 
-#include "../vendor/include/ispc_texcomp/ispc_texcomp.h"
+#include <ispc_texcomp/ispc_texcomp.h>
 
-#include "../vendor/include/json/json.hpp"
+#include <json/json.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
-#include "../vendor/include/stb/stb_image.h"
+#include <stb/stb_image.h>
 
 #define TINYGLTF_IMPLEMENTATION
-#define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
-#include "../vendor/include/tinygltf/tiny_gltf.h"
+#include <tinygltf/tiny_gltf.h>
 
-#include <vulkan/vulkan.h>
+#include <d3d11.h>
 
 #include <stack>
 
 uint32 tinygltf_wrap_to_vk_wrap(int32 wrap) {
 	if (wrap == TINYGLTF_TEXTURE_WRAP_REPEAT) {
-		return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		return D3D11_TEXTURE_ADDRESS_WRAP;
 	}
 	else if (wrap == TINYGLTF_TEXTURE_WRAP_MIRRORED_REPEAT) {
-		return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		return D3D11_TEXTURE_ADDRESS_MIRROR;
 	}
 	else if (wrap == TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE) {
-		return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		return D3D11_TEXTURE_ADDRESS_CLAMP;
 	}
 	else {
 		m_debug_assert(false, "");
@@ -159,7 +158,7 @@ void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
 	gpk_skybox->cubemap_mipmap_count = 1;
 	gpk_skybox->cubemap_layer_count = 6;
 	gpk_skybox->cubemap_size = cubemap_compressed_size * 6;
-	gpk_skybox->cubemap_format = VK_FORMAT_BC7_SRGB_BLOCK;
+	gpk_skybox->cubemap_format = DXGI_FORMAT_BC7_UNORM_SRGB;
 	gpk_skybox->cubemap_format_block_dimension = 4;
 	gpk_skybox->cubemap_format_block_size = 16;
 
@@ -168,20 +167,18 @@ void skybox_to_gpk(std::string skybox_dir, std::string gpk_file) {
 		memcpy(dst, cubemap_compressed_data[i], cubemap_compressed_size);
 	}
 	flush_file_mapping(gpk_file_mapping);
-	close_file_mapping(&gpk_file_mapping);
+	close_file_mapping(gpk_file_mapping);
 
 	printf("done importing skybox: \"%s\"\n", gpk_file.c_str());
 }
 
-bool gltf_model_node_has_cycle(const tinygltf::Model &gltf_model) {
+bool gltf_model_nodes_contain_cycle(const tinygltf::Model &gltf_model) {
 	bool has_cycle = false;
 	for (auto &scene : gltf_model.scenes) {
 		for (auto &node :scene.nodes) {
 			std::vector<int> node_stack;
 			node_stack.push_back(node);
-			uint64 node_stack_max_size = 1;
 			while (!node_stack.empty()) {
-				node_stack_max_size = max(node_stack.size(), node_stack_max_size);
 				int index = node_stack.back();
 				auto &node = gltf_model.nodes[index];
 				for (auto &child : node.children) {
@@ -199,6 +196,29 @@ bool gltf_model_node_has_cycle(const tinygltf::Model &gltf_model) {
 		}
 	}
 	return has_cycle;
+}
+
+void initialize_model_scene_nodes_global_transform(std::vector<gpk_model_scene> &scenes, std::vector<gpk_model_node> &nodes) {
+	for (auto &node : nodes) {
+		node.global_transform_mat = node.local_transform_mat;
+	}
+	for (auto &scene : scenes) {
+		for (auto &node_index : make_range(scene.node_indices, scene.node_index_count)) {
+			auto *node = &nodes[node_index];
+			node->global_transform_mat = node->local_transform_mat;
+			std::stack<gpk_model_node *> node_stack;
+			node_stack.push(node);
+			while (!node_stack.empty()) {
+				gpk_model_node *parent_node = node_stack.top();
+				node_stack.pop();
+				for (uint32 i = 0; i < parent_node->child_count; i += 1) {
+					gpk_model_node *child_node = &nodes[parent_node->children[i]];
+					child_node->global_transform_mat = parent_node->global_transform_mat * child_node->local_transform_mat;
+					node_stack.push(child_node);
+				}
+			}
+		}
+	}
 }
 
 void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
@@ -249,7 +269,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 	}
 	std::vector<gpk_model_node> gpk_model_nodes;
 	{
-		m_assert(!gltf_model_node_has_cycle(gltf_model), "");
+		m_assert(!gltf_model_nodes_contain_cycle(gltf_model), "");
 		gpk_model.node_offset = current_offset;
 		gpk_model.node_count = (uint32)gltf_model.nodes.size();
 		m_assert(gpk_model.node_count > 0, "");
@@ -288,6 +308,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 		}
 		current_offset = round_up(current_offset + gpk_model.node_count * (uint32)sizeof(struct gpk_model_node), 16u);
 	}
+	initialize_model_scene_nodes_global_transform(gpk_model_scenes, gpk_model_nodes);
 	std::vector<gpk_model_mesh> gpk_model_meshes;
 	{
 		gpk_model.mesh_offset = current_offset;
@@ -413,8 +434,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			gpk_model_materials[i].diffuse_factor = {1.0f, 1.0f, 1.0f, 1.0f};
 			gpk_model_materials[i].metallic_image_index = UINT32_MAX;
 			gpk_model_materials[i].roughness_image_index = UINT32_MAX;
-			gpk_model_materials[i].metallic_factor = 1.0f;
-			gpk_model_materials[i].roughness_factor = 1.0f;
+			gpk_model_materials[i].metallic_factor = 0.0f;
+			gpk_model_materials[i].roughness_factor = 0.0f;
 			gpk_model_materials[i].normal_image_index = UINT32_MAX;
 		}
 		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
@@ -440,8 +461,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					gpk_material.diffuse_image_wrap_t = tinygltf_wrap_to_vk_wrap(gltf_model.samplers[texture.sampler].wrapT);
 				}
 				else {
-					gpk_material.diffuse_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					gpk_material.diffuse_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.diffuse_image_wrap_s = D3D11_TEXTURE_ADDRESS_WRAP;
+					gpk_material.diffuse_image_wrap_t = D3D11_TEXTURE_ADDRESS_WRAP;
 				}
 			}
 			else if (base_color_factor != material.values.end()) {
@@ -462,8 +483,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					gpk_material.metallic_roughness_image_wrap_t = tinygltf_wrap_to_vk_wrap(gltf_model.samplers[texture.sampler].wrapT);
 				}
 				else {
-					gpk_material.metallic_roughness_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					gpk_material.metallic_roughness_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.metallic_roughness_image_wrap_s = D3D11_TEXTURE_ADDRESS_WRAP;
+					gpk_material.metallic_roughness_image_wrap_t = D3D11_TEXTURE_ADDRESS_WRAP;
 				}
 			}
 			else {
@@ -490,8 +511,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					gpk_material.normal_image_wrap_t = tinygltf_wrap_to_vk_wrap(gltf_model.samplers[texture.sampler].wrapT);
 				}
 				else {
-					gpk_material.normal_image_wrap_s = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					gpk_material.normal_image_wrap_t = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					gpk_material.normal_image_wrap_s = D3D11_TEXTURE_ADDRESS_WRAP;
+					gpk_material.normal_image_wrap_t = D3D11_TEXTURE_ADDRESS_WRAP;
 				}
 			}
 		}
@@ -541,7 +562,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				gpk_image.mipmap_count = mipmap_count;
 				gpk_image.layer_count = 1;
 				gpk_image.size = size;
-				gpk_image.format = VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
+				gpk_image.format = DXGI_FORMAT_BC1_UNORM_SRGB;
 				gpk_image.format_block_dimension = 4;
 				gpk_image.format_block_size = 8;
 			}
@@ -571,7 +592,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					gpk_metallic_image.mipmap_count = mipmap_count;
 					gpk_metallic_image.layer_count = 1;
 					gpk_metallic_image.size = size;
-					gpk_metallic_image.format = VK_FORMAT_BC4_UNORM_BLOCK;
+					gpk_metallic_image.format = DXGI_FORMAT_BC4_UNORM;
 					gpk_metallic_image.format_block_dimension = 4;
 					gpk_metallic_image.format_block_size = 8;
 				}
@@ -596,7 +617,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					gpk_roughness_image.mipmap_count = mipmap_count;
 					gpk_roughness_image.layer_count = 1;
 					gpk_roughness_image.size = size;
-					gpk_roughness_image.format = VK_FORMAT_BC4_UNORM_BLOCK;
+					gpk_roughness_image.format = DXGI_FORMAT_BC4_UNORM;
 					gpk_roughness_image.format_block_dimension = 4;
 					gpk_roughness_image.format_block_size = 8;
 				}
@@ -630,7 +651,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				gpk_image.mipmap_count = mipmap_count;
 				gpk_image.layer_count = 1;
 				gpk_image.size = size;
-				gpk_image.format = VK_FORMAT_BC5_UNORM_BLOCK;
+				gpk_image.format = DXGI_FORMAT_BC5_UNORM;
 				gpk_image.format_block_dimension = 4;
 				gpk_image.format_block_size = 16;
 			}
@@ -735,7 +756,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 	}
 	
 	file_mapping gpk_file_mapping = {};
-	m_assert(create_file_mapping(gpk_file.c_str(), current_offset, &gpk_file_mapping), "");
+	m_assert(create_file_mapping(gpk_file.c_str(), current_offset, &gpk_file_mapping), "%s %d", gpk_file.c_str(), current_offset);
 	*(struct gpk_model *)gpk_file_mapping.ptr = gpk_model;
 	memcpy(gpk_file_mapping.ptr + gpk_model.scene_offset, &gpk_model_scenes[0], gpk_model_scenes.size() * sizeof(struct gpk_model_scene));
 	memcpy(gpk_file_mapping.ptr + gpk_model.node_offset, &gpk_model_nodes[0], gpk_model_nodes.size() * sizeof(struct gpk_model_node));
@@ -832,7 +853,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			gpk_primitive.vertices_offset = indices_vertices_offset;
 			gpk_primitive.vertex_count = (uint32)position_accessor.count;
 			indices_vertices_offset = round_up(indices_vertices_offset + gpk_primitive.vertex_count * (uint32)sizeof(struct gpk_model_vertex), 16u);
-			gpk_primitive.has_joints = joint_data ? 1 : 0;
 
 			if (index_accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
 				for (uint32 i = 0; i < gpk_primitive.index_count; i += 1) {
@@ -866,7 +886,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				}
 
 				vec3 normal = *(vec3 *)(normal_data + normal_stride * i);
-				vertex->normal = {(int16)roundf(normal[0] * 32767.0f), (int16)roundf(normal[1] * 32767.0f), (int16)roundf(normal[2] * 32767.0f)};
+				vertex->normal = {(int16)roundf(normal[0] * 32767.0f), (int16)roundf(normal[1] * 32767.0f), (int16)roundf(normal[2] * 32767.0f), 0};
 
 				vec3 tangent = {};
 				if (tangent_data) {
@@ -877,7 +897,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					vec3 tangent2 = vec3_cross(normal, vec3{0, 1, 0});
 					tangent = vec3_normalize(vec3_len(tangent1) > vec3_len(tangent2) ? tangent1 : tangent2);
 				}
-				vertex->tangent = {(int16)roundf(tangent[0] * 32767.0f), (int16)roundf(tangent[1] * 32767.0f), (int16)roundf(tangent[2] * 32767.0f)};
+				vertex->tangent = {(int16)roundf(tangent[0] * 32767.0f), (int16)roundf(tangent[1] * 32767.0f), (int16)roundf(tangent[2] * 32767.0f), 0};
 
 				if (joint_data) {
 					u16vec4 js = *(u16vec4 *)(joint_data + joint_stride * i);
@@ -1030,7 +1050,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 		}
 	}
 	flush_file_mapping(gpk_file_mapping);
-	close_file_mapping(&gpk_file_mapping);
+	close_file_mapping(gpk_file_mapping);
 	
 	printf("done importing gltf: \"%s\" %d\n", gltf_file.c_str(), current_offset);
 }
@@ -1099,8 +1119,9 @@ void gltf_to_vertices(std::string gltf_file, std::string text_file) {
 	}
 	fprintf(file, "}");
 	fclose(file);
-}
 
+	printf("done importing gltf: \"%s\" \n", gltf_file.c_str());
+}
 
 struct import_json_schema {
 	bool force_import_all;
@@ -1171,20 +1192,20 @@ void import_json(std::string json_file) {
 	catch (nlohmann::json::exception &e) {
 		fatal("import.exe json exception:\n\n%s\n", e.what());
 	}
-	char drive_buf[32];
-	char dir_buf[256];
-	_splitpath(json_file.c_str(), drive_buf, dir_buf, nullptr, nullptr);
-	std::string dir = std::string(drive_buf) + dir_buf;
-	for (auto &m : import.models) {
-		if (m.import || import.force_import_all || import.force_import_models) {
-			std::string cmdl_str = std::string("import.exe -gltf-to-gpk ") + dir + m.gltf_file + " " + m.gpk_file;
+	char json_drive_buf[32];
+	char json_dir_buf[256];
+	_splitpath(json_file.c_str(), json_drive_buf, json_dir_buf, nullptr, nullptr);
+	std::string json_dir = std::string(json_drive_buf) + json_dir_buf;
+	for (auto &model : import.models) {
+		if (model.import || import.force_import_all || import.force_import_models) {
+			std::string cmdl_str = std::string("import.exe -gltf-to-gpk ") + json_dir + model.gltf_file + " " + json_dir + model.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}
 	}
-	for (auto &s : import.skyboxes) {
-		if (s.import || import.force_import_all || import.force_import_skyboxes) {
-			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + dir + s.dir + " " + s.gpk_file;
+	for (auto &skybox : import.skyboxes) {
+		if (skybox.import || import.force_import_all || import.force_import_skyboxes) {
+			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + json_dir + skybox.dir + " " + json_dir + skybox.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}
@@ -1204,7 +1225,7 @@ void import_json(std::string json_file) {
 }
 
 int main(int argc, char **argv) {
-	set_exe_dir_as_current();
+	set_current_dir_to_exe_dir();
 	if (argc < 2) {
 		printf("error: missing first argument");
 	}

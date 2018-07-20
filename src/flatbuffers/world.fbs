@@ -1,0 +1,109 @@
+namespace flatbuffers;
+
+struct Vec3 {
+  x: float;
+  y: float;			 
+  z: float;			 
+}
+
+struct Vec4 {
+  x: float;
+  y: float;			 
+  z: float;
+	w: float;
+}
+
+struct Mat4 {
+  r1: Vec4;
+	r2: Vec4;
+	r3: Vec4;
+	r4: Vec4;
+}
+
+struct Transform {
+  scale: Vec3;
+	rotate: Vec4;
+	translate: Vec3;
+}
+
+struct Sphere {
+  radius: float;
+}
+
+struct Box {
+  extents: Vec3;
+}
+
+struct CapsuleX {
+  radius: float;
+	height: float;
+}
+
+struct CapsuleY {
+  radius: float;
+	height: float;
+}
+
+struct CapsuleZ {
+  radius: float;
+	height: float;
+}
+
+union CollisionShape {
+  Sphere, Box, CapsuleX, CapsuleY, CapsuleZ,
+}
+
+table Player {
+  modelIndex: uint;
+	transform: Transform;
+}
+
+table StaticObject {
+  id: string;
+  modelIndex: uint;
+	transform: Transform;
+}
+
+table DynamicObject {
+  id: string;
+  modelIndex: uint;
+	transform: Transform;
+  mass: float;
+}
+
+table Terrain {
+  file: string;
+}
+
+table Skybox {
+  file: string;
+}
+
+table Model {
+  file: string;
+	transform: Transform;
+	collisionShape: CollisionShape;
+}
+
+struct Camera {
+  position: Vec3;
+	view: Vec3;
+	moveSpeed: float;
+	rotateSpeed: float;
+}
+
+table World {
+	player: Player;
+	staticObjects: [StaticObject];
+	dynamicObjects: [DynamicObject];
+  models: [Model];
+	terrains: [Terrain];
+	skyboxes: [Skybox];
+	sunLightDir : Vec3;
+	sunLightColor : Vec3;
+  editorCamera: Camera;
+}
+
+root_type World;
+
+file_extension "gpk";
