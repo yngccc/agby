@@ -8,11 +8,11 @@ cbuffer mesh_constants : register(b2) {
   float4x4 joint_mats[256];
 };
 
-// cbuffer primitive_constants : register(b3) {
-//   float4 diffuse_factor;												
-//   float metallic_factor;											
-//   float roughness_factor;											
-// };
+cbuffer primitive_constants : register(b3) {
+  float3 diffuse_factor;												
+  float metallic_factor;											
+  float roughness_factor;											
+};
 
 Texture2D<float3> diffuse_texture : register(t0);
 Texture2D<float> roughness_texture : register(t1);
@@ -66,9 +66,9 @@ struct ps_output {
 };
 
 ps_output pixel_shader(vs_output vs_output) {
-  float3 diffuse = diffuse_texture.Sample(texture_sampler, vs_output.texcoord);
-	float roughness = roughness_texture.Sample(texture_sampler, vs_output.texcoord);
-	float metallic = metallic_texture.Sample(texture_sampler, vs_output.texcoord);
+  float3 diffuse = diffuse_texture.Sample(texture_sampler, vs_output.texcoord) * diffuse_factor;
+	float roughness = roughness_texture.Sample(texture_sampler, vs_output.texcoord) * roughness_factor;
+	float metallic = metallic_texture.Sample(texture_sampler, vs_output.texcoord) * metallic_factor;
 	float2 normal = normal_texture.Sample(texture_sampler, vs_output.texcoord);
 
   float3 tbn_normal;

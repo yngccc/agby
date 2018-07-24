@@ -325,7 +325,7 @@ int main(int argc, char **argv) {
 	initialize_world(world, d3d);
 	if (argc > 1) {
 		const char *world_file = argv[1];
-		m_assert(load_world(world, d3d, world_file), "");
+		m_assert(load_world(world, d3d, world_file, nullptr), "");
 	}
 	
 	window_message_channel.window = window;

@@ -372,7 +372,7 @@ void initialize_editor(editor *editor, d3d *d3d) {
 		editor->camera_znear = 0.1f;
 		editor->camera_zfar = 10000.0f;
 		editor->camera_move_speed = 10;
-		editor->camera_rotate_speed = 5;
+		editor->camera_rotate_speed = 1;
 		
 		editor->static_object_index = UINT32_MAX;
 		editor->dynamic_object_index = UINT32_MAX;
@@ -387,6 +387,18 @@ void initialize_editor(editor *editor, d3d *d3d) {
 		editor->terrain_brush_tool_radius = 5;
 		editor->terrain_brush_tool_speed = 2;
 	}
+}
+
+bool load_editor_world(editor *editor, world *world, d3d *d3d, const char *file) {
+	world_editor_settings editor_settings;
+	if (!load_world(world, d3d, file, &editor_settings)) {
+		return false;
+	}
+	editor->camera_position = XMVectorSet(m_unpack3(editor_settings.camera_position), 0);
+	editor->camera_view = XMVectorSet(m_unpack3(editor_settings.camera_view), 0);
+	editor->camera_move_speed = editor_settings.camera_move_speed;
+	editor->camera_rotate_speed = editor_settings.camera_rotate_speed;
+	return true;
 }
 
 bool save_editor_world(editor *editor, world *world, bool save_as) {
@@ -406,7 +418,13 @@ bool save_editor_world(editor *editor, world *world, bool save_as) {
 			array_copy(world_save_file, editor->world_save_file);
 		}
 	}
-	if (!save_world(world, world_save_file)) {
+	world_editor_settings editor_settings = {
+		vec3{XMVectorGetX(editor->camera_position), XMVectorGetY(editor->camera_position), XMVectorGetZ(editor->camera_position)},
+		vec3{XMVectorGetX(editor->camera_view), XMVectorGetY(editor->camera_view), XMVectorGetZ(editor->camera_view)},
+		editor->camera_move_speed,
+		editor->camera_rotate_speed
+	};
+	if (!save_world(world, world_save_file, &editor_settings)) {
 		return false;
 	}
 	for (uint32 i = 0; i < world->terrain_count; i += 1) {
@@ -426,9 +444,8 @@ bool save_editor_world(editor *editor, world *world, bool save_as) {
     flush_file_mapping(terrain_file_mapping);
 		close_file_mapping(terrain_file_mapping);
 	}
-	if (!save_as) {
-		array_copy(editor->world_save_file, world_save_file);
-	}
+
+	array_copy(editor->world_save_file, world_save_file);
 	return true;
 }
 
@@ -809,7 +826,7 @@ void top_menu(editor *editor, world *world, d3d *d3d) {
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open")) {
 				if (open_file_dialog(editor->world_save_file, sizeof(editor->world_save_file))) {
-					if (!load_world(world, d3d, editor->world_save_file)) {
+					if (!load_editor_world(editor, world, d3d, editor->world_save_file)) {
 						snprintf(editor->error_msg, sizeof(editor->error_msg), "failed to load level from file: \"%s\"", editor->world_save_file);
 						editor->error_popup = true;
 						editor->world_save_file[0] = '\0';
@@ -1313,6 +1330,12 @@ void update_camera(editor *editor, window *window) {
 	if (ImGui::IsKeyDown(VK_DOWN) && ImGui::IsKeyDown(VK_CONTROL)) {
 		editor->camera_position = XMVectorSubtract(editor->camera_position, XMVectorScale(editor->camera_view, (float)editor->last_frame_time_secs * 20));
 	}
+	if (ImGui::IsKeyDown(VK_RIGHT) && ImGui::IsKeyDown(VK_CONTROL)) {
+		editor->camera_position = XMVectorAdd(editor->camera_position, XMVectorScale(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)), (float)editor->last_frame_time_secs * 20));
+	}
+	if (ImGui::IsKeyDown(VK_LEFT) && ImGui::IsKeyDown(VK_CONTROL)) {
+		editor->camera_position = XMVectorSubtract(editor->camera_position, XMVectorScale(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)), (float)editor->last_frame_time_secs * 20));
+	}
 	if (editor->camera_active) {
 		float move_distance = editor->camera_move_speed * (float)editor->last_frame_time_secs;
 		if (ImGui::IsKeyDown(VK_SHIFT)) {
@@ -1594,7 +1617,7 @@ int main(int argc, char **argv) {
 	initialize_world(world, d3d);
 	if (argc > 1) {
 		const char *world_file = argv[1];
-		m_assert(load_world(world, d3d, world_file), "");
+		m_assert(load_editor_world(editor, world, d3d, world_file), "");
 		snprintf(editor->world_save_file, sizeof(editor->world_save_file), "%s", world_file);
 	}
 	

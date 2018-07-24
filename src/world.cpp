@@ -248,14 +248,20 @@ struct skybox {
 	char file[32];
 };
 
+struct mesh_primitive_render_data {
+	uint32 constant_buffer_offset;
+};
+
 struct mesh_render_data {
 	model_mesh *mesh;
-	uint32 joint_mats_offset;
+	mesh_primitive_render_data *primitives;
+	uint32 primitive_count;
+	uint32 joint_mats_constant_buffer_offset;
 };
 
 struct model_render_data {
 	model *model;
-	uint32 model_mat_offset;
+	uint32 model_mat_constant_buffer_offset;
 	mesh_render_data *meshes;
 	uint32 mesh_count;
 	bool render_collision_shapes;
@@ -422,13 +428,13 @@ void initialize_world(world *world, d3d *d3d) {
 		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &texture_subresource_data, &world->default_diffuse_texture));
 		m_d3d_assert(d3d->device->CreateShaderResourceView(world->default_diffuse_texture, nullptr, &world->default_diffuse_texture_view));
 
-		uint8 default_roughness_map_data[] = {128, 128, 128, 128};
+		uint8 default_roughness_map_data[] = {255, 255, 255, 255};
 		texture_desc.Format = DXGI_FORMAT_R8_UNORM;
 		texture_subresource_data = {default_roughness_map_data, 2 * 1, 0};
 		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &texture_subresource_data, &world->default_roughness_texture));
 		m_d3d_assert(d3d->device->CreateShaderResourceView(world->default_roughness_texture, nullptr, &world->default_roughness_texture_view));
 
-		uint8 default_metallic_map_data[] = {128, 128, 128, 128};
+		uint8 default_metallic_map_data[] = {255, 255, 255, 255};
 		texture_desc.Format = DXGI_FORMAT_R8_UNORM;
 		texture_subresource_data = {default_metallic_map_data, 2 * 1, 0};
 		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &texture_subresource_data, &world->default_metallic_texture));
@@ -918,7 +924,14 @@ btCollisionShape *collision_to_bt_collision(collision collision) {
 	return new btEmptyShape();
 }
 
-bool load_world(world *world, d3d *d3d, const char *file) {
+struct world_editor_settings {
+	vec3 camera_position;
+	vec3 camera_view;
+	float camera_move_speed;
+	float camera_rotate_speed;
+};
+
+bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings *editor_settings) {
 	file_mapping file_mapping = {};
 	if (!open_file_mapping(file, &file_mapping, true)) {
 		return false;
@@ -1082,11 +1095,25 @@ bool load_world(world *world, d3d *d3d, const char *file) {
 	else {
 		world->sun_light_color = {0.5f, 0.5f, 0.5f};
 	}
+
+	auto editor_camera = fb_world->editorCamera();
+	if (editor_camera && editor_settings) {
+		editor_settings->camera_position = vec3{editor_camera->position().x(), editor_camera->position().y(), editor_camera->position().z()};
+		editor_settings->camera_view = vec3{editor_camera->view().x(), editor_camera->view().y(), editor_camera->view().z()};
+		editor_settings->camera_move_speed = editor_camera->moveSpeed();
+		editor_settings->camera_rotate_speed = editor_camera->rotateSpeed();
+	}
+	else if (editor_settings) {
+		editor_settings->camera_position = vec3{20, 20, 20};
+		editor_settings->camera_view = vec3_normalize(-editor_settings->camera_position);
+		editor_settings->camera_move_speed = 10;
+		editor_settings->camera_rotate_speed = 1;
+	}
 	
 	return true;
 }
 
-bool save_world(world *world, const char *file) {
+bool save_world(world *world, const char *file, world_editor_settings *editor_settings) {
 	using namespace flatbuffers;
 
 	FlatBufferBuilder fb_builder;
@@ -1180,9 +1207,9 @@ bool save_world(world *world, const char *file) {
 	Vec3 fb_sun_light_dir(world->sun_light_dir.x, world->sun_light_dir.y, world->sun_light_dir.z);
 	Vec3 fb_sun_light_color(world->sun_light_color.x, world->sun_light_color.y, world->sun_light_color.z);
 
-	// Camera fb_editor_camera(Vec3(m_unpack3(world->editor_camera.position)), Vec3(m_unpack3(world->editor_camera.view)), world->editor_camera_move_speed, world->editor_camera_rotate_speed);
+	Camera fb_editor_camera(Vec3(m_unpack3(editor_settings->camera_position)), Vec3(m_unpack3(editor_settings->camera_view)), editor_settings->camera_move_speed, editor_settings->camera_rotate_speed);
 	
-	auto fb_world = CreateWorld(fb_builder, fb_player, fb_static_objects, fb_dynamic_objects, fb_models, fb_terrains, fb_skyboxes, &fb_sun_light_dir, &fb_sun_light_color, nullptr);
+	auto fb_world = CreateWorld(fb_builder, fb_player, fb_static_objects, fb_dynamic_objects, fb_models, fb_terrains, fb_skyboxes, &fb_sun_light_dir, &fb_sun_light_color, &fb_editor_camera);
 	FinishWorldBuffer(fb_builder, fb_world);
 
 	file_mapping save_file_mapping;
@@ -1216,7 +1243,7 @@ void add_model_render_data(world *world, d3d *d3d, uint32 model_index, transform
 
 	model_render_data *model_render_data = allocate_memory<struct model_render_data>(&world->frame_memory_arena, 1);
 	model_render_data->model = model;
-	model_render_data->model_mat_offset = append_world_constant_buffer(world, &model_constant_buffer, sizeof(model_constant_buffer));
+	model_render_data->model_mat_constant_buffer_offset = append_world_constant_buffer(world, &model_constant_buffer, sizeof(model_constant_buffer));
 	model_render_data->meshes = allocate_memory<struct mesh_render_data>(&world->frame_memory_arena, model->mesh_node_count);
 	model_render_data->mesh_count = model->mesh_node_count;
 	model_render_data->render_collision_shapes = render_collision_shapes;
@@ -1225,101 +1252,120 @@ void add_model_render_data(world *world, d3d *d3d, uint32 model_index, transform
 	world->render_data.model_list = model_render_data;
 	world->render_data.model_count += 1;
 
-	undo_allocation_scope_exit(&world->frame_memory_arena);
-
-	model_node *model_nodes = model->nodes;
-	if (animation_index < model->animation_count) {
-		model_animation *animation = &model->animations[animation_index];
-		
-		model_nodes = allocate_memory<struct model_node>(&world->frame_memory_arena, model->node_count);
-		memcpy(model_nodes, model->nodes, model->node_count * sizeof(struct model_node));
-
-		for (uint32 i = 0; i < animation->channel_count; i += 1) {
-			model_animation_channel *channel = &animation->channels[i];
-			model_animation_sampler *sampler = &animation->samplers[channel->sampler_index];
-			m_assert(sampler->interpolation_type == gpk_model_animation_linear_interpolation, "");
-			float time = (float)fmod(animation_time, (double)sampler->key_frames[sampler->key_frame_count - 1].time);
-			for (uint32 i = 0; i < sampler->key_frame_count; i += 1) {
-				model_animation_key_frame *key_frame = &sampler->key_frames[i];
-				if (time <= key_frame->time) {
-					if (channel->channel_type == gpk_model_animation_translate_channel) {
-						vec3 translate = {};
-						if (i == 0) {
-							translate = vec3_lerp(model_nodes[channel->node_index].local_transform.translate, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
-						}
-						else {
-							model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
-							translate = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
-						}
-						model_nodes[channel->node_index].local_transform.translate = translate;
-					}
-					else if (channel->channel_type == gpk_model_animation_rotate_channel) {
-						quat rotate = {};
-						if (i == 0) {
-							rotate = quat_slerp(model_nodes[channel->node_index].local_transform.rotate, {m_unpack4(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
-						}
-						else {
-							model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
-							rotate = quat_slerp({m_unpack4(prev_key_frame->transform_data)}, {m_unpack4(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
-						}
-						model_nodes[channel->node_index].local_transform.rotate = rotate;
-					}
-					else if (channel->channel_type == gpk_model_animation_scale_channel) {
-						vec3 scale = {};
-						if (i == 0) {
-							scale = vec3_lerp(model_nodes[channel->node_index].local_transform.scale, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
-						}
-						else {
-							model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
-							scale = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
-						}
-						model_nodes[channel->node_index].local_transform.scale = scale;
-					}
-					break;
-				}
-			}
-		}
-		for (uint32 i = 0; i < model->node_count; i += 1) {
-			model_nodes[i].local_transform_mat = mat4_from_transform(model_nodes[i].local_transform);
-		}
-		for (auto &scene : make_range(model->scenes, model->scene_count)) {
-			for (auto &node_index : make_range(scene.node_indices, scene.node_index_count)) {
-				model_node *node = &model_nodes[node_index];
-				node->global_transform_mat = node->local_transform_mat;
-				std::stack<model_node *> node_stack;
-				node_stack.push(node);
-				while (!node_stack.empty()) {
-					model_node *parent_node = node_stack.top();
-					node_stack.pop();
-					for (uint32 i = 0; i < parent_node->child_count; i += 1) {
-						model_node *child_node = &model_nodes[parent_node->children[i]];
-						child_node->global_transform_mat = parent_node->global_transform_mat * child_node->local_transform_mat;
-						node_stack.push(child_node);
-					}
-				}
-			}
-		}
-	}
 	uint32 *joint_mats_offsets = allocate_memory<uint32>(&world->frame_memory_arena, model->skin_count);
-	for (uint32 i = 0; i < model->skin_count; i += 1) {
-		model_skin *skin = &model->skins[i];
-		mat4 *joint_mats = allocate_memory<mat4>(&world->frame_memory_arena, skin->joint_count);
-		for (uint32 i = 0; i < skin->joint_count; i += 1) {
-			joint_mats[i] = model_nodes[skin->joints[i].node_index].global_transform_mat * skin->joints[i].inverse_bind_mat;
+	{
+		undo_allocation_scope_exit(&world->frame_memory_arena);
+
+		model_node *model_nodes = model->nodes;
+		if (animation_index < model->animation_count) {
+			model_animation *animation = &model->animations[animation_index];
+		
+			model_nodes = allocate_memory<struct model_node>(&world->frame_memory_arena, model->node_count);
+			memcpy(model_nodes, model->nodes, model->node_count * sizeof(struct model_node));
+
+			for (uint32 i = 0; i < animation->channel_count; i += 1) {
+				model_animation_channel *channel = &animation->channels[i];
+				model_animation_sampler *sampler = &animation->samplers[channel->sampler_index];
+				m_assert(sampler->interpolation_type == gpk_model_animation_linear_interpolation, "");
+				float time = (float)fmod(animation_time, (double)sampler->key_frames[sampler->key_frame_count - 1].time);
+				for (uint32 i = 0; i < sampler->key_frame_count; i += 1) {
+					model_animation_key_frame *key_frame = &sampler->key_frames[i];
+					if (time <= key_frame->time) {
+						if (channel->channel_type == gpk_model_animation_translate_channel) {
+							vec3 translate = {};
+							if (i == 0) {
+								translate = vec3_lerp(model_nodes[channel->node_index].local_transform.translate, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+							}
+							else {
+								model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+								translate = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+							}
+							model_nodes[channel->node_index].local_transform.translate = translate;
+						}
+						else if (channel->channel_type == gpk_model_animation_rotate_channel) {
+							quat rotate = {};
+							if (i == 0) {
+								rotate = quat_slerp(model_nodes[channel->node_index].local_transform.rotate, {m_unpack4(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+							}
+							else {
+								model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+								rotate = quat_slerp({m_unpack4(prev_key_frame->transform_data)}, {m_unpack4(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+							}
+							model_nodes[channel->node_index].local_transform.rotate = rotate;
+						}
+						else if (channel->channel_type == gpk_model_animation_scale_channel) {
+							vec3 scale = {};
+							if (i == 0) {
+								scale = vec3_lerp(model_nodes[channel->node_index].local_transform.scale, {m_unpack3(key_frame->transform_data)}, key_frame->time == 0 ? 1 : time / key_frame->time);
+							}
+							else {
+								model_animation_key_frame *prev_key_frame = &sampler->key_frames[i - 1];
+								scale = vec3_lerp({m_unpack3(prev_key_frame->transform_data)}, {m_unpack3(key_frame->transform_data)}, (time - prev_key_frame->time) / (key_frame->time - prev_key_frame->time));
+							}
+							model_nodes[channel->node_index].local_transform.scale = scale;
+						}
+						break;
+					}
+				}
+			}
+			for (uint32 i = 0; i < model->node_count; i += 1) {
+				model_nodes[i].local_transform_mat = mat4_from_transform(model_nodes[i].local_transform);
+			}
+			for (auto &scene : make_range(model->scenes, model->scene_count)) {
+				for (auto &node_index : make_range(scene.node_indices, scene.node_index_count)) {
+					model_node *node = &model_nodes[node_index];
+					node->global_transform_mat = node->local_transform_mat;
+					std::stack<model_node *> node_stack;
+					node_stack.push(node);
+					while (!node_stack.empty()) {
+						model_node *parent_node = node_stack.top();
+						node_stack.pop();
+						for (uint32 i = 0; i < parent_node->child_count; i += 1) {
+							model_node *child_node = &model_nodes[parent_node->children[i]];
+							child_node->global_transform_mat = parent_node->global_transform_mat * child_node->local_transform_mat;
+							node_stack.push(child_node);
+						}
+					}
+				}
+			}
 		}
-		joint_mats_offsets[i] = append_world_constant_buffer(world, joint_mats, skin->joint_count * sizeof(mat4));
+		for (uint32 i = 0; i < model->skin_count; i += 1) {
+			model_skin *skin = &model->skins[i];
+			mat4 *joint_mats = allocate_memory<mat4>(&world->frame_memory_arena, skin->joint_count);
+			for (uint32 i = 0; i < skin->joint_count; i += 1) {
+				joint_mats[i] = model_nodes[skin->joints[i].node_index].global_transform_mat * skin->joints[i].inverse_bind_mat;
+			}
+			joint_mats_offsets[i] = append_world_constant_buffer(world, joint_mats, skin->joint_count * sizeof(mat4));
+		}
 	}
 	uint32 mesh_index = 0;
 	for (uint32 i = 0; i < model->node_count; i += 1) {
-		model_node *node = &model_nodes[i];
+		model_node *node = &model->nodes[i];
 		if (node->mesh_index < model->mesh_count) {
 			mesh_render_data *mesh_render_data = &model_render_data->meshes[mesh_index++];
 			mesh_render_data->mesh = &model->meshes[node->mesh_index];
 			if (node->skin_index < model->skin_count) {
-				mesh_render_data->joint_mats_offset = joint_mats_offsets[node->skin_index];
+				mesh_render_data->joint_mats_constant_buffer_offset = joint_mats_offsets[node->skin_index];
 			}
 			else {
-				mesh_render_data->joint_mats_offset = append_world_constant_buffer(world, &node->global_transform_mat, sizeof(mat4));
+				mesh_render_data->joint_mats_constant_buffer_offset = append_world_constant_buffer(world, &node->global_transform_mat, sizeof(mat4));
+			}
+			mesh_render_data->primitive_count = mesh_render_data->mesh->primitive_count;
+			mesh_render_data->primitives = allocate_memory<mesh_primitive_render_data>(&world->frame_memory_arena, mesh_render_data->primitive_count);
+			for (uint32 i = 0; i < mesh_render_data->primitive_count; i += 1) {
+				model_mesh_primitive *primitive = &mesh_render_data->mesh->primitives[i];
+				mesh_primitive_render_data *primitive_render_data = &mesh_render_data->primitives[i];
+				model_material *material = primitive->material_index < model->material_count ? &model->materials[primitive->material_index] : nullptr;
+				struct {
+					vec4 diffuse_factor;
+					float metallic_factor;
+					float roughness_factor;
+				} constant_buffer = {
+					material ? material->diffuse_factor : vec4{1, 1, 1, 1},
+					material ? material->metallic_factor : 1,
+					material ? material->roughness_factor : 1
+				};
+				primitive_render_data->constant_buffer_offset = append_world_constant_buffer(world, &constant_buffer, sizeof(constant_buffer));
 			}
 		}
 	}
@@ -1493,17 +1539,17 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 		model_render_data *model_render_data = world->render_data.model_list;
 		while (model_render_data) {
 			model *model = model_render_data->model;
-			uint32 model_constant_buffer_offset = model_render_data->model_mat_offset / 16;
+			uint32 model_constant_buffer_offset = model_render_data->model_mat_constant_buffer_offset / 16;
 			uint32 model_constant_count = 16;
 			d3d->context->VSSetConstantBuffers1(1, 1, &world->constant_buffer, &model_constant_buffer_offset, &model_constant_count);
 			for (uint32 i = 0; i < model_render_data->mesh_count; i += 1) {
 				mesh_render_data *mesh_render_data = &model_render_data->meshes[i];
 				model_mesh *mesh = mesh_render_data->mesh;
-				uint32 mesh_constant_buffer_offset = mesh_render_data->joint_mats_offset / 16;
+				uint32 mesh_constant_buffer_offset = mesh_render_data->joint_mats_constant_buffer_offset / 16;
 				uint32 mesh_constant_count = 256 * 4;
 				d3d->context->VSSetConstantBuffers1(2, 1, &world->constant_buffer, &mesh_constant_buffer_offset, &mesh_constant_count);
 				for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
-					auto primitive = &mesh->primitives[i];
+					model_mesh_primitive *primitive = &mesh->primitives[i];
 					uint32 vertex_buffer_stride = sizeof(gpk_model_vertex);
 					uint32 vertex_buffer_offset = 0;
 					d3d->context->IASetVertexBuffers(0, 1, &primitive->vertex_buffer, &vertex_buffer_stride, &vertex_buffer_offset);
@@ -1577,28 +1623,33 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 		model_render_data *model_render_data = world->render_data.model_list;
 		while (model_render_data) {
 			model *model = model_render_data->model;
-			uint32 model_constant_buffer_offset = model_render_data->model_mat_offset / 16;
+			uint32 model_constant_buffer_offset = model_render_data->model_mat_constant_buffer_offset / 16;
 			uint32 model_constant_count = 16;
 			d3d->context->VSSetConstantBuffers1(1, 1, &world->constant_buffer, &model_constant_buffer_offset, &model_constant_count);
 			for (uint32 i = 0; i < model_render_data->mesh_count; i += 1) {
 				mesh_render_data *mesh_render_data = &model_render_data->meshes[i];
 				model_mesh *mesh = mesh_render_data->mesh;
-				uint32 mesh_constant_buffer_offset = mesh_render_data->joint_mats_offset / 16;
+				uint32 mesh_constant_buffer_offset = mesh_render_data->joint_mats_constant_buffer_offset / 16;
 				uint32 mesh_constant_count = 256 * 4;
 				d3d->context->VSSetConstantBuffers1(2, 1, &world->constant_buffer, &mesh_constant_buffer_offset, &mesh_constant_count);
 				for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
 					model_mesh_primitive *primitive = &mesh->primitives[i];
+					mesh_primitive_render_data *primitive_render_data = &mesh_render_data->primitives[i];
+					uint32 primitive_constant_buffer_offset = primitive_render_data->constant_buffer_offset / 16;
+					uint32 primitive_constant_count = 16;
+					d3d->context->PSSetConstantBuffers1(3, 1, &world->constant_buffer, &primitive_constant_buffer_offset, &primitive_constant_count);
 					model_material *material = primitive->material_index < model->material_count ? &model->materials[primitive->material_index] : nullptr;
-					ID3D11ShaderResourceView *texture_views[4] = {world->default_diffuse_texture_view, world->default_roughness_texture_view, world->default_metallic_texture_view, world->default_normal_texture_view};
+					ID3D11ShaderResourceView *texture_views[4] = {world->default_diffuse_texture_view, world->default_roughness_texture_view,
+																												world->default_metallic_texture_view, world->default_normal_texture_view};
 					if (material && material->diffuse_texture_index < model->texture_count) {
 						texture_views[0] = model->textures[material->diffuse_texture_index].texture_view;
 					}
-					// if (material && material->roughness_texture_index < model->texture_count) {
-					// 	texture_views[1] = model->textures[material->roughness_texture_index].texture_view;
-					// }
-					// if (material && material->metallic_texture_index < model->texture_count) {
-					// 	texture_views[2] = model->textures[material->metallic_texture_index].texture_view;
-					// }
+					if (material && material->roughness_texture_index < model->texture_count) {
+						texture_views[1] = model->textures[material->roughness_texture_index].texture_view;
+					}
+					if (material && material->metallic_texture_index < model->texture_count) {
+						texture_views[2] = model->textures[material->metallic_texture_index].texture_view;
+					}
 					if (material && material->normal_texture_index < model->texture_count) {
 						texture_views[3] = model->textures[material->normal_texture_index].texture_view;
 					}

@@ -36,7 +36,7 @@ rem set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
 set compile_editor_cmd=start /b cmd /c "cl ..\src\editor.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% > compiler_output\editor.txt"
 set compile_game_cmd=start /b cmd /c "cl ..\src\game.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% > compiler_output\game.txt"
 set compile_import_cmd=start /b cmd /c "cl ..\src\import.cpp %cflags% %dirs% %windows_libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
-set compile_ray_tracer_cmd=start /b cmd /c "cl ..\src\ray_tracer.cpp %cflags% /O2 %dirs% %windows_libs% > compiler_output\ray_tracer.txt"
+set compile_ray_tracer_cmd=start /b cmd /c "cl ..\src\ray_tracer.cpp %cflags% %dirs% %windows_libs% > compiler_output\ray_tracer.txt"
 set compile_test_cmd=start /b cmd /c "cl ..\src\test.cpp %cflags% %dirs% %windows_libs% simple.ispc.obj > compiler_output\test.txt"
 
 if "%~2"=="clang" (

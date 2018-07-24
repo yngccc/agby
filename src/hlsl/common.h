@@ -49,8 +49,8 @@ float3 cook_torrance_brdf(float3 wi, float3 wo, float3 normal, float3 diffuse, f
 		fresnel = f0 + (float3(1, 1, 1) - f0) * pow(1 - cos_theta, 5);		
 	}
 
-	float3 kd = (float3(1, 1, 1) - fresnel) * (1 - metallic);
-	float3 fd = kd * diffuse / PI;
+	// float3 kd = (float3(1, 1, 1) - fresnel) * (1 - metallic);
+	float3 fd = diffuse / PI;
   float3 fs = (ggx_distribution * ggx_geometry * fresnel) / max(4 * n_dot_wo * n_dot_wi, 0.001);  
 
 	return (fd + fs) * n_dot_wi;

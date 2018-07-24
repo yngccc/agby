@@ -202,7 +202,7 @@ vec3 trace(scene *scene, rng *rng, ray ray, uint32 depth) {
 				reflect_ray.origin = hit.point;
 				reflect_ray.dir = refracted;
 				reflect_ray.len = scene->camera.zfar;
-				return trace(scene, rng, reflect_ray, depth + 1);
+				return trace(scene, rng, reflect_ray, depth + 1) * hit.material->color;
 			}
 		}
 		else {

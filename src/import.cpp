@@ -434,8 +434,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			gpk_model_materials[i].diffuse_factor = {1.0f, 1.0f, 1.0f, 1.0f};
 			gpk_model_materials[i].metallic_image_index = UINT32_MAX;
 			gpk_model_materials[i].roughness_image_index = UINT32_MAX;
-			gpk_model_materials[i].metallic_factor = 0.0f;
-			gpk_model_materials[i].roughness_factor = 0.0f;
+			gpk_model_materials[i].metallic_factor = 1.0f;
+			gpk_model_materials[i].roughness_factor = 1.0f;
 			gpk_model_materials[i].normal_image_index = UINT32_MAX;
 		}
 		for (uint32 i = 0; i < gpk_model.material_count; i += 1) {
@@ -1052,7 +1052,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 	flush_file_mapping(gpk_file_mapping);
 	close_file_mapping(gpk_file_mapping);
 	
-	printf("done importing gltf: \"%s\" %d\n", gltf_file.c_str(), current_offset);
+	printf("done importing gltf: \"%s\" %s\n", gltf_file.c_str(), pretty_print_bytes(current_offset).data());
 }
 
 void gltf_to_vertices(std::string gltf_file, std::string text_file) {
