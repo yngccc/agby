@@ -9,9 +9,9 @@
 
 #include <atomic>
 
-const uint32 image_width = 1600;
-const uint32 image_height = 900;
-const uint32 sample_count = 32;
+const uint32 image_width = 960;
+const uint32 image_height = 540;
+const uint32 sample_count = 64;
 const uint32 depth_count = 4;
 vec3 *image = new vec3[image_width * image_height]();
 
@@ -63,10 +63,10 @@ void initialize_scene(scene *scene) {
 	scene->floor.material.color = {0.5f, 0.5f, 0.5f};
 
 	const uint32 sphere_count = 4;
-	vec3 sphere_positions[sphere_count] = {{0, 8, 0}, {-5, 2, 0}, {5, 2, 0}, {3, 2, 7}};
-	material sphere_materials[sphere_count] = {{material_emissive, {8.0f, 8.0f, 8.0f}},
-																						 {material_metal, {0, 0.6f, 0}},
-																						 {material_diffuse, {0.6f, 0.6f, 0.6f}},
+	vec3 sphere_positions[sphere_count] = {{0, 8, 0}, {-5, 2, 0}, {5, 2, 0}, {2.5f, 2, 7}};
+	material sphere_materials[sphere_count] = {{material_emissive, {10.0f, 10.0f, 10.0f}},
+																						 {material_metal, {0.105f, 0.921f, 0.0f}},
+																						 {material_diffuse, {0.121f, 0.533f, 1.0f}},
 																						 {material_dielectric, {0.8f, 0.8f, 0.8f}, 1.3f}};
 	scene->spheres = new scene_sphere[sphere_count];
 	scene->sphere_count = sphere_count;
@@ -75,7 +75,7 @@ void initialize_scene(scene *scene) {
 		scene->spheres[i].material = sphere_materials[i];
 	}
 
-	scene->camera.position = {0, 10, 30};
+	scene->camera.position = {0, 10, 20};
 	scene->camera.view = vec3_normalize(-scene->camera.position);
 	scene->camera.aspect = (float)image_width / (float)image_height;
 	scene->camera.fovy = hfov_to_vfov(degree_to_radian(80), scene->camera.aspect);
@@ -146,24 +146,28 @@ vec3 trace(scene *scene, rng *rng, ray ray, uint32 depth) {
 		if (hit.material->type == material_emissive) {
 			return hit.material->color;
 		}
-		else if (hit.material->type == material_diffuse) {
-			vec3 color_accumulate = {0, 0, 0};
+		else if (hit.material->type == material_diffuse || hit.material->type == material_metal) {
+			vec3 diffuse_color = {0, 0, 0};
 			struct ray random_rays[sample_count];
 			for (uint32 i = 0; i < m_countof(random_rays); i += 1) {
 				random_rays[i].origin = hit.point;
 				random_rays[i].dir = cosine_sample_hemisphere(rng->gen(), rng->gen());
 				random_rays[i].dir = quat_from_between({0, 1, 0}, hit.normal) * random_rays[i].dir;
 				random_rays[i].len = scene->camera.zfar;
-				color_accumulate += trace(scene, rng, random_rays[i], depth + 1) * hit.material->color * vec3_dot(hit.normal, random_rays[i].dir) / (float)M_PI;
+				diffuse_color += trace(scene, rng, random_rays[i], depth + 1) * hit.material->color * vec3_dot(hit.normal, random_rays[i].dir) / (float)M_PI;
 			}
-			return color_accumulate / m_countof(random_rays);
-		}
-		else if (hit.material->type == material_metal) {
-			struct ray reflect_ray;
-			reflect_ray.origin = hit.point;
-			reflect_ray.dir = reflect(ray.dir, hit.normal);
-			reflect_ray.len = scene->camera.zfar;
-			return trace(scene, rng, reflect_ray, depth + 1) * hit.material->color * vec3_dot(hit.normal, reflect_ray.dir);
+			diffuse_color /= m_countof(random_rays);
+			if (hit.material->type == material_diffuse) {
+				return diffuse_color;
+			}
+			else {
+				struct ray reflect_ray;
+				reflect_ray.origin = hit.point;
+				reflect_ray.dir = reflect(ray.dir, hit.normal);
+				reflect_ray.len = scene->camera.zfar;
+				vec3 reflect_color = trace(scene, rng, reflect_ray, depth + 1) * vec3_dot(hit.normal, reflect_ray.dir);
+				return diffuse_color * 0.4f + reflect_color * 0.6f;
+			}
 		}
 		else if (hit.material->type == material_dielectric) {
 			float r_dot_n = vec3_dot(ray.dir, hit.normal);
@@ -195,14 +199,14 @@ vec3 trace(scene *scene, rng *rng, ray ray, uint32 depth) {
 				reflect_ray.origin = hit.point;
 				reflect_ray.dir = reflect(ray.dir, hit.normal);
 				reflect_ray.len = scene->camera.zfar;
-				return trace(scene, rng, reflect_ray, depth + 1) * hit.material->color * vec3_dot(hit.normal, reflect_ray.dir);
+				return trace(scene, rng, reflect_ray, depth + 1) * vec3_dot(hit.normal, reflect_ray.dir);
 			}
 			else {
-				struct ray reflect_ray;
-				reflect_ray.origin = hit.point;
-				reflect_ray.dir = refracted;
-				reflect_ray.len = scene->camera.zfar;
-				return trace(scene, rng, reflect_ray, depth + 1) * hit.material->color;
+				struct ray refract_ray;
+				refract_ray.origin = hit.point;
+				refract_ray.dir = refracted;
+				refract_ray.len = scene->camera.zfar;
+				return trace(scene, rng, refract_ray, depth + 1);
 			}
 		}
 		else {

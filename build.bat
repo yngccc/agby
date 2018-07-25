@@ -20,11 +20,16 @@ echo compiling flatbuffers...
 del ..\src\flatbuffers\world_generated.h 2>nul
 ..\vendor\bin\flatc.exe --cpp -o ..\src\flatbuffers\ ..\src\flatbuffers\world.fbs
 
+copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >nul
+copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >nul
+
+if "%~1"=="prebuild_only" goto :end
+
 rmdir /s /q compiler_output 2>nul
 mkdir compiler_output
 
 echo compiling cpp...
-set cflags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3 /WX
+set cflags=/nologo /O2 /MD /EHsc /GS /sdl /FC /W3 /WX
 if "%~2"=="clang" (
   set cflags=%cflags% -Wno-missing-braces -Wno-microsoft-include -mssse3
 )
@@ -114,12 +119,5 @@ if "%compile_test%"=="true" (
 	type compiler_output\test.txt
 )
 
-copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >nul
-copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >nul
-
-if not exist assets mkdir assets
-if not exist assets\models mkdir assets\models
-if not exist assets\skyboxes mkdir assets\skyboxes
-if not exist assets\terrains mkdir assets\terrains
-
+:end
 popd
