@@ -48,7 +48,6 @@ LRESULT handle_window_message(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			set_window_title(window, "%dx%d", window->width, window->height);
 			resize_d3d_swap_chain(d3d, window->width, window->height);
 			ImGui::GetIO().DisplaySize = {(float)d3d->swap_chain_desc.Width, (float)d3d->swap_chain_desc.Height};
-			ImGui::GetIO().FontGlobalScale = (float)d3d->swap_chain_desc.Width / (float)GetSystemMetrics(SM_CXSCREEN);
 			ImGuizmo::SetRect(0, 0, (float)d3d->swap_chain_desc.Width, (float)d3d->swap_chain_desc.Height);
 		} break;
 		case WM_SHOWWINDOW : {
@@ -282,7 +281,6 @@ void initialize_editor(editor *editor, d3d *d3d) {
 			ImGui::GetIO().IniFilename = nullptr;
 
 			ImGui::GetIO().DisplaySize = {(float)d3d->swap_chain_desc.Width, (float)d3d->swap_chain_desc.Height};
-			ImGui::GetIO().FontGlobalScale = (float)d3d->swap_chain_desc.Width / (float)GetSystemMetrics(SM_CXSCREEN);
 			ImGuizmo::SetRect(0, 0, (float)d3d->swap_chain_desc.Width, (float)d3d->swap_chain_desc.Height);
 		}
 		{
@@ -906,32 +904,33 @@ void top_menu(editor *editor, world *world, d3d *d3d) {
 }
 
 void bottom_menu(editor *editor) {
-	ImGui::SetNextWindowPos(ImVec2{0, ImGui::GetIO().DisplaySize.y - editor->top_menu_bar_height * 1.5f});
-	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x, editor->top_menu_bar_height * 1.5f});
+	float menu_height = editor->top_menu_bar_height * 1.5f;
+	ImGui::SetNextWindowPos(ImVec2{0, ImGui::GetIO().DisplaySize.y - menu_height});
+	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x, menu_height});
 	ImGui::PushID("bottom_menu_bar");
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, editor->top_menu_bar_color);
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 	if (ImGui::Begin("##bottom_menu_bar", nullptr, flags)) {
 		ImGui::Dummy({ImGui::GetIO().DisplaySize.x / 2, 1});
 		ImGui::SameLine();
-		float size = ImGui::GetWindowHeight() / 8 * 6;
-		float padding = ImGui::GetWindowHeight() / 8;
+		float image_size = menu_height * 0.8f;
+		float image_padding = menu_height * 0.1f;
 		ImVec4 button_hovered_color = ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered);
 		ImGui::PushStyleColor(ImGuiCol_Button, {0.8f, 0.8f, 0.8f, 1});
 		auto render_tool_button = [&](tool_type type, ID3D11ShaderResourceView *texture_view) {
 			ImGui::SameLine();
 			if (editor->tool_type == type) {
 				ImGui::PushStyleColor(ImGuiCol_Button, button_hovered_color);
-				if (ImGui::ImageButton((ImTextureID)texture_view, {size, size}, {0, 0},  {1, 1}, (int32)padding)) {
+				if (ImGui::ImageButton((ImTextureID)texture_view, {image_size, image_size}, {0, 0},  {1, 1}, (int32)image_padding)) {
 					editor->tool_type = type;
 				}
 				ImGui::PopStyleColor();
 			}
 			else {
-				if (ImGui::ImageButton((ImTextureID)texture_view, {size, size}, {0, 0},  {1, 1}, (int32)padding)) {
+				if (ImGui::ImageButton((ImTextureID)texture_view, {image_size, image_size}, {0, 0},  {1, 1}, (int32)image_padding)) {
 					editor->tool_type = type;
 				}
 			}
