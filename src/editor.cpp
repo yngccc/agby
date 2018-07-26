@@ -889,7 +889,7 @@ void top_menu(editor *editor, world *world, d3d *d3d) {
 			ImGui::PushID("camera");
 			if (ImGui::BeginMenu("Camera")) {
 				ImGui::SliderFloat("Move Speed", &editor->camera_move_speed, 0, 100);
-				ImGui::SliderFloat("Rotate Speed", &editor->camera_rotate_speed, 0, 1);
+				ImGui::SliderFloat("Rotate Speed", &editor->camera_rotate_speed, 0, 3);
 				ImGui::EndMenu();
 			}
 			ImGui::PopID();
@@ -1232,10 +1232,10 @@ void edit_window_skybox_tab(editor *editor, world *world, d3d *d3d) {
 }
 
 void edit_window(editor *editor, world *world, d3d *d3d) {
-	ImGui::SetNextWindowPos(ImVec2{0, editor->top_menu_bar_height}, ImGuiCond_Once);
-	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.4f}, ImGuiCond_Once);
+	ImGui::SetNextWindowPos(ImVec2{0, editor->top_menu_bar_height}, ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.3f, ImGui::GetIO().DisplaySize.y * 0.5f}, ImGuiCond_Always);
 	ImGui::PushID("edit_window");
-	if (ImGui::Begin("Edit", nullptr, ImGuiWindowFlags_NoCollapse)) {
+	if (ImGui::Begin("Edit", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 		editor->edit_window_pos = ImGui::GetWindowPos();
 		editor->edit_window_size = ImGui::GetWindowSize();
 		ImGui::BeginTabBar("edit_window_tab_type", ImGuiTabBarFlags_NoReorder);
@@ -1275,10 +1275,10 @@ void edit_window(editor *editor, world *world, d3d *d3d) {
 }
 
 void memories_window(editor *editor, world *world, d3d *d3d) {
-	ImGui::SetNextWindowPos(ImVec2{0, editor->edit_window_pos.y + editor->edit_window_size.y}, ImGuiCond_Once);
-	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.2f}, ImGuiCond_Once);
+	ImGui::SetNextWindowPos(ImVec2{0, editor->edit_window_pos.y + editor->edit_window_size.y}, ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.3f, ImGui::GetIO().DisplaySize.y * 0.2f}, ImGuiCond_Always);
 	ImGui::PushID("memory_usage_window");
-	if (ImGui::Begin("Memory Usage", nullptr, ImGuiWindowFlags_NoCollapse)) {
+	if (ImGui::Begin("Memory Usage", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 		editor->memory_window_pos = ImGui::GetWindowPos();
 		editor->memory_window_size = ImGui::GetWindowSize();
 		auto imgui_render_memory = [](uint64 memory_size, uint64 memory_capacity, const char *memory_name) {
