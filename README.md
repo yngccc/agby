@@ -1,5 +1,3 @@
-Project I use to learn 3D rendering.
-
 ## Build and Setup
 
 * Visual Studio 2017 solution included, older versions not tested yet.

@@ -821,6 +821,25 @@ bool add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 	return true;
 }
 
+bool remove_terrain(world *world, uint32 index) {
+	if (index < world->terrain_count) {
+		terrain *terrain = &world->terrains[index];
+		terrain->height_texture->Release();
+		terrain->height_texture_view->Release();
+		delete terrain->bt_terrain_shape;
+		delete terrain->bt_terrain_collision_object;
+		terrain->diffuse_texture->Release();
+		terrain->diffuse_texture_view->Release();
+		terrain->vertex_buffer->Release();
+		terrain->index_buffer->Release();
+		array_remove(world->terrains, &world->terrain_count, index);
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
 bool add_skybox(world *world, d3d *d3d, const char *skybox_file) {
 	file_mapping skybox_file_mapping = {};
 	if (!open_file_mapping(skybox_file, &skybox_file_mapping, true)) {

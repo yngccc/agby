@@ -286,7 +286,7 @@ void initialize_editor(editor *editor, d3d *d3d) {
 		{
 			uint8 *texture;
 			int32 texture_width, texture_height;
-			m_assert(ImGui::GetIO().Fonts->AddFontFromFileTTF("assets/fonts/OpenSans-Regular.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 100), "");
+			m_assert(ImGui::GetIO().Fonts->AddFontFromFileTTF("assets/fonts/OpenSans-Regular.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 128), "");
 			ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&texture, &texture_width, &texture_height);
 			D3D11_TEXTURE2D_DESC texture_desc = {};
 			texture_desc.Width = texture_width;
@@ -1195,6 +1195,12 @@ void edit_window_terrain_tab(editor *editor, world *world, d3d *d3d) {
 		}
 		ImGui::EndCombo();
 	}
+	if (terrain) {
+		if (ImGui::Button("Delete")) {
+			remove_terrain(world, world->terrain_index);
+			world->terrain_index = UINT32_MAX;
+		}
+	}
 	ImGui::PopID();
 }
 
@@ -1233,7 +1239,7 @@ void edit_window_skybox_tab(editor *editor, world *world, d3d *d3d) {
 
 void edit_window(editor *editor, world *world, d3d *d3d) {
 	ImGui::SetNextWindowPos(ImVec2{0, editor->top_menu_bar_height}, ImGuiCond_Always);
-	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.3f, ImGui::GetIO().DisplaySize.y * 0.5f}, ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.25f, ImGui::GetIO().DisplaySize.y * 0.5f}, ImGuiCond_Always);
 	ImGui::PushID("edit_window");
 	if (ImGui::Begin("Edit", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 		editor->edit_window_pos = ImGui::GetWindowPos();
@@ -1276,7 +1282,7 @@ void edit_window(editor *editor, world *world, d3d *d3d) {
 
 void memories_window(editor *editor, world *world, d3d *d3d) {
 	ImGui::SetNextWindowPos(ImVec2{0, editor->edit_window_pos.y + editor->edit_window_size.y}, ImGuiCond_Always);
-	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.3f, ImGui::GetIO().DisplaySize.y * 0.2f}, ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2{ImGui::GetIO().DisplaySize.x * 0.25f, ImGui::GetIO().DisplaySize.y * 0.2f}, ImGuiCond_Always);
 	ImGui::PushID("memory_usage_window");
 	if (ImGui::Begin("Memory Usage", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 		editor->memory_window_pos = ImGui::GetWindowPos();
