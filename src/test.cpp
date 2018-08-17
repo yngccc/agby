@@ -153,6 +153,21 @@ int main(int argc, char **argv) {
 		}
 	}
   m_test(collision) {
+		m_case(ray_hit_sphere) {
+			float h;
+			sphere s = {{0, 0, 0}, 1};
+			ray r1 = {{0, 0, 0}, {0, 1, 0}, 0.9f};
+			ray r2 = {{0, 0, 0}, {0, 1, 0}, 1.1f};
+			ray r3 = {{0, 2, 0}, {0, -1, 0}, 1};
+			ray r4 = {{0, 2, 0}, {0, 1, 0}, 1};
+			ray r5 = {{0, 2, 0}, {1, 0, 0}, 1};
+
+			m_assert(!ray_hit_sphere(r1, s, &h));
+			m_assert(ray_hit_sphere(r2, s, &h));
+			m_assert(ray_hit_sphere(r3, s, &h));
+			m_assert(!ray_hit_sphere(r4, s, &h));
+			m_assert(!ray_hit_sphere(r5, s, &h));
+		}
     m_case(ray_hit_triangle) {
       vec3 a = {-1, -1, 0};
       vec3 b = {1, -1, 0};
@@ -161,9 +176,9 @@ int main(int argc, char **argv) {
       ray.origin = {0, 0, 1};
       ray.dir = {0, 0, -1};
       ray.len = 10;
-      vec3 hit_point = {};
-      bool hit = ray_hit_triangle(ray, a, b, c, nullptr, &hit_point);
-      m_assert(hit);
+			float h;
+      vec3 hp = {};
+      m_assert(ray_hit_triangle(ray, a, b, c, &h, &hp));
     }
   }
   m_test(simd) {

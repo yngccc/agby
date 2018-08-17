@@ -645,14 +645,14 @@ struct window {
 	int32 raw_mouse_dy;
 };
 
-void initialize_window(window *window, LRESULT (*message_handle_func)(HWND, UINT, WPARAM, LPARAM)) {
+void initialize_window(window *window, int32 width, int32 height, LRESULT (*window_message_callback)(HWND, UINT, WPARAM, LPARAM)) {
 	*window = {};
 
 	SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE);
 	HMODULE instance_handle = GetModuleHandle(nullptr);
 	WNDCLASSA window_class = {};
 	window_class.style = CS_HREDRAW | CS_VREDRAW;
-	window_class.lpfnWndProc = message_handle_func;
+	window_class.lpfnWndProc = window_message_callback;
 	window_class.hInstance = instance_handle;
 	window_class.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
 	window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -660,14 +660,12 @@ void initialize_window(window *window, LRESULT (*message_handle_func)(HWND, UINT
 	window_class.lpszClassName = "agby_window_class";
 	m_assert(RegisterClassA(&window_class), "");
 
-	int32 window_x = (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.15f);
-	int32 window_y = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.15f);
-	int32 window_width = (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.7f);
-	int32 window_height = (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.7f);
+	int32 window_x = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
+	int32 window_y = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
 	DWORD window_style = WS_OVERLAPPEDWINDOW;
 	char window_title[128];
-	snprintf(window_title, sizeof(window_title), "%dx%d", window_width, window_height);
-	HWND window_handle = CreateWindowExA(0, window_class.lpszClassName, window_title, window_style, window_x, window_y, window_width, window_height, nullptr, nullptr, instance_handle, window);
+	snprintf(window_title, sizeof(window_title), "%dx%d", width, height);
+	HWND window_handle = CreateWindowExA(0, window_class.lpszClassName, window_title, window_style, window_x, window_y, width, height, nullptr, nullptr, instance_handle, window);
 	m_assert(window_handle, "");
 
 	RAWINPUTDEVICE raw_input_device;
@@ -680,8 +678,8 @@ void initialize_window(window *window, LRESULT (*message_handle_func)(HWND, UINT
 	*window = {};
 	window->handle = window_handle;
 	window->placement = {sizeof(WINDOWPLACEMENT)};
-	window->width = window_width;
-	window->height = window_height;
+	window->width = width;
+	window->height = height;
 };
 
 void show_window(window *window) {

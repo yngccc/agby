@@ -254,8 +254,9 @@ union quat {
 	quat operator-() const { return quat{-x, -y, -z, -w}; }
 	quat operator*(float d) const { return quat{x * d, y * d, z * d, w * d}; }
 	vec3 operator*(vec3 v) const {
-		mat3 mat3_from_rotate(quat);
-		return mat3_from_rotate(*this) * v;
+		vec3 vec3_cross(vec3 v1, vec3 v2);
+		vec3 t = vec3_cross(vec3{x, y, z}, v) * 2;
+		return v + t * w + vec3_cross(vec3{x, y, z}, t);
 	}
 	quat operator*(quat q) const {
 		quat result = {
@@ -1034,118 +1035,49 @@ aabb aabb_expand(aabb bound1, aabb bound2) {
 	return bound;
 }
 
-bool ray_hit_plane(ray ray, plane plane, float *hit = nullptr, vec3 *hit_point = nullptr) {
+bool ray_hit_plane(ray ray, plane plane, float *hit) {
 	float t = (plane.distance - vec3_dot(plane.normal, ray.origin)) / vec3_dot(plane.normal, ray.dir * ray.len);
-	if (t >= 0 && t <= 1) {
-		if (hit) {
-			*hit = t;
-		}
-		if (hit_point) {
-			*hit_point = ray.origin + ray.dir * ray.len * t;
-		}
-		return true;
+	if (t < 0 && t > 1) {
+		return false;
 	}
 	else {
-		return false;
+		*hit = t * ray.len;
+		return true;
 	}
 }
 
-bool ray_hit_sphere(ray ray, sphere sphere, float *hit = nullptr, vec3 *hit_point = nullptr) {
-	vec3 m = ray.origin - sphere.center;
-	float b = vec3_dot(m, ray.dir);
-	float c = vec3_dot(m, m) - sphere.radius * sphere.radius;
-	if (b > 0 && c > 0) {
-		return false;
-	}
-	float discr = b * b - c;
+bool ray_hit_sphere(ray ray, sphere sphere, float *hit) {
+	float t0, t1;
+	vec3 l = ray.origin - sphere.center; 
+	float a = ray.len * ray.len;
+	float b = 2 * vec3_dot(ray.dir * ray.len, l);
+	float c = vec3_dot(l, l) - sphere.radius * sphere.radius;
+	float discr = b * b - 4 * a * c; 
 	if (discr < 0) {
 		return false;
 	}
-	float d = -b - sqrtf(discr);
-	d = d < 0 ? 0 : d;
-	if (hit) {
-		*hit = d / ray.len;
+	else if (discr == 0) {
+		t0 = t1 = -0.5f * b / a;
 	}
-	if (hit_point) {
-		*hit_point = ray.origin + ray.dir * d;
+	else {
+		float q = (b > 0) ? -0.5f * (b + sqrtf(discr)) : -0.5f * (b - sqrtf(discr)); 
+		t0 = q / a; 
+		t1 = c / q; 
+	} 
+	if (t0 > t1) {
+		std::swap(t0, t1);
 	}
-	return true;
-}
-
-bool ray_hit_capsule(ray ray, capsule capsule, vec3 *hit = nullptr) {
-	vec3 sa = ray.origin;
-	vec3 sb = ray.origin + ray.dir * ray.len;
-	vec3 p = capsule.begin;
-	vec3 q = capsule.end;
-	float r = capsule.radius;
-
-	auto test_spheres = [&] {
-		return ray_hit_sphere(ray, {p, r}, nullptr, hit) || ray_hit_sphere(ray, {q, r}, nullptr, hit);
-	};
-
-	vec3 d = q - p, m = sa - p, n = sb - sa;
-  float md = vec3_dot(m, d);
-  float nd = vec3_dot(n, d);
-  float dd = vec3_dot(d, d);
-  if (md < 0 && md + nd < 0) {
-  	return test_spheres();
-  }
-  if (md > dd && md + nd > dd) {
-  	return test_spheres();
-  }
-  float t = 0;
-  float nn = vec3_dot(n, n);
-  float mn = vec3_dot(m, n);
-  float a = dd * nn - nd * nd;
-  float k = vec3_dot(m, m) - r * r;
-  float c = dd * k - md * md;
-  if (fabsf(a) < FLT_EPSILON) {
-    if (c > 0) {
-    	return test_spheres();
-    }
-    if (md < 0) {
-	    t = -mn / nn;
-	  }
-    else if (md > dd) {
-    	t = (nd - mn) / nn;
-    }
-    else {
-	    t = 0;
-	  }
-  }
-  else {
-	  float b = dd * mn - nd * md;
-	  float discr = b * b - a * c;
-	  if (discr < 0) {
-		  return test_spheres();
+	if (t0 < 0) { 
+		t0 = t1;
+		if (t0 < 0 || t0 > 1) {
+			return false;
 		}
-	  t = (-b - sqrtf(discr)) / a;
-	  if (t < 0 || t > 1) {
-	  	return test_spheres();
-	  }
-	  if (md + t * nd < 0) {
-	    if (nd <= 0) {
-	    	return test_spheres();
-	    }
-	    t = -md / nd;
-	    if (k + 2 * t * (mn + t * nn) > 0) {
-	    	return test_spheres();
-	    }
-	  }
-	  else if (md + t * nd > dd) {
-	    if (nd >= 0) {
-	    	return test_spheres();
-	    }
-	    t = (dd - md) / nd;
-	    if (k + dd - 2 * md + t * (2 * (mn - nd) + t * nn) > 0) {
-	    	return test_spheres();
-	    }
-	  }
 	}
-	if (hit) {
-		*hit = ray.origin + ray.dir * ray.len * t;
+	else if (t0 > 1) {
+		return false;
 	}
-	return true;
+	*hit = t0 * ray.len;
+	return true; 
 }
 
 bool ray_hit_aabb(ray ray, aabb bound, vec3 *hit_a = nullptr, vec3 *hit_b = nullptr) {

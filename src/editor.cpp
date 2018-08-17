@@ -23,7 +23,7 @@ struct {
 	d3d *d3d;
 } window_message_channel = {};
 
-LRESULT handle_window_message(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = 0;
 	if (!window_message_channel.initialized) {
 		result = DefWindowProcA(hwnd, msg, wparam, lparam);
@@ -1446,9 +1446,14 @@ void tool_gizmo(editor *editor, world *world, d3d *d3d, window *window) {
 				ImGui::PopID();
 			}
 		}
-		if (tool_selected && cursor_inside_window(window) && ray_hit_plane(editor->camera_to_mouse_ray, plane{{0, 1, 0}, 0}, nullptr, &editor->terrain_brush_tool_position) &&
-				editor->terrain_brush_tool_position.x >= -half_width && editor->terrain_brush_tool_position.x <= half_width && editor->terrain_brush_tool_position.z >= -half_height && editor->terrain_brush_tool_position.z <= half_height) {
-			editor->terrain_brush_tool_active = true;
+		if (tool_selected && cursor_inside_window(window)) {
+			float t;
+			if (ray_hit_plane(editor->camera_to_mouse_ray, plane{{0, 1, 0}, 0}, &t)) {
+				vec3 p = editor->camera_to_mouse_ray.origin + editor->camera_to_mouse_ray.dir * t;
+				if (p.x >= -half_width && p.x <= half_width && p.z >= -half_height && p.z <= half_height) {
+					editor->terrain_brush_tool_active = true;
+				}
+			}
 		}
 		if (editor->terrain_brush_tool_active && ImGui::IsMouseDown(0) && !ImGui::GetIO().WantCaptureMouse) {
 			static double accumulate_frame_time = 0;
@@ -1609,7 +1614,7 @@ int main(int argc, char **argv) {
 	set_current_dir_to_exe_dir();
 
 	window *window = new struct window;
-	initialize_window(window, handle_window_message);
+	initialize_window(window, (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.75), (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.75), window_message_callback);
 	// set_window_fullscreen(window, true);
 
 	d3d *d3d = new struct d3d;

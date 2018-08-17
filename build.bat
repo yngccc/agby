@@ -9,8 +9,9 @@ pushd "%~dp0/build"
 echo compiling hlsl...
 rmdir /s /q hlsl 2>nul
 mkdir hlsl
-start /b forfiles /p ..\src\hlsl /m *.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_0 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.fxc @PATH >nul" >nul
-start /b forfiles /p ..\src\hlsl /m *.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_0 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.fxc @PATH >nul" >nul
+start /b forfiles /p ..\src\hlsl /m *.vps /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_0 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.fxc @PATH >nul" >nul
+start /b forfiles /p ..\src\hlsl /m *.vps /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_0 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.fxc @PATH >nul" >nul
+start /b forfiles /p ..\src\hlsl /m *.cs /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_0 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.cs.fxc @PATH >nul" >nul
 
 echo compiling ispc...
 del *.ispc.* 2>nul

@@ -5,14 +5,17 @@
 #include "common.cpp"
 #include "math.cpp"
 
-#include <tinyxml/tinyxml2.cpp>
-
 #include <atomic>
 
-const uint32 image_width = 960;
-const uint32 image_height = 540;
-const uint32 sample_count = 64;
-const uint32 depth_count = 4;
+#include <d3d11_1.h>
+#include <directxcolors.h>
+
+#include <tinyxml/tinyxml2.cpp>
+
+const uint32 image_width = 1280;
+const uint32 image_height = 720;
+const uint32 sample_count = 128;
+const uint32 bounce_count = 2;
 vec3 *image = new vec3[image_width * image_height]();
 
 struct rng {
@@ -40,7 +43,7 @@ struct material {
 	float refractive_index;
 };
 
-struct scene_floor {
+struct scene_plane {
 	plane plane;
 	material material;
 };
@@ -51,37 +54,165 @@ struct scene_sphere {
 };
 
 struct scene {
-	scene_floor floor;
-	scene_sphere *spheres;
-	uint32 sphere_count;
+	scene_plane planes[6];
+	scene_sphere spheres[5];
 	camera camera;
 };
 
+#define m_d3d_assert(d3d_call) { HRESULT hr = d3d_call; if (FAILED(hr)) { _com_error err(hr); const char *err_msg = err.ErrorMessage(); fatal("D3D Error:\n\nCode: %s\nError: %s\nFile: %s\nLine: %d", #d3d_call, err_msg, __FILE__, __LINE__); } }
+
+struct d3d {
+	ID3D11Device *device = nullptr;
+	ID3D11DeviceContext *context = nullptr;
+
+	IDXGISwapChain1 *swap_chain;
+	ID3D11Texture2D *swap_chain_back_buffer;
+	ID3D11RenderTargetView *swap_chain_render_target_view;
+	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc;
+	
+	ID3D11Texture2D *image;
+	ID3D11ShaderResourceView *image_shader_resource_view;
+	ID3D11UnorderedAccessView *image_unordered_access_view;
+
+	ID3D11ComputeShader *trace_cs;
+	ID3D11VertexShader *blit_framebuffer_vs;
+	ID3D11PixelShader *blit_framebuffer_ps;
+
+	ID3D11SamplerState *clamp_edge_sampler_state;
+};
+
+void init_d3d(d3d *d3d, window *window) {
+	*d3d = {};
+
+	ID3D11Device *device = nullptr;
+	ID3D11DeviceContext *device_context = nullptr;
+	IDXGIDevice *dxgi_device = nullptr;
+	IDXGIAdapter *adapter = nullptr;
+	IDXGIFactory1 *dxgi_factory = nullptr;
+	IDXGIFactory2 *dxgi_factory_2 = nullptr;
+
+	m_scope_exit(if (dxgi_device) dxgi_device->Release();
+							 if (adapter) adapter->Release();
+							 if (dxgi_factory) dxgi_factory->Release();
+							 if (dxgi_factory_2) dxgi_factory_2->Release());
+
+	uint32 create_device_flags = D3D11_CREATE_DEVICE_DEBUG;
+	D3D_FEATURE_LEVEL feature_levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
+
+	m_d3d_assert(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, create_device_flags, feature_levels, m_countof(feature_levels), D3D11_SDK_VERSION, &device, nullptr, &device_context));
+	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11Device1), (void**)(&d3d->device)));
+	m_d3d_assert(device_context->QueryInterface(__uuidof(ID3D11DeviceContext1), (void**)&d3d->context));
+	m_d3d_assert(device->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgi_device));
+	m_d3d_assert(dxgi_device->GetAdapter(&adapter));
+	m_d3d_assert(adapter->GetParent(__uuidof(IDXGIFactory1), (void**)&dxgi_factory));
+	m_d3d_assert(dxgi_factory->QueryInterface(__uuidof(IDXGIFactory2), (void**)&dxgi_factory_2));
+
+	ID3D11Debug *debug = nullptr;
+	ID3D11InfoQueue *info_queue = nullptr;
+ 
+	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11Debug), (void**)&debug));
+	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11InfoQueue), (void**)&info_queue));
+	m_d3d_assert(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true));
+	m_d3d_assert(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true));
+	m_d3d_assert(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, true));
+ 	
+	RECT window_rect;
+	GetClientRect(window->handle, &window_rect);
+	uint32 window_width = window_rect.right - window_rect.left;
+	uint32 window_height = window_rect.bottom - window_rect.top;	
+
+	d3d->swap_chain_desc = {};
+	d3d->swap_chain_desc.Width = window_width;
+	d3d->swap_chain_desc.Height = window_height;
+	d3d->swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	d3d->swap_chain_desc.SampleDesc.Count = 1;
+	d3d->swap_chain_desc.SampleDesc.Quality = 0;
+	d3d->swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	d3d->swap_chain_desc.BufferCount = 2;
+	d3d->swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	m_d3d_assert(dxgi_factory_2->CreateSwapChainForHwnd(device, window->handle, &d3d->swap_chain_desc, nullptr, nullptr, &d3d->swap_chain));
+
+	dxgi_factory->MakeWindowAssociation(window->handle, DXGI_MWA_NO_ALT_ENTER);
+
+	m_d3d_assert(d3d->swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)(&d3d->swap_chain_back_buffer)));
+	m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->swap_chain_back_buffer, nullptr, &d3d->swap_chain_render_target_view));
+
+	D3D11_TEXTURE2D_DESC texture_desc = {};
+	texture_desc.Width = image_width;
+	texture_desc.Height = image_height;
+	texture_desc.MipLevels = 1;
+	texture_desc.ArraySize = 1;
+	texture_desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	texture_desc.SampleDesc.Count = 1;
+	texture_desc.Usage = D3D11_USAGE_DEFAULT;
+	texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+	texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	texture_desc.MiscFlags = 0;
+	m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->image));
+	m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->image, nullptr, &d3d->image_shader_resource_view));
+	
+	D3D11_UNORDERED_ACCESS_VIEW_DESC unordered_access_view_desc = {};
+	unordered_access_view_desc.Format = texture_desc.Format;
+	unordered_access_view_desc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+	unordered_access_view_desc.Texture2D.MipSlice = 0;
+	m_d3d_assert(d3d->device->CreateUnorderedAccessView(d3d->image, &unordered_access_view_desc, &d3d->image_unordered_access_view));
+	
+	file_mapping shader_file_mapping;
+	m_assert(open_file_mapping("hlsl/trace.cs.fxc", &shader_file_mapping, true), "");
+	m_d3d_assert(d3d->device->CreateComputeShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->trace_cs));
+	close_file_mapping(shader_file_mapping);
+
+	m_assert(open_file_mapping("hlsl/blit_framebuffer.vs.fxc", &shader_file_mapping, true), "");
+	m_d3d_assert(d3d->device->CreateVertexShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->blit_framebuffer_vs));
+	close_file_mapping(shader_file_mapping);
+
+	m_assert(open_file_mapping("hlsl/blit_framebuffer.ps.fxc", &shader_file_mapping, true), "");
+	m_d3d_assert(d3d->device->CreatePixelShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->blit_framebuffer_ps));
+	close_file_mapping(shader_file_mapping);
+
+	D3D11_SAMPLER_DESC sampler_desc = {};
+	sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.AddressV	= D3D11_TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.AddressW	= D3D11_TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.MinLOD	= 0;
+	sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
+	sampler_desc.MipLODBias =	0;
+	sampler_desc.MaxAnisotropy	= 1;
+	sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+	m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->clamp_edge_sampler_state));
+}
+
 void initialize_scene(scene *scene) {
-	scene->floor.plane = plane{{0, 1, 0}, 0};
-	scene->floor.material.type = material_diffuse;
-	scene->floor.material.color = {0.5f, 0.5f, 0.5f};
+	scene->planes[0] = {plane{{0, 1, 0}, 0}, material{material_diffuse, {0.7f, 0.7f, 0.7f}}};
+	scene->planes[1] = {plane{{0, -1, 0}, -15}, material{material_diffuse, {0.7f, 0.7f, 0.7f}}};
+	scene->planes[2] = {plane{{0, 0, 1}, -5}, material{material_diffuse, {0.7f, 0.7f, 0.7f}}};
+	scene->planes[3] = {plane{{0, 0, -1}, -25}, material{material_diffuse, {0.7f, 0.7f, 0.7f}}};
+	scene->planes[4] = {plane{{1, 0, 0}, -9}, material{material_diffuse, {0.7f, 0, 0}}};
+	scene->planes[5] = {plane{{-1, 0, 0}, -9}, material{material_diffuse, {0, 0.7f, 0}}};
 
-	const uint32 sphere_count = 4;
-	vec3 sphere_positions[sphere_count] = {{0, 8, 0}, {-5, 2, 0}, {5, 2, 0}, {2.5f, 2, 7}};
-	material sphere_materials[sphere_count] = {{material_emissive, {10.0f, 10.0f, 10.0f}},
-																						 {material_metal, {0.105f, 0.921f, 0.0f}},
-																						 {material_diffuse, {0.121f, 0.533f, 1.0f}},
-																						 {material_dielectric, {0.8f, 0.8f, 0.8f}, 1.3f}};
-	scene->spheres = new scene_sphere[sphere_count];
-	scene->sphere_count = sphere_count;
-	for (uint32 i = 0; i < sphere_count; i += 1) {
-		scene->spheres[i].sphere = {sphere_positions[i], 2};
-		scene->spheres[i].material = sphere_materials[i];
-	}
-
-	scene->camera.position = {0, 10, 20};
-	scene->camera.view = vec3_normalize(-scene->camera.position);
+	scene->spheres[0] = {sphere{{0, 11, 0}, 2}, material{material_emissive, {10.0f, 10.0f, 10.0f}}};
+	scene->spheres[1] = {sphere{{-5, 2, 0}, 2}, material{material_metal, {0.75f, 0.75f, 0.75f}}};
+	scene->spheres[2] = {sphere{{-3, 2, 9}, 2}, material{material_diffuse, {0.9f, 0.9f, 0.05f}}};
+	scene->spheres[3] = {sphere{{5, 2, 0}, 2}, material{material_diffuse, {0.121f, 0.533f, 1.0f}}};
+	scene->spheres[4] = {sphere{{2, 2, 7}, 2}, material{material_metal, {0.75f, 0.75f, 0.75f}, 1.3f}};
+	
+	scene->camera.position = {0, 10, 22};
+	scene->camera.view = -vec3_normalize(scene->camera.position);
 	scene->camera.aspect = (float)image_width / (float)image_height;
 	scene->camera.fovy = hfov_to_vfov(degree_to_radian(80), scene->camera.aspect);
 	scene->camera.znear = 0.1f;
 	scene->camera.zfar = 100;
 }
+
+vec3 uniform_sample_sphere(rng *rng) {
+	vec3 p;
+	do {
+		p = vec3{rng->gen(), rng->gen(), rng->gen()} * 2 - vec3{1, 1, 1};
+	} while (vec3_len(p) >= 1);
+	return p;
+}
+
 
 struct ray_hit {
 	float t;
@@ -93,21 +224,21 @@ struct ray_hit {
 bool ray_first_hit(scene *scene, ray ray, ray_hit *hit) {
 	ray_hit ray_hits[8];
 	uint32 ray_hit_count = 0;
-	{
+	for (uint32 i = 0; i < m_countof(scene->planes); i += 1) {
 		float t;
-		vec3 point;
-		if (ray_hit_plane(ray, scene->floor.plane, &t, &point)) {
-			if (fabsf(vec3_len(point - ray.origin)) > 0.0001f) {
-				ray_hits[ray_hit_count++] = {t, point, {0, 1, 0}, &scene->floor.material};
+		if (ray_hit_plane(ray, scene->planes[i].plane, &t)) {
+			if (t > 0.0001f) {
+				vec3 p = ray.origin + ray.dir * t;
+				ray_hits[ray_hit_count++] = {t, p, scene->planes[i].plane.normal, &scene->planes[i].material};
 			}
 		}
 	}
-	for (uint32 i = 0; i < scene->sphere_count; i += 1) {
+	for (uint32 i = 0; i < m_countof(scene->spheres); i += 1) {
 		float t;
-		vec3 point;
-		if (ray_hit_sphere(ray, scene->spheres[i].sphere, &t, &point)) {
-			if (fabsf(vec3_len(point - ray.origin)) > 0.0001f) {
-				ray_hits[ray_hit_count++] = {t, point, vec3_normalize(point - scene->spheres[i].sphere.center), &scene->spheres[i].material};
+		if (ray_hit_sphere(ray, scene->spheres[i].sphere, &t)) {
+			if (t > 0.0001f) {
+				vec3 p = ray.origin + ray.dir * t;
+				ray_hits[ray_hit_count++] = {t, p, vec3_normalize(p - scene->spheres[i].sphere.center), &scene->spheres[i].material};
 			}
 		}
 	}
@@ -140,33 +271,35 @@ bool refract(vec3 view, vec3 normal, float ni_over_nt, vec3 *refracted) {
 	}
 }
 
-vec3 trace(scene *scene, rng *rng, ray ray, uint32 depth) {
+vec3 trace(scene *scene, rng *rng, ray ray, uint32 bounce) {
 	ray_hit hit;
-	if (depth <= depth_count && ray_first_hit(scene, ray, &hit)) {
+	if (bounce <= bounce_count && ray_first_hit(scene, ray, &hit)) {
 		if (hit.material->type == material_emissive) {
 			return hit.material->color;
 		}
-		else if (hit.material->type == material_diffuse || hit.material->type == material_metal) {
+		else if (hit.material->type == material_diffuse) {
 			vec3 diffuse_color = {0, 0, 0};
 			struct ray random_rays[sample_count];
 			for (uint32 i = 0; i < m_countof(random_rays); i += 1) {
 				random_rays[i].origin = hit.point;
-				random_rays[i].dir = cosine_sample_hemisphere(rng->gen(), rng->gen());
-				random_rays[i].dir = quat_from_between({0, 1, 0}, hit.normal) * random_rays[i].dir;
+				random_rays[i].dir = quat_from_between(vec3{0, 1, 0}, hit.normal) * cosine_sample_hemisphere(rng->gen(), rng->gen());
 				random_rays[i].len = scene->camera.zfar;
-				diffuse_color += trace(scene, rng, random_rays[i], depth + 1) * hit.material->color * vec3_dot(hit.normal, random_rays[i].dir) / (float)M_PI;
+				diffuse_color += trace(scene, rng, random_rays[i], bounce + 1) * hit.material->color * vec3_dot(hit.normal, random_rays[i].dir) / (float)M_PI;
 			}
 			diffuse_color /= m_countof(random_rays);
-			if (hit.material->type == material_diffuse) {
-				return diffuse_color;
+			return diffuse_color;
+		}
+		else if (hit.material->type == material_metal) {
+			struct ray reflect_ray;
+			reflect_ray.origin = hit.point;
+			reflect_ray.dir = reflect(ray.dir, hit.normal);
+			reflect_ray.len = scene->camera.zfar;
+			float dot = vec3_dot(hit.normal, reflect_ray.dir);
+			if (dot > 0) {
+				return trace(scene, rng, reflect_ray, bounce + 1) * dot * hit.material->color;
 			}
 			else {
-				struct ray reflect_ray;
-				reflect_ray.origin = hit.point;
-				reflect_ray.dir = reflect(ray.dir, hit.normal);
-				reflect_ray.len = scene->camera.zfar;
-				vec3 reflect_color = trace(scene, rng, reflect_ray, depth + 1) * vec3_dot(hit.normal, reflect_ray.dir);
-				return diffuse_color * 0.4f + reflect_color * 0.6f;
+				return {0, 0, 0};
 			}
 		}
 		else if (hit.material->type == material_dielectric) {
@@ -199,14 +332,14 @@ vec3 trace(scene *scene, rng *rng, ray ray, uint32 depth) {
 				reflect_ray.origin = hit.point;
 				reflect_ray.dir = reflect(ray.dir, hit.normal);
 				reflect_ray.len = scene->camera.zfar;
-				return trace(scene, rng, reflect_ray, depth + 1) * vec3_dot(hit.normal, reflect_ray.dir);
+				return trace(scene, rng, reflect_ray, bounce + 1) * vec3_dot(hit.normal, reflect_ray.dir);
 			}
 			else {
 				struct ray refract_ray;
 				refract_ray.origin = hit.point;
 				refract_ray.dir = refracted;
 				refract_ray.len = scene->camera.zfar;
-				return trace(scene, rng, refract_ray, depth + 1);
+				return trace(scene, rng, refract_ray, bounce + 1);
 			}
 		}
 		else {
@@ -246,7 +379,7 @@ DWORD thread_func(void *param) {
 		vec3 window_coord = {(float)x, (float)y, 0.5f};
 		vec3 unproj = mat4_unproject(window_coord, view_mat, proj_mat, view_port);
 		ray ray = {scene->camera.position, vec3_normalize(unproj - scene->camera.position), scene->camera.zfar};
-		image[image_width * y + x] = trace(scene, &rng, ray, 1);
+		image[image_width * y + x] = trace(scene, &rng, ray, 0);
 		uint32 progress_pixel_count = image_pixel_count / 20;
 		if (image_pixel_index % progress_pixel_count == 0) {
 			printf("%d..", image_pixel_index / progress_pixel_count * 5);
@@ -256,24 +389,51 @@ DWORD thread_func(void *param) {
 	return 0;
 }
 
+#define USE_GPU 1
+
+LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+	switch (msg) {
+		default: {
+			return DefWindowProcA(hwnd, msg, wparam, lparam);
+		} break;
+		case WM_CLOSE:
+		case WM_QUIT: {
+			ExitProcess(0);
+			return 0;
+		} break;
+	}
+}
+
 int main() {
 	set_current_dir_to_exe_dir();
+
+	window *window = new struct window;
+	initialize_window(window, image_width, image_height, window_message_callback);
+	show_window(window);
 	
 	scene *scene = new struct scene;
 	initialize_scene(scene);
 
+	d3d *d3d = new struct d3d;
+	init_d3d(d3d, window);
+	
+#if USE_GPU
+	// d3d->context->CSSetShader(d3d->trace_cs, nullptr, 0);
+	// d3d->context->CSSetUnorderedAccessViews(0, 1, &d3d->image_view, const UINT *pUAVInitialCounts);
+#else 
 	thread_param thread_param;
 	thread_param.scene = scene;
 	thread_param.counter = 0;
 
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
-	HANDLE *thread_handles = new HANDLE[sysinfo.dwNumberOfProcessors];
-	for (uint32 i = 0; i < sysinfo.dwNumberOfProcessors; i += 1) {
+	uint32 thread_count = sysinfo.dwNumberOfProcessors - 1;
+	HANDLE *thread_handles = new HANDLE[thread_count];
+	for (uint32 i = 0; i < thread_count; i += 1) {
 		thread_handles[i] = CreateThread(nullptr, 0, thread_func, &thread_param, 0, nullptr);
 		m_assert(thread_handles[i], "");
 	}
-	for (uint32 i = 0; i < sysinfo.dwNumberOfProcessors; i += 1) {
+	for (uint32 i = 0; i < thread_count; i += 1) {
 		WaitForSingleObject(thread_handles[i], INFINITE);
 	}
 
@@ -299,4 +459,29 @@ int main() {
 		}
 	}
 	rgba_image_to_bmp_file(bmp_image, image_width, image_height, "result.bmp");
+#endif
+
+	while (true) {
+		handle_window_messages(window);
+
+		D3D11_VIEWPORT viewport = {};
+		viewport.Width = (float)d3d->swap_chain_desc.Width;
+		viewport.Height = (float)d3d->swap_chain_desc.Height;
+		viewport.MinDepth = 0.0f;
+		viewport.MaxDepth = 1.0f;
+		d3d->context->RSSetViewports(1, &viewport);
+
+		d3d->context->ClearRenderTargetView(d3d->swap_chain_render_target_view, DirectX::Colors::Blue);
+		d3d->context->OMSetRenderTargets(1, &d3d->swap_chain_render_target_view, nullptr);
+
+		d3d->context->VSSetShader(d3d->blit_framebuffer_vs, nullptr, 0);
+		d3d->context->PSSetShader(d3d->blit_framebuffer_ps, nullptr, 0);
+		d3d->context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		d3d->context->RSSetState(nullptr);
+		d3d->context->PSSetShaderResources(0, 1, &d3d->image_shader_resource_view);
+		d3d->context->PSSetSamplers(0, 1, &d3d->clamp_edge_sampler_state);
+		d3d->context->Draw(3, 0);
+
+		m_d3d_assert(d3d->swap_chain->Present(0, 0));
+	}
 }

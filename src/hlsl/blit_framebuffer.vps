@@ -1,4 +1,4 @@
-Texture2D framebuffer_texture;
+Texture2D framebuffer_texture : register(t0);
 
 sampler texture_sampler : register(s0);
 

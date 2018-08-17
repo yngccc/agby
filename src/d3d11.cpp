@@ -18,6 +18,16 @@ XMMATRIX xmmatrix_transform(transform *transform) {
 	return XMMatrixTransformation(XMVectorSet(0, 0, 0, 0), XMQuaternionIdentity(), XMVectorSet(m_unpack3(transform->scale), 0), XMVectorSet(0, 0, 0, 0), XMVectorSet(m_unpack4(transform->rotate)), XMVectorSet(m_unpack3(transform->translate), 0));
 }
 
+struct d3d_swap_chain {
+	ID3D11Device1 *device;
+	ID3D11DeviceContext1 *context;
+
+	IDXGISwapChain1 *swap_chain;
+	ID3D11Texture2D *swap_chain_back_buffer;
+	ID3D11RenderTargetView *swap_chain_render_target_view;
+	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc;
+};
+
 struct d3d {
 	ID3D11Device1 *device;
 	ID3D11DeviceContext1 *context;

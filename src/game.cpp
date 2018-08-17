@@ -18,7 +18,7 @@ struct {
 	d3d *d3d;
 } window_message_channel = {};
 
-LRESULT handle_window_message(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = 0;
 	if (!window_message_channel.initialized) {
 		result = DefWindowProcA(hwnd, msg, wparam, lparam);
@@ -312,7 +312,7 @@ int main(int argc, char **argv) {
 	set_current_dir_to_exe_dir();
 	
 	window *window = new struct window;
-	initialize_window(window, handle_window_message);
+	initialize_window(window, (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.75), (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.75), window_message_callback);
 	// set_window_fullscreen(window, true);
 
 	d3d *d3d = new struct d3d;
