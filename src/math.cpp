@@ -153,12 +153,12 @@ union u16vec4 {
 	const uint16& operator[](uint32 i) const { return e[i]; }
 };
 
-union uvec4 {
+union u32vec4 {
 	struct { uint32 x, y, z, w; };
 	uint32 e[4];
 
-	bool operator==(uvec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
-	bool operator!=(uvec4 v) const { return !(*this == v); }
+	bool operator==(u32vec4 v) const { return (x == v.x) && (y == v.y) && (z == v.z) && (w == v.w); }
+	bool operator!=(u32vec4 v) const { return !(*this == v); }
 	uint32& operator[](uint32 i) { return e[i]; }
 	const uint32& operator[](uint32 i) const { return e[i]; }
 };

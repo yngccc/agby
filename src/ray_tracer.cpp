@@ -12,11 +12,75 @@
 
 #include <tinyxml/tinyxml2.cpp>
 
+#define USE_GPU 0
+
 const uint32 image_width = 1280;
 const uint32 image_height = 720;
-const uint32 sample_count = 128;
+const uint32 sample_count = 32;
 const uint32 bounce_count = 2;
-vec3 *image = new vec3[image_width * image_height]();
+vec4 *image = new vec4[image_width * image_height]();
+
+struct block_position {
+	uint32 x, y;
+};
+const uint32 block_width = 16;
+const uint32 block_height = 16;
+const uint32 block_pixel_count = block_width * block_height;
+const uint32 block_count = (image_width / block_width) * (image_height / block_height);
+const block_position *block_positions = [] {
+	uint32 block_first_pixel_x = image_width / 2 - block_width;
+	uint32 block_first_pixel_y = image_height / 2 - block_height;
+
+	block_position *positions = new block_position[block_count];
+	block_position current_position = {image_width / block_width / 2 * block_width, image_height / block_height / 2 * block_height};
+	positions[0] = current_position;
+	uint32 increment = 1;
+	uint32 direction = 0;
+	uint32 index = 1;
+						
+	auto update_current_position = [&] {
+		if (index >= block_count) {
+			return;
+		}
+		switch (direction) {
+		case 0: { // right
+			current_position.x += block_width;
+		} break;
+		case 1: { // down
+			current_position.y += block_height;
+		} break;
+		case 2: { // left
+			current_position.x -= block_width;
+		} break;
+		case 3: { // up
+			current_position.y -= block_height;
+		} break;
+		}
+		bool x_out_of_bound = current_position.x < 0 || current_position.x >= image_width;
+		bool y_out_of_bound = current_position.y < 0 || current_position.y >= image_height;
+		if (!x_out_of_bound && !y_out_of_bound) {
+			positions[index++] = current_position;
+		}
+	};
+							
+	while (index < block_count) {
+		for (uint32 i = 0; i < increment; i += 1) {
+			update_current_position();
+		}
+		direction = (direction + 1) % 4;
+		for (uint32 i = 0; i < increment; i += 1) {
+			update_current_position();
+		}
+		direction = (direction + 1) % 4;
+		increment += 1;
+	}
+	return positions;
+}();
+
+
+uint32 block_index = 0;
+std::atomic<uint32> block_pixel_index = 0;
+HANDLE block_pixel_semaphore = CreateSemaphoreA(nullptr, block_pixel_count, block_pixel_count, nullptr);
 
 struct rng {
 	uint32 rng_state;
@@ -144,18 +208,29 @@ void init_d3d(d3d *d3d, window *window) {
 	texture_desc.ArraySize = 1;
 	texture_desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 	texture_desc.SampleDesc.Count = 1;
+#if USE_GPU
 	texture_desc.Usage = D3D11_USAGE_DEFAULT;
 	texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+#else
+	texture_desc.Usage = D3D11_USAGE_DYNAMIC;
+	texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 	texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-	texture_desc.MiscFlags = 0;
-	m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->image));
+#endif
+
+	D3D11_SUBRESOURCE_DATA texture_subresource_data = {};
+	texture_subresource_data.pSysMem = image;
+	texture_subresource_data.SysMemPitch = image_width * sizeof(vec4);
+
+	m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &texture_subresource_data, &d3d->image));
 	m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->image, nullptr, &d3d->image_shader_resource_view));
 	
+#if USE_GPU
 	D3D11_UNORDERED_ACCESS_VIEW_DESC unordered_access_view_desc = {};
 	unordered_access_view_desc.Format = texture_desc.Format;
 	unordered_access_view_desc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
 	unordered_access_view_desc.Texture2D.MipSlice = 0;
 	m_d3d_assert(d3d->device->CreateUnorderedAccessView(d3d->image, &unordered_access_view_desc, &d3d->image_unordered_access_view));
+#endif
 	
 	file_mapping shader_file_mapping;
 	m_assert(open_file_mapping("hlsl/trace.cs.fxc", &shader_file_mapping, true), "");
@@ -204,15 +279,6 @@ void initialize_scene(scene *scene) {
 	scene->camera.znear = 0.1f;
 	scene->camera.zfar = 100;
 }
-
-vec3 uniform_sample_sphere(rng *rng) {
-	vec3 p;
-	do {
-		p = vec3{rng->gen(), rng->gen(), rng->gen()} * 2 - vec3{1, 1, 1};
-	} while (vec3_len(p) >= 1);
-	return p;
-}
-
 
 struct ray_hit {
 	float t;
@@ -354,7 +420,6 @@ vec3 trace(scene *scene, rng *rng, ray ray, uint32 bounce) {
 
 struct thread_param {
 	scene *scene;
-	std::atomic<uint32> counter;
 };
 
 DWORD thread_func(void *param) {
@@ -362,7 +427,6 @@ DWORD thread_func(void *param) {
 	rng.rng_state = 1;
 	
 	scene *scene = ((thread_param *)param)->scene;
-	std::atomic<uint32> *counter = &((thread_param *)param)->counter;
 
 	mat4 view_mat = camera_view_mat4(scene->camera);
 	mat4 proj_mat = camera_project_mat4(scene->camera);
@@ -370,26 +434,46 @@ DWORD thread_func(void *param) {
 	uint32 image_pixel_count = image_width * image_height;
 
 	while (true) {
-		uint32 image_pixel_index = std::atomic_fetch_add(counter, 1);
-		if (image_pixel_index >= image_pixel_count) {
-			break;
-		}
-		uint32 x = image_pixel_index % image_width; 
-		uint32 y = image_pixel_index / image_width;
-		vec3 window_coord = {(float)x, (float)y, 0.5f};
-		vec3 unproj = mat4_unproject(window_coord, view_mat, proj_mat, view_port);
-		ray ray = {scene->camera.position, vec3_normalize(unproj - scene->camera.position), scene->camera.zfar};
-		image[image_width * y + x] = trace(scene, &rng, ray, 0);
-		uint32 progress_pixel_count = image_pixel_count / 20;
-		if (image_pixel_index % progress_pixel_count == 0) {
-			printf("%d..", image_pixel_index / progress_pixel_count * 5);
+		uint32 pixel_index = block_pixel_index.load();
+		do {
+			if (pixel_index >= block_pixel_count) {
+				break;
+			}
+		} while (!block_pixel_index.compare_exchange_strong(pixel_index, pixel_index + 1));
+
+		if (pixel_index < block_pixel_count) {
+			uint32 x = block_positions[block_index].x + pixel_index % block_width;
+			uint32 y = block_positions[block_index].y + pixel_index / block_width;
+			vec3 window_coord = {(float)x, (float)(image_height - y), 0.5f};
+			vec3 unproj = mat4_unproject(window_coord, view_mat, proj_mat, view_port);
+			ray ray = {scene->camera.position, vec3_normalize(unproj - scene->camera.position), scene->camera.zfar};
+			vec3 color = trace(scene, &rng, ray, 0);
+			for (uint32 i = 0; i < 3; i += 1) {
+				color[i] = clamp(color[i], 0.0f, 1.0f);
+				// color[i] = clamp(1.055f * powf(color[i], 0.416666667f) - 0.055f, 0.0f, 1.0f);
+			}
+			image[image_width * y + x] = vec4{color.x, color.y, color.z, 0};
+			WaitForSingleObject(block_pixel_semaphore, INFINITE);
 		}
 	}
 
 	return 0;
 }
 
-#define USE_GPU 1
+bool current_block_done() {
+	if (block_index >= block_count) {
+		return false;
+	}
+	LONG previous_count = 0;
+	return ReleaseSemaphore(block_pixel_semaphore, block_pixel_count, &previous_count);
+}
+
+void next_block() {
+	block_index += 1;
+	if (block_index < block_count) {
+		block_pixel_index.store(0);
+	}
+}
 
 LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	switch (msg) {
@@ -423,7 +507,6 @@ int main() {
 #else 
 	thread_param thread_param;
 	thread_param.scene = scene;
-	thread_param.counter = 0;
 
 	SYSTEM_INFO sysinfo;
 	GetSystemInfo(&sysinfo);
@@ -433,55 +516,37 @@ int main() {
 		thread_handles[i] = CreateThread(nullptr, 0, thread_func, &thread_param, 0, nullptr);
 		m_assert(thread_handles[i], "");
 	}
-	for (uint32 i = 0; i < thread_count; i += 1) {
-		WaitForSingleObject(thread_handles[i], INFINITE);
-	}
-
-	for (uint32 i = 0; i < image_height; i += 1) {
-		for (uint32 j = 0; j < image_width; j += 1) {
-			vec3 *pixel = &image[image_width * i + j];
-			for (uint32 i = 0; i < 3; i += 1) {
-				(*pixel)[i] = clamp((*pixel)[i], 0.0f, 1.0f);
-				(*pixel)[i] = clamp(1.055f * powf((*pixel)[i], 0.416666667f) - 0.055f, 0.0f, 1.0f);
-			}
-		}
-	}
-
-	u8vec4 *bmp_image = new u8vec4[image_width * image_height];
-	for (uint32 i = 0; i < image_height; i += 1) {
-		for (uint32 j = 0; j < image_width; j += 1) {
-			vec3 *pixel = &image[image_width * i + j];
-			u8vec4 *bmp_pixel = &bmp_image[image_width * i + j];
-			bmp_pixel->x = uint8(255.99 * pixel->x);
-			bmp_pixel->y = uint8(255.99 * pixel->y);
-			bmp_pixel->z = uint8(255.99 * pixel->z);
-			bmp_pixel->w = 255;
-		}
-	}
-	rgba_image_to_bmp_file(bmp_image, image_width, image_height, "result.bmp");
 #endif
 
 	while (true) {
 		handle_window_messages(window);
+		if (current_block_done()) {
+			D3D11_MAPPED_SUBRESOURCE mapped_subresource = {};
+			m_d3d_assert(d3d->context->Map(d3d->image, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource));
+			memcpy(mapped_subresource.pData, image, image_width * image_height * sizeof(vec4));
+			d3d->context->Unmap(d3d->image, 0);
 
-		D3D11_VIEWPORT viewport = {};
-		viewport.Width = (float)d3d->swap_chain_desc.Width;
-		viewport.Height = (float)d3d->swap_chain_desc.Height;
-		viewport.MinDepth = 0.0f;
-		viewport.MaxDepth = 1.0f;
-		d3d->context->RSSetViewports(1, &viewport);
+			next_block();
+			
+			D3D11_VIEWPORT viewport = {};
+			viewport.Width = (float)d3d->swap_chain_desc.Width;
+			viewport.Height = (float)d3d->swap_chain_desc.Height;
+			viewport.MinDepth = 0.0f;
+			viewport.MaxDepth = 1.0f;
+			d3d->context->RSSetViewports(1, &viewport);
 
-		d3d->context->ClearRenderTargetView(d3d->swap_chain_render_target_view, DirectX::Colors::Blue);
-		d3d->context->OMSetRenderTargets(1, &d3d->swap_chain_render_target_view, nullptr);
+			d3d->context->ClearRenderTargetView(d3d->swap_chain_render_target_view, DirectX::Colors::Black);
+			d3d->context->OMSetRenderTargets(1, &d3d->swap_chain_render_target_view, nullptr);
 
-		d3d->context->VSSetShader(d3d->blit_framebuffer_vs, nullptr, 0);
-		d3d->context->PSSetShader(d3d->blit_framebuffer_ps, nullptr, 0);
-		d3d->context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		d3d->context->RSSetState(nullptr);
-		d3d->context->PSSetShaderResources(0, 1, &d3d->image_shader_resource_view);
-		d3d->context->PSSetSamplers(0, 1, &d3d->clamp_edge_sampler_state);
-		d3d->context->Draw(3, 0);
+			d3d->context->VSSetShader(d3d->blit_framebuffer_vs, nullptr, 0);
+			d3d->context->PSSetShader(d3d->blit_framebuffer_ps, nullptr, 0);
+			d3d->context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			d3d->context->RSSetState(nullptr);
+			d3d->context->PSSetShaderResources(0, 1, &d3d->image_shader_resource_view);
+			d3d->context->PSSetSamplers(0, 1, &d3d->clamp_edge_sampler_state);
+			d3d->context->Draw(3, 0);
 
-		m_d3d_assert(d3d->swap_chain->Present(0, 0));
+			m_d3d_assert(d3d->swap_chain->Present(0, 0));
+		}
 	}
 }

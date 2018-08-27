@@ -30,7 +30,7 @@ rmdir /s /q compiler_output 2>nul
 mkdir compiler_output
 
 echo compiling cpp...
-set cflags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3 /WX
+set cflags=/nologo /O2 /MD /EHsc /GS /sdl /FC /W3 /WX
 if "%~2"=="clang" (
   set cflags=%cflags% -Wno-missing-braces -Wno-microsoft-include -mssse3
 )
@@ -49,7 +49,7 @@ if "%~2"=="clang" (
   set compile_editor_cmd=start /b cmd /c "clang-cl ..\src\editor.cpp -o editor.clang.exe %cflags% %dir% %no_console% %windows_libs% > compiler_output\editor.txt"
   set compile_game_cmd=start /b cmd /c "clang-cl ..\src\game.cpp -o game.clang.exe %cflags% %dir% %no_console% %windows_libs% > compiler_output\game.txt"
   set compile_import_cmd=start /b cmd /c "clang-cl ..\src\import.cpp -o import.clang.exe %cflags% %dir% %windows_libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
-  set compile_ray_tracer_cmd=start /b cmd /c "clang-cl ..\src\ray_tracer.cpp /O2 -o ray_tracer.clang.exe %cflags% %dir% %windows_libs% > compiler_output\ray_tracer.txt"
+  set compile_ray_tracer_cmd=start /b cmd /c "clang-cl ..\src\ray_tracer.cpp -o ray_tracer.clang.exe %cflags% %dir% %windows_libs% > compiler_output\ray_tracer.txt"
   set compile_test_cmd=start /b cmd /c "clang-cl ..\src\test.cpp -o test.clang.exe %cflags% %dir% %windows_libs% simple.ispc.obj> compiler_output\test.txt"
 )
 
