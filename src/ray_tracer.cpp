@@ -12,7 +12,7 @@
 
 #include <tinyxml/tinyxml2.cpp>
 
-#define USE_GPU 0
+#define USE_GPU 1
 
 const uint32 image_width = 1280;
 const uint32 image_height = 720;
@@ -77,7 +77,6 @@ const block_position *block_positions = [] {
 	return positions;
 }();
 
-
 uint32 block_index = 0;
 std::atomic<uint32> block_pixel_index = 0;
 HANDLE block_pixel_semaphore = CreateSemaphoreA(nullptr, block_pixel_count, block_pixel_count, nullptr);
@@ -136,9 +135,15 @@ struct d3d {
 	
 	ID3D11Texture2D *image;
 	ID3D11ShaderResourceView *image_shader_resource_view;
-	ID3D11UnorderedAccessView *image_unordered_access_view;
 
+#if USE_GPU
+	ID3D11UnorderedAccessView *image_unordered_access_view;
+	ID3D11Buffer *info_buffer;
+	ID3D11Buffer *block_positions_buffer;
+	ID3D11ShaderResourceView *block_positions_buffer_resource_view;
 	ID3D11ComputeShader *trace_cs;
+#endif
+
 	ID3D11VertexShader *blit_framebuffer_vs;
 	ID3D11PixelShader *blit_framebuffer_ps;
 
@@ -230,12 +235,29 @@ void init_d3d(d3d *d3d, window *window) {
 	unordered_access_view_desc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
 	unordered_access_view_desc.Texture2D.MipSlice = 0;
 	m_d3d_assert(d3d->device->CreateUnorderedAccessView(d3d->image, &unordered_access_view_desc, &d3d->image_unordered_access_view));
+
+	D3D11_BUFFER_DESC buffer_desc = {};
+	D3D11_SUBRESOURCE_DATA buffer_subresource_data = {};
+
+	buffer_desc.ByteWidth = 256;
+	buffer_desc.Usage = D3D11_USAGE_DYNAMIC;
+	buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, nullptr, &d3d->info_buffer));
+
+	buffer_desc.ByteWidth = sizeof(struct block_position) * block_count;
+	buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
+	buffer_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	buffer_desc.CPUAccessFlags = 0;
+	buffer_desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	buffer_desc.StructureByteStride = sizeof(struct block_position);
+	buffer_subresource_data.pSysMem = block_positions;
+
+	m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &buffer_subresource_data, &d3d->block_positions_buffer));
+	m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->block_positions_buffer, nullptr, &d3d->block_positions_buffer_resource_view));
 #endif
 	
 	file_mapping shader_file_mapping;
-	m_assert(open_file_mapping("hlsl/trace.cs.fxc", &shader_file_mapping, true), "");
-	m_d3d_assert(d3d->device->CreateComputeShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->trace_cs));
-	close_file_mapping(shader_file_mapping);
 
 	m_assert(open_file_mapping("hlsl/blit_framebuffer.vs.fxc", &shader_file_mapping, true), "");
 	m_d3d_assert(d3d->device->CreateVertexShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->blit_framebuffer_vs));
@@ -244,6 +266,12 @@ void init_d3d(d3d *d3d, window *window) {
 	m_assert(open_file_mapping("hlsl/blit_framebuffer.ps.fxc", &shader_file_mapping, true), "");
 	m_d3d_assert(d3d->device->CreatePixelShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->blit_framebuffer_ps));
 	close_file_mapping(shader_file_mapping);
+
+#if USE_GPU
+	m_assert(open_file_mapping("hlsl/trace.cs.fxc", &shader_file_mapping, true), "");
+	m_d3d_assert(d3d->device->CreateComputeShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->trace_cs));
+	close_file_mapping(shader_file_mapping);
+#endif	
 
 	D3D11_SAMPLER_DESC sampler_desc = {};
 	sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -450,7 +478,6 @@ DWORD thread_func(void *param) {
 			vec3 color = trace(scene, &rng, ray, 0);
 			for (uint32 i = 0; i < 3; i += 1) {
 				color[i] = clamp(color[i], 0.0f, 1.0f);
-				// color[i] = clamp(1.055f * powf(color[i], 0.416666667f) - 0.055f, 0.0f, 1.0f);
 			}
 			image[image_width * y + x] = vec4{color.x, color.y, color.z, 0};
 			WaitForSingleObject(block_pixel_semaphore, INFINITE);
@@ -500,11 +527,47 @@ int main() {
 
 	d3d *d3d = new struct d3d;
 	init_d3d(d3d, window);
-	
+
 #if USE_GPU
-	// d3d->context->CSSetShader(d3d->trace_cs, nullptr, 0);
-	// d3d->context->CSSetUnorderedAccessViews(0, 1, &d3d->image_view, const UINT *pUAVInitialCounts);
-#else 
+	while (true) {
+		handle_window_messages(window);
+
+		d3d->context->CSSetShader(d3d->trace_cs, nullptr, 0);
+		d3d->context->CSSetUnorderedAccessViews(0, 1, &d3d->image_unordered_access_view, nullptr);
+		d3d->context->CSSetShaderResources(0, 1, &d3d->block_positions_buffer_resource_view);
+		D3D11_MAPPED_SUBRESOURCE mapped_subresource = {};
+		m_d3d_assert(d3d->context->Map(d3d->info_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource));
+		*(uint32 *)mapped_subresource.pData = block_index;
+		block_index = min(block_index + 1, block_count - 1);
+		d3d->context->Unmap(d3d->info_buffer, 0);
+		d3d->context->CSSetConstantBuffers(0, 1, &d3d->info_buffer);
+		d3d->context->Dispatch(1, 1, 1);
+		ID3D11UnorderedAccessView *uav = nullptr;
+		d3d->context->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+
+		D3D11_VIEWPORT viewport = {};
+		viewport.Width = (float)d3d->swap_chain_desc.Width;
+		viewport.Height = (float)d3d->swap_chain_desc.Height;
+		viewport.MinDepth = 0.0f;
+		viewport.MaxDepth = 1.0f;
+		d3d->context->RSSetViewports(1, &viewport);
+
+		d3d->context->ClearRenderTargetView(d3d->swap_chain_render_target_view, DirectX::Colors::Black);
+		d3d->context->OMSetRenderTargets(1, &d3d->swap_chain_render_target_view, nullptr);
+
+		d3d->context->VSSetShader(d3d->blit_framebuffer_vs, nullptr, 0);
+		d3d->context->PSSetShader(d3d->blit_framebuffer_ps, nullptr, 0);
+		d3d->context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		d3d->context->RSSetState(nullptr);
+		d3d->context->PSSetShaderResources(0, 1, &d3d->image_shader_resource_view);
+		d3d->context->PSSetSamplers(0, 1, &d3d->clamp_edge_sampler_state);
+		d3d->context->Draw(3, 0);
+		ID3D11ShaderResourceView *srv = nullptr;
+		d3d->context->PSSetShaderResources(0, 1, &srv);
+
+		m_d3d_assert(d3d->swap_chain->Present(0, 0));
+	}
+#else
 	thread_param thread_param;
 	thread_param.scene = scene;
 
@@ -516,7 +579,6 @@ int main() {
 		thread_handles[i] = CreateThread(nullptr, 0, thread_func, &thread_param, 0, nullptr);
 		m_assert(thread_handles[i], "");
 	}
-#endif
 
 	while (true) {
 		handle_window_messages(window);
@@ -549,4 +611,5 @@ int main() {
 			m_d3d_assert(d3d->swap_chain->Present(0, 0));
 		}
 	}
+#endif
 }
