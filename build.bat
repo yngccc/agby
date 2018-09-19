@@ -30,7 +30,7 @@ rmdir /s /q compiler_output 2>nul
 mkdir compiler_output
 
 echo compiling cpp...
-set cflags=/nologo /O2 /MD /EHsc /GS /sdl /FC /W3 /WX
+set cflags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3 /WX
 if "%~2"=="clang" (
   set cflags=%cflags% -Wno-missing-braces -Wno-microsoft-include -mssse3
 )
