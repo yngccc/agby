@@ -154,12 +154,12 @@ void initialize_d3d_device_swap_chain(d3d *d3d, window *window) {
 	d3d->swap_chain_desc = {};
 	d3d->swap_chain_desc.Width = window_width;
 	d3d->swap_chain_desc.Height = window_height;
-	d3d->swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	d3d->swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	d3d->swap_chain_desc.SampleDesc.Count = 1;
 	d3d->swap_chain_desc.SampleDesc.Quality = 0;
 	d3d->swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	d3d->swap_chain_desc.BufferCount = 2;
-	d3d->swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	d3d->swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	m_d3d_assert(dxgi_factory_2->CreateSwapChainForHwnd(device, window->handle, &d3d->swap_chain_desc, nullptr, nullptr, &d3d->swap_chain));
 
 	dxgi_factory->MakeWindowAssociation(window->handle, DXGI_MWA_NO_ALT_ENTER);

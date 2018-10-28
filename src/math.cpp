@@ -955,16 +955,18 @@ vec4 fit_rect_into_rect(float rect_outer_width, float rect_outer_height, float r
 	return {x, y, width, height};
 }
 
-vec3 uniform_sample_hemisphere(float u1, float u2) {
+void uniform_sample_hemisphere(float u1, float u2, vec3 *xyz, float *pdf) {
 	float r = sqrtf(1 - u1 * u1);
 	float phi = 2 * (float)M_PI * u2;
-	return vec3{cosf(phi) * r, u1, -sinf(phi) * r};
+	*xyz = vec3{cosf(phi) * r, u1, -sinf(phi) * r};
+	*pdf = 1.0f / (2 * (float)M_PI);
 }
 
-vec3 cosine_sample_hemisphere(float u1, float u2) {
+void cosine_weighted_sample_hemisphere(float u1, float u2, vec3 *xyz, float *pdf) {
 	float r = sqrtf(u1);
 	float theta = 2 * (float)M_PI * u2;
-	return vec3{r * cosf(theta), sqrtf(max(0.0f, 1 - u1)), -r * sinf(theta)};
+	*xyz = vec3{r * cosf(theta), sqrtf(max(0.0f, 1 - u1)), -r * sinf(theta)};
+	*pdf = cosf(theta) / (float)M_PI;
 }
 
 float aabb_volume(aabb bound) {

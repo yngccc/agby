@@ -12,11 +12,11 @@
 
 #include <tinyxml/tinyxml2.cpp>
 
-#define USE_GPU 1
+#define USE_GPU 0
 
 const uint32 image_width = 1280;
 const uint32 image_height = 720;
-const uint32 sample_count = 32;
+const uint32 sample_count = 16;
 const uint32 bounce_count = 2;
 vec4 *image = new vec4[image_width * image_height]();
 
@@ -193,12 +193,12 @@ void init_d3d(d3d *d3d, window *window) {
 	d3d->swap_chain_desc = {};
 	d3d->swap_chain_desc.Width = window_width;
 	d3d->swap_chain_desc.Height = window_height;
-	d3d->swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	d3d->swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	d3d->swap_chain_desc.SampleDesc.Count = 1;
 	d3d->swap_chain_desc.SampleDesc.Quality = 0;
 	d3d->swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	d3d->swap_chain_desc.BufferCount = 2;
-	d3d->swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	d3d->swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	m_d3d_assert(dxgi_factory_2->CreateSwapChainForHwnd(device, window->handle, &d3d->swap_chain_desc, nullptr, nullptr, &d3d->swap_chain));
 
 	dxgi_factory->MakeWindowAssociation(window->handle, DXGI_MWA_NO_ALT_ENTER);
@@ -375,10 +375,13 @@ vec3 trace(scene *scene, rng *rng, ray ray, uint32 bounce) {
 			vec3 diffuse_color = {0, 0, 0};
 			struct ray random_rays[sample_count];
 			for (uint32 i = 0; i < m_countof(random_rays); i += 1) {
+				vec3 dir = {};
+				float pdf = 0;
+				cosine_weighted_sample_hemisphere(rng->gen(), rng->gen(), &dir, &pdf);
 				random_rays[i].origin = hit.point;
-				random_rays[i].dir = quat_from_between(vec3{0, 1, 0}, hit.normal) * cosine_sample_hemisphere(rng->gen(), rng->gen());
+				random_rays[i].dir = quat_from_between(vec3{0, 1, 0}, hit.normal) * dir;
 				random_rays[i].len = scene->camera.zfar;
-				diffuse_color += trace(scene, rng, random_rays[i], bounce + 1) * hit.material->color * vec3_dot(hit.normal, random_rays[i].dir) / (float)M_PI;
+				diffuse_color += trace(scene, rng, random_rays[i], bounce + 1) * hit.material->color * vec3_dot(hit.normal, random_rays[i].dir) / (float)M_PI / pdf;
 			}
 			diffuse_color /= m_countof(random_rays);
 			return diffuse_color;

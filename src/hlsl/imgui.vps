@@ -23,7 +23,7 @@ vs_output vertex_shader(vs_input vs_input) {
 	output.position.zw = float2(0, 1);
   output.texcoord = vs_input.texcoord;
 	output.color = vs_input.color;
-	output.color.xyz = pow(abs(output.color.xyz), float3(2.2f, 2.2f, 2.2f));
+	// output.color.rgb = pow(abs(output.color.rgb), float3(2.2f, 2.2f, 2.2f));
 	return output;
 }
 
