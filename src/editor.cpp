@@ -1452,6 +1452,7 @@ void tool_gizmo(editor *editor, world *world, d3d *d3d, window *window) {
 				vec3 p = editor->camera_to_mouse_ray.origin + editor->camera_to_mouse_ray.dir * t;
 				if (p.x >= -half_width && p.x <= half_width && p.z >= -half_height && p.z <= half_height) {
 					editor->terrain_brush_tool_active = true;
+					editor->terrain_brush_tool_position = {p.x, 0, p.z};
 				}
 			}
 		}
@@ -1533,7 +1534,8 @@ void append_terrain_brush_constants(editor *editor, world *world, d3d *d3d) {
 			uint32 height;
 			float max_height;
 		} terrain_brush_constants = {
-			XMMatrixMultiply(XMMatrixScaling(editor->terrain_brush_tool_radius, 1, editor->terrain_brush_tool_radius), XMMatrixTranslation(m_unpack3(editor->terrain_brush_tool_position))),
+			XMMatrixMultiply(XMMatrixScaling(editor->terrain_brush_tool_radius, 1, editor->terrain_brush_tool_radius),
+											 XMMatrixTranslation(m_unpack3(editor->terrain_brush_tool_position))),
 			terrain->width, terrain->height, terrain->max_height
 		};
 		uint32 offset = append_world_constant_buffer(world, &terrain_brush_constants, sizeof(terrain_brush_constants));
