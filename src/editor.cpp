@@ -23,6 +23,148 @@ struct {
 	d3d *d3d;
 } window_message_channel = {};
 
+enum edit_window_tab {
+	edit_window_tab_player,
+	edit_window_tab_static_object,
+	edit_window_tab_dynamic_object,
+	edit_window_tab_model,
+	edit_window_tab_light,
+	edit_window_tab_terrain,
+	edit_window_tab_skybox,
+};
+
+const char *edit_window_tab_strs[] = {"Player", "StaticObject", "DynamicObject", "Model", "Light", "Terrain", "Skybox"};
+
+enum tool_type {
+	tool_type_pick,
+
+	tool_type_translate,
+	tool_type_rotate,
+	tool_type_scale,
+
+	tool_type_terrain_begin,
+	tool_type_terrain_bump,
+	tool_type_terrain_raise_lower,
+	tool_type_terrain_flatten,
+	tool_type_terrain_height,
+	tool_type_terrain_ramp,
+	tool_type_terrain_smooth,
+	tool_type_terrain_noise,
+	tool_type_terrain_water,
+	tool_type_terrain_hole,
+	tool_type_terrain_paint,
+	tool_type_terrain_tree,
+	tool_type_terrain_road,
+	tool_type_terrain_end
+};
+
+struct editor {
+	bool quit;
+
+	timer timer;
+	double last_frame_time_secs;
+
+	ImGuiContext *imgui_context;
+
+	ID3D11Texture2D *imgui_font_atlas_texture;
+	ID3D11ShaderResourceView *imgui_font_atlas_texture_view;
+	ID3D11Buffer *imgui_vertex_buffer;
+
+	ID3D11Texture2D *pick_icon_texture;
+	ID3D11ShaderResourceView *pick_icon_texture_view;
+	ID3D11Texture2D *translate_icon_texture;
+	ID3D11ShaderResourceView *translate_icon_texture_view;
+	ID3D11Texture2D *rotate_icon_texture;
+	ID3D11ShaderResourceView *rotate_icon_texture_view;
+	ID3D11Texture2D *scale_icon_texture;
+	ID3D11ShaderResourceView *scale_icon_texture_view;
+	ID3D11Texture2D *terrain_bump_icon_texture;
+	ID3D11ShaderResourceView *terrain_bump_icon_texture_view;
+	ID3D11Texture2D *terrain_raise_lower_icon_texture;
+	ID3D11ShaderResourceView *terrain_raise_lower_icon_texture_view;
+	ID3D11Texture2D *terrain_flatten_icon_texture;
+	ID3D11ShaderResourceView *terrain_flatten_icon_texture_view;
+	ID3D11Texture2D *terrain_height_icon_texture;
+	ID3D11ShaderResourceView *terrain_height_icon_texture_view;
+	ID3D11Texture2D *terrain_ramp_icon_texture;
+	ID3D11ShaderResourceView *terrain_ramp_icon_texture_view;
+	ID3D11Texture2D *terrain_smooth_icon_texture;
+	ID3D11ShaderResourceView *terrain_smooth_icon_texture_view;
+	ID3D11Texture2D *terrain_noise_icon_texture;
+	ID3D11ShaderResourceView *terrain_noise_icon_texture_view;
+	ID3D11Texture2D *terrain_water_icon_texture;
+	ID3D11ShaderResourceView *terrain_water_icon_texture_view;
+	ID3D11Texture2D *terrain_hole_icon_texture;
+	ID3D11ShaderResourceView *terrain_hole_icon_texture_view;
+	ID3D11Texture2D *terrain_paint_icon_texture;
+	ID3D11ShaderResourceView *terrain_paint_icon_texture_view;
+	ID3D11Texture2D *terrain_tree_icon_texture;
+	ID3D11ShaderResourceView *terrain_tree_icon_texture_view;
+	ID3D11Texture2D *terrain_road_icon_texture;
+	ID3D11ShaderResourceView *terrain_road_icon_texture_view;
+
+	ID3D11Texture2D **terrain_paint_textures;
+	ID3D11ShaderResourceView **terrain_paint_texture_views;
+	uint32 terrain_paint_texture_count;
+	uint32 terrain_paint_texture_index;
+	
+	float top_menu_bar_height;
+	ImVec4 top_menu_bar_color;
+	ImVec2 edit_window_pos;
+	ImVec2 edit_window_size;
+	ImVec2 memory_window_pos;
+	ImVec2 memory_window_size;
+	ImVec2 terrain_brush_properties_window_pos;
+	ImVec2 terrain_brush_properties_window_size;
+	
+	bool error_popup;
+	char error_msg[256];
+	bool quit_popup;
+	bool add_static_object_popup;
+	bool rename_static_object_popup;
+	bool add_dynamic_object_popup;
+	bool rename_dynamic_object_popup;
+	bool new_terrain_popup;
+
+	bool camera_active;
+	XMVECTOR camera_position;
+	XMVECTOR camera_view;
+	float camera_fovy;
+	float camera_znear;
+	float camera_zfar;
+	float camera_move_speed;
+	float camera_rotate_speed;
+	XMMATRIX camera_view_mat;
+	XMMATRIX camera_proj_mat;
+	XMMATRIX camera_view_proj_mat;
+	ray camera_to_mouse_ray;
+
+	bool render_reference_grid;
+	bool render_models;
+	bool render_terrain;
+	bool render_skybox;
+	bool render_shadow_proj_box;
+
+	bool focus_model;
+
+	bool show_frame_statistic_window;
+	bool show_camera_settings_window;
+
+	int32 edit_window_tab;
+	uint32 static_object_index;
+	uint32 dynamic_object_index;
+	uint32 model_index;
+
+	tool_type tool_type;
+	bool terrain_brush_tool_active;
+	vec3 terrain_brush_tool_position;
+	float terrain_brush_tool_radius;
+	float terrain_brush_tool_speed;
+
+	uint64 world_frame_memory_arena_size;
+	char world_save_file[256];
+};
+
 LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = 0;
 	if (!window_message_channel.initialized) {
@@ -115,144 +257,6 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 	return result;
 }
 
-enum edit_window_tab {
-	edit_window_tab_player,
-	edit_window_tab_static_object,
-	edit_window_tab_dynamic_object,
-	edit_window_tab_model,
-	edit_window_tab_light,
-	edit_window_tab_terrain,
-	edit_window_tab_skybox,
-};
-
-const char *edit_window_tab_strs[] = {"Player", "StaticObject", "DynamicObject", "Model", "Light", "Terrain", "Skybox"};
-
-enum tool_type {
-	tool_type_translate,
-	tool_type_rotate,
-	tool_type_scale,
-
-	tool_type_terrain_begin,
-	tool_type_terrain_bump,
-	tool_type_terrain_raise_lower,
-	tool_type_terrain_flatten,
-	tool_type_terrain_height,
-	tool_type_terrain_ramp,
-	tool_type_terrain_smooth,
-	tool_type_terrain_noise,
-	tool_type_terrain_water,
-	tool_type_terrain_hole,
-	tool_type_terrain_paint,
-	tool_type_terrain_tree,
-	tool_type_terrain_road,
-	tool_type_terrain_end
-};
-
-struct editor {
-	bool quit;
-
-	timer timer;
-	double last_frame_time_secs;
-
-	ImGuiContext *imgui_context;
-
-	ID3D11Texture2D *imgui_font_atlas_texture;
-	ID3D11ShaderResourceView *imgui_font_atlas_texture_view;
-	ID3D11Buffer *imgui_vertex_buffer;
-
-	ID3D11Texture2D *translate_icon_texture;
-	ID3D11ShaderResourceView *translate_icon_texture_view;
-	ID3D11Texture2D *rotate_icon_texture;
-	ID3D11ShaderResourceView *rotate_icon_texture_view;
-	ID3D11Texture2D *scale_icon_texture;
-	ID3D11ShaderResourceView *scale_icon_texture_view;
-	ID3D11Texture2D *terrain_bump_icon_texture;
-	ID3D11ShaderResourceView *terrain_bump_icon_texture_view;
-	ID3D11Texture2D *terrain_raise_lower_icon_texture;
-	ID3D11ShaderResourceView *terrain_raise_lower_icon_texture_view;
-	ID3D11Texture2D *terrain_flatten_icon_texture;
-	ID3D11ShaderResourceView *terrain_flatten_icon_texture_view;
-	ID3D11Texture2D *terrain_height_icon_texture;
-	ID3D11ShaderResourceView *terrain_height_icon_texture_view;
-	ID3D11Texture2D *terrain_ramp_icon_texture;
-	ID3D11ShaderResourceView *terrain_ramp_icon_texture_view;
-	ID3D11Texture2D *terrain_smooth_icon_texture;
-	ID3D11ShaderResourceView *terrain_smooth_icon_texture_view;
-	ID3D11Texture2D *terrain_noise_icon_texture;
-	ID3D11ShaderResourceView *terrain_noise_icon_texture_view;
-	ID3D11Texture2D *terrain_water_icon_texture;
-	ID3D11ShaderResourceView *terrain_water_icon_texture_view;
-	ID3D11Texture2D *terrain_hole_icon_texture;
-	ID3D11ShaderResourceView *terrain_hole_icon_texture_view;
-	ID3D11Texture2D *terrain_paint_icon_texture;
-	ID3D11ShaderResourceView *terrain_paint_icon_texture_view;
-	ID3D11Texture2D *terrain_tree_icon_texture;
-	ID3D11ShaderResourceView *terrain_tree_icon_texture_view;
-	ID3D11Texture2D *terrain_road_icon_texture;
-	ID3D11ShaderResourceView *terrain_road_icon_texture_view;
-
-	ID3D11Texture2D **terrain_paint_textures;
-	ID3D11ShaderResourceView **terrain_paint_texture_views;
-	uint32 terrain_paint_texture_count;
-	uint32 terrain_paint_texture_index;
-	
-	float top_menu_bar_height;
-	ImVec4 top_menu_bar_color;
-	ImVec2 edit_window_pos;
-	ImVec2 edit_window_size;
-	ImVec2 memory_window_pos;
-	ImVec2 memory_window_size;
-	ImVec2 terrain_brush_properties_window_pos;
-	ImVec2 terrain_brush_properties_window_size;
-	
-	bool error_popup;
-	char error_msg[256];
-	bool quit_popup;
-	bool add_static_object_popup;
-	bool rename_static_object_popup;
-	bool add_dynamic_object_popup;
-	bool rename_dynamic_object_popup;
-	bool new_terrain_popup;
-
-	bool camera_active;
-	XMVECTOR camera_position;
-	XMVECTOR camera_view;
-	float camera_fovy;
-	float camera_znear;
-	float camera_zfar;
-	float camera_move_speed;
-	float camera_rotate_speed;
-	XMMATRIX camera_view_mat;
-	XMMATRIX camera_proj_mat;
-	XMMATRIX camera_view_proj_mat;
-	ray camera_to_mouse_ray;
-
-	bool render_reference_grid;
-	bool render_models;
-	bool render_terrain;
-	bool render_skybox;
-	bool render_shadow_proj_box;
-
-	bool focus_model;
-
-	bool show_frame_statistic_window;
-	bool show_camera_settings_window;
-
-	int32 edit_window_tab;
-	uint32 static_object_index;
-	uint32 dynamic_object_index;
-	uint32 model_index;
-
-	int32 tool_type;
-	bool terrain_brush_tool_active;
-	vec3 terrain_brush_tool_position;
-	float terrain_brush_tool_radius;
-	float terrain_brush_tool_speed;
-
-	uint64 world_frame_memory_arena_size;
-	char world_save_file[256];
-};
-
 void initialize_editor(editor *editor, d3d *d3d) {
 	*editor = {};
 	initialize_timer(&editor->timer);
@@ -317,7 +321,7 @@ void initialize_editor(editor *editor, d3d *d3d) {
 			uint8* texture_data;
 			int32 width, height, channel;
 			texture_data = stbi_load(file, &width, &height, &channel, 4);
-			m_assert(texture_data, "");
+			m_assert(texture_data, "%s", file);
 			D3D11_TEXTURE2D_DESC texture_desc = {};
 			texture_desc.Width = width;
 			texture_desc.Height = height;
@@ -333,32 +337,33 @@ void initialize_editor(editor *editor, d3d *d3d) {
 			stbi_image_free(texture_data);
 		};
 	
-		create_texture("assets/images/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->translate_icon_texture, &editor->translate_icon_texture_view);
-		create_texture("assets/images/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->rotate_icon_texture, &editor->rotate_icon_texture_view);
-		create_texture("assets/images/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->scale_icon_texture, &editor->scale_icon_texture_view);
-		create_texture("assets/images/icons/terrain_bump.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_bump_icon_texture, &editor->terrain_bump_icon_texture_view);
-		create_texture("assets/images/icons/terrain_raise_lower.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_raise_lower_icon_texture, &editor->terrain_raise_lower_icon_texture_view);
-		create_texture("assets/images/icons/terrain_flatten.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_flatten_icon_texture, &editor->terrain_flatten_icon_texture_view);
-		create_texture("assets/images/icons/terrain_height.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_height_icon_texture, &editor->terrain_height_icon_texture_view);
-		create_texture("assets/images/icons/terrain_ramp.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_ramp_icon_texture, &editor->terrain_ramp_icon_texture_view);
-		create_texture("assets/images/icons/terrain_smooth.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_smooth_icon_texture, &editor->terrain_smooth_icon_texture_view);
-		create_texture("assets/images/icons/terrain_noise.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_noise_icon_texture, &editor->terrain_noise_icon_texture_view);
-		create_texture("assets/images/icons/terrain_water.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_water_icon_texture, &editor->terrain_water_icon_texture_view);
-		create_texture("assets/images/icons/terrain_hole.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_hole_icon_texture, &editor->terrain_hole_icon_texture_view);
-		create_texture("assets/images/icons/terrain_paint.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_paint_icon_texture, &editor->terrain_paint_icon_texture_view);
-		create_texture("assets/images/icons/terrain_tree.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_tree_icon_texture, &editor->terrain_tree_icon_texture_view);
-		create_texture("assets/images/icons/terrain_road.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_road_icon_texture, &editor->terrain_road_icon_texture_view);
+		create_texture("assets/icons/pick.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->pick_icon_texture, &editor->pick_icon_texture_view);
+		create_texture("assets/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->translate_icon_texture, &editor->translate_icon_texture_view);
+		create_texture("assets/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->rotate_icon_texture, &editor->rotate_icon_texture_view);
+		create_texture("assets/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->scale_icon_texture, &editor->scale_icon_texture_view);
+		create_texture("assets/icons/terrain_bump.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_bump_icon_texture, &editor->terrain_bump_icon_texture_view);
+		create_texture("assets/icons/terrain_raise_lower.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_raise_lower_icon_texture, &editor->terrain_raise_lower_icon_texture_view);
+		create_texture("assets/icons/terrain_flatten.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_flatten_icon_texture, &editor->terrain_flatten_icon_texture_view);
+		create_texture("assets/icons/terrain_height.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_height_icon_texture, &editor->terrain_height_icon_texture_view);
+		create_texture("assets/icons/terrain_ramp.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_ramp_icon_texture, &editor->terrain_ramp_icon_texture_view);
+		create_texture("assets/icons/terrain_smooth.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_smooth_icon_texture, &editor->terrain_smooth_icon_texture_view);
+		create_texture("assets/icons/terrain_noise.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_noise_icon_texture, &editor->terrain_noise_icon_texture_view);
+		create_texture("assets/icons/terrain_water.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_water_icon_texture, &editor->terrain_water_icon_texture_view);
+		create_texture("assets/icons/terrain_hole.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_hole_icon_texture, &editor->terrain_hole_icon_texture_view);
+		create_texture("assets/icons/terrain_paint.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_paint_icon_texture, &editor->terrain_paint_icon_texture_view);
+		create_texture("assets/icons/terrain_tree.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_tree_icon_texture, &editor->terrain_tree_icon_texture_view);
+		create_texture("assets/icons/terrain_road.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_road_icon_texture, &editor->terrain_road_icon_texture_view);
 	
 		editor->terrain_paint_texture_count = 0;
-		iterate_files_in_dir("assets/images/terrain", [&](const char *file_name) {
+		iterate_files_in_dir("assets/terrains/textures", [&](const char *file_name) {
 			editor->terrain_paint_texture_count += 1;
 		});
 		editor->terrain_paint_textures = new ID3D11Texture2D*[editor->terrain_paint_texture_count];
 		editor->terrain_paint_texture_views = new ID3D11ShaderResourceView*[editor->terrain_paint_texture_count];
 		uint32 index = 0;
-		iterate_files_in_dir("assets/images/terrain", [&](const char *file_name) {
+		iterate_files_in_dir("assets/terrains/textures", [&](const char *file_name) {
 			char path[256];
-			snprintf(path, sizeof(path), "assets/images/terrain/%s", file_name);
+			snprintf(path, sizeof(path), "assets/terrains/textures/%s", file_name);
 			create_texture(path, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, &editor->terrain_paint_textures[index], &editor->terrain_paint_texture_views[index]);
 			index += 1;
 		});
@@ -935,6 +940,12 @@ void bottom_menu(editor *editor) {
 				}
 			}
 		};
+		for (auto type : {edit_window_tab_static_object, edit_window_tab_dynamic_object}) {
+			if (editor->edit_window_tab == type) {
+				render_tool_button(tool_type_pick, editor->pick_icon_texture_view);
+				break;
+			}
+		}
 		for (auto type : {edit_window_tab_player, edit_window_tab_static_object, edit_window_tab_dynamic_object, edit_window_tab_model}) {
 			if (editor->edit_window_tab == type) {
 				render_tool_button(tool_type_translate, editor->translate_icon_texture_view);
