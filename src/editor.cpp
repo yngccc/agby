@@ -132,8 +132,8 @@ struct editor {
 	float camera_fovy;
 	float camera_znear;
 	float camera_zfar;
-	float camera_move_speed;
-	float camera_rotate_speed;
+	uint32 camera_move_speed;
+	uint32 camera_rotate_speed;
 	XMMATRIX camera_view_mat;
 	XMMATRIX camera_proj_mat;
 	XMMATRIX camera_view_proj_mat;
@@ -257,9 +257,125 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 	return result;
 }
 
+void parse_editor_options(const char *text, int64 len, editor *editor) {
+	enum token_type {
+		token_identifer,
+		token_colon,
+		token_integer,
+		token_eof,
+		token_bad
+	};
+	struct token {
+		token_type type;
+		const char *text;
+		uint32 len;
+	};
+	auto get_token = [=](const char **current_text) -> token {
+		while (true) {
+			if (((*current_text) - text) >= len) {
+				return token{token_eof, nullptr, 0};
+			}
+			else if (isspace((*current_text)[0])) {
+				(*current_text) += 1;
+			}
+			else {
+				break;
+			}
+		}
+		char c = (*current_text)[0];
+		if (c == ':') {
+			(*current_text) += 1;
+			return token{token_colon, (*current_text) - 1, 1};
+		}
+		else if (isdigit(c)) {
+			uint32 l = 1;
+			(*current_text) += 1;
+			while (((*current_text) - text) < len && (isdigit((*current_text)[0]))) {
+				(*current_text) += 1;
+				l += 1;
+			}
+			return token{token_integer, (*current_text) - l, l};
+		}
+		else if (isalpha(c)) {
+			uint32 l = 1;
+			(*current_text) += 1;
+			while (((*current_text) - text) < len && (isalnum((*current_text)[0]) || (*current_text)[0] == '_')) {
+				(*current_text) += 1;
+				l += 1;
+			}
+			return token{token_identifer, (*current_text) - l, l};
+		}
+		else {
+			return token{token_bad, nullptr, 0};
+		}
+	};
+	auto token_eql = [](token tk, const char *cmp_str) -> bool {
+		auto len = strlen(cmp_str);
+		return tk.len == len && !memcmp(tk.text, cmp_str, len);
+	};
+	const char *current_text = text;
+	while (true) {
+		token t1 = get_token(&current_text);
+		token t2 = get_token(&current_text);
+		token t3 = get_token(&current_text);
+		if (t1.type == token_eof || t2.type == token_eof || t3.type == token_eof) {
+			break;
+		}
+		else if (t1.type != token_identifer || t2.type != token_colon || (t3.type != token_identifer && t3.type != token_integer)) {
+			continue;
+		}
+		else {
+			if (token_eql(t1, "camera_move_speed")) {
+				char *endptr = nullptr;
+				uint32 value = strtoul(t3.text, &endptr, 10);
+				if (endptr != t3.text) {
+					editor->camera_move_speed = value;
+				}
+			}
+			else if (token_eql(t1, "camera_rotate_speed")) {
+				char *endptr = nullptr;
+				uint32 value = strtoul(t3.text, &endptr, 10);
+				if (endptr != t3.text) {
+					editor->camera_rotate_speed = value;
+				}
+			}
+			continue;
+		}
+	}
+}
+
 void initialize_editor(editor *editor, d3d *d3d) {
 	*editor = {};
 	initialize_timer(&editor->timer);
+	{ // misc
+		editor->camera_position = XMVectorSet(20, 20, 20, 0);
+		editor->camera_view = XMVector3Normalize(XMVectorNegate(editor->camera_position));
+		editor->camera_fovy = XMConvertToRadians(40);
+		editor->camera_znear = 0.1f;
+		editor->camera_zfar = 10000.0f;
+		editor->camera_move_speed = 10;
+		editor->camera_rotate_speed = 10;
+		
+		editor->static_object_index = UINT32_MAX;
+		editor->dynamic_object_index = UINT32_MAX;
+		editor->model_index = UINT32_MAX;
+
+		editor->render_reference_grid = true;
+		editor->render_models = true;
+		editor->render_terrain = true;
+		editor->render_skybox = true;
+		editor->render_shadow_proj_box = false;
+
+		editor->terrain_brush_tool_radius = 5;
+		editor->terrain_brush_tool_speed = 2;
+	}
+	{ // options
+		file_mapping option_file_mapping = {};
+		if (open_file_mapping("editor_options.txt", &option_file_mapping, true)) {
+			parse_editor_options((const char *)option_file_mapping.ptr, option_file_mapping.size, editor);
+			close_file_mapping(option_file_mapping);
+		}
+	}
 	{ // imgui
 		{
 			ImGui::CreateContext();
@@ -368,28 +484,6 @@ void initialize_editor(editor *editor, d3d *d3d) {
 			index += 1;
 		});
 	}
-	{ // misc
-		editor->camera_position = XMVectorSet(20, 20, 20, 0);
-		editor->camera_view = XMVector3Normalize(XMVectorNegate(editor->camera_position));
-		editor->camera_fovy = XMConvertToRadians(40);
-		editor->camera_znear = 0.1f;
-		editor->camera_zfar = 10000.0f;
-		editor->camera_move_speed = 10;
-		editor->camera_rotate_speed = 1;
-		
-		editor->static_object_index = UINT32_MAX;
-		editor->dynamic_object_index = UINT32_MAX;
-		editor->model_index = UINT32_MAX;
-
-		editor->render_reference_grid = true;
-		editor->render_models = true;
-		editor->render_terrain = true;
-		editor->render_skybox = true;
-		editor->render_shadow_proj_box = false;
-
-		editor->terrain_brush_tool_radius = 5;
-		editor->terrain_brush_tool_speed = 2;
-	}
 }
 
 bool load_editor_world(editor *editor, world *world, d3d *d3d, const char *file) {
@@ -399,8 +493,6 @@ bool load_editor_world(editor *editor, world *world, d3d *d3d, const char *file)
 	}
 	editor->camera_position = XMVectorSet(m_unpack3(editor_settings.camera_position), 0);
 	editor->camera_view = XMVectorSet(m_unpack3(editor_settings.camera_view), 0);
-	editor->camera_move_speed = editor_settings.camera_move_speed;
-	editor->camera_rotate_speed = editor_settings.camera_rotate_speed;
 	return true;
 }
 
@@ -424,8 +516,6 @@ bool save_editor_world(editor *editor, world *world, bool save_as) {
 	world_editor_settings editor_settings = {
 		vec3{XMVectorGetX(editor->camera_position), XMVectorGetY(editor->camera_position), XMVectorGetZ(editor->camera_position)},
 		vec3{XMVectorGetX(editor->camera_view), XMVectorGetY(editor->camera_view), XMVectorGetZ(editor->camera_view)},
-		editor->camera_move_speed,
-		editor->camera_rotate_speed
 	};
 	if (!save_world(world, world_save_file, &editor_settings)) {
 		return false;
@@ -889,12 +979,14 @@ void top_menu(editor *editor, world *world, d3d *d3d) {
 			ImGui::EndMenu();
 		}
 		ImGui::PopID();
-		ImGui::PushID("settings");
-		if (ImGui::BeginMenu("Settings")) {
+		ImGui::PushID("options");
+		if (ImGui::BeginMenu("Options")) {
 			ImGui::PushID("camera");
 			if (ImGui::BeginMenu("Camera")) {
-				ImGui::SliderFloat("Move Speed", &editor->camera_move_speed, 0, 100);
-				ImGui::SliderFloat("Rotate Speed", &editor->camera_rotate_speed, 0, 3);
+				uint32 min = 0;
+				uint32 max = 100;
+				ImGui::SliderScalar("Move Speed", ImGuiDataType_U32, &editor->camera_move_speed, &min, &max);
+				ImGui::SliderScalar("Rotate Speed", ImGuiDataType_U32, &editor->camera_rotate_speed, &min, &max);
 				ImGui::EndMenu();
 			}
 			ImGui::PopID();
@@ -1373,7 +1465,7 @@ void update_camera(editor *editor, window *window) {
 			XMVECTOR move_vec = XMVectorScale(XMVector3Normalize(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0))), move_distance);
 			editor->camera_position = XMVectorAdd(editor->camera_position, move_vec);
 		}
-		float rotate_distance = editor->camera_rotate_speed * (float)editor->last_frame_time_secs;
+		float rotate_distance = editor->camera_rotate_speed * 0.1f * (float)editor->last_frame_time_secs;
 		float yaw = window->raw_mouse_dx * rotate_distance;
 		editor->camera_view = XMVector3Normalize(XMVector3Rotate(editor->camera_view, XMQuaternionRotationAxis(XMVectorSet(0, 1, 0, 0), -yaw)));
 		float max_pitch = XMConvertToRadians(80.0f);

@@ -184,33 +184,33 @@ void parse(char *code, parse_result *parse_result) {
   while (parsing) {
     token token = get_token(&code);
     switch (token.shape) {
-      case token_identifier : {
-        if (token_equal(token, "enum")) {
-          token = get_token(&code);
-          if (token.shape == token_identifier) {
-            char *enum_name = token.text;
-            uint32 enum_name_len = token.text_len;
-            token = get_token(&code);
-            if (token_equal(token, "{")) {
-              parse_enum(&code, enum_name, enum_name_len, parse_result);
-            }
-          }
-        }
-        else if (token_equal(token, "struct")) {
-          token = get_token(&code);
-          if (token.shape == token_identifier) {
-            char *struct_name = token.text;
-            uint32 struct_name_len = token.text_len;
-            token = get_token(&code);
-            if (token_equal(token, "{")) {
-              parse_struct(&code, struct_name, struct_name_len, parse_result);
-            }
-          }
-        }
-      } break;
-      case token_eof : {
-        parsing = false;
-      } break;
+		case token_identifier : {
+			if (token_equal(token, "enum")) {
+				token = get_token(&code);
+				if (token.shape == token_identifier) {
+					char *enum_name = token.text;
+					uint32 enum_name_len = token.text_len;
+					token = get_token(&code);
+					if (token_equal(token, "{")) {
+						parse_enum(&code, enum_name, enum_name_len, parse_result);
+					}
+				}
+			}
+			else if (token_equal(token, "struct")) {
+				token = get_token(&code);
+				if (token.shape == token_identifier) {
+					char *struct_name = token.text;
+					uint32 struct_name_len = token.text_len;
+					token = get_token(&code);
+					if (token_equal(token, "{")) {
+						parse_struct(&code, struct_name, struct_name_len, parse_result);
+					}
+				}
+			}
+		} break;
+		case token_eof : {
+			parsing = false;
+		} break;
     }
   }
 }

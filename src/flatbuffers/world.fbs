@@ -88,8 +88,6 @@ table Model {
 struct Camera {
   position: Vec3;
 	view: Vec3;
-	moveSpeed: float;
-	rotateSpeed: float;
 }
 
 table World {

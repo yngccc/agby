@@ -946,8 +946,6 @@ btCollisionShape *collision_to_bt_collision(collision collision) {
 struct world_editor_settings {
 	vec3 camera_position;
 	vec3 camera_view;
-	float camera_move_speed;
-	float camera_rotate_speed;
 };
 
 bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings *editor_settings) {
@@ -1119,14 +1117,10 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 	if (editor_camera && editor_settings) {
 		editor_settings->camera_position = vec3{editor_camera->position().x(), editor_camera->position().y(), editor_camera->position().z()};
 		editor_settings->camera_view = vec3{editor_camera->view().x(), editor_camera->view().y(), editor_camera->view().z()};
-		editor_settings->camera_move_speed = editor_camera->moveSpeed();
-		editor_settings->camera_rotate_speed = editor_camera->rotateSpeed();
 	}
 	else if (editor_settings) {
 		editor_settings->camera_position = vec3{20, 20, 20};
 		editor_settings->camera_view = vec3_normalize(-editor_settings->camera_position);
-		editor_settings->camera_move_speed = 10;
-		editor_settings->camera_rotate_speed = 1;
 	}
 	
 	return true;
@@ -1226,7 +1220,7 @@ bool save_world(world *world, const char *file, world_editor_settings *editor_se
 	Vec3 fb_sun_light_dir(world->sun_light_dir.x, world->sun_light_dir.y, world->sun_light_dir.z);
 	Vec3 fb_sun_light_color(world->sun_light_color.x, world->sun_light_color.y, world->sun_light_color.z);
 
-	Camera fb_editor_camera(Vec3(m_unpack3(editor_settings->camera_position)), Vec3(m_unpack3(editor_settings->camera_view)), editor_settings->camera_move_speed, editor_settings->camera_rotate_speed);
+	Camera fb_editor_camera(Vec3(m_unpack3(editor_settings->camera_position)), Vec3(m_unpack3(editor_settings->camera_view)));
 	
 	auto fb_world = CreateWorld(fb_builder, fb_player, fb_static_objects, fb_dynamic_objects, fb_models, fb_terrains, fb_skyboxes, &fb_sun_light_dir, &fb_sun_light_color, &fb_editor_camera);
 	FinishWorldBuffer(fb_builder, fb_world);

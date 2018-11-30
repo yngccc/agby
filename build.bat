@@ -1,6 +1,3 @@
-@echo off
-echo. 
-
 call "C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/vcvarsall.bat" x64
 
 mkdir "%~dp0/build" 2>nul
@@ -18,8 +15,7 @@ del *.ispc.* 2>nul
 ..\vendor\bin\ispc.exe ..\src\ispc\simple.ispc -o simple.ispc.obj -h ..\src\ispc\simple.ispc.h --target=sse4-i32x4 >nul
 
 echo compiling flatbuffers...
-del ..\src\flatbuffers\world_generated.h 2>nul
-..\vendor\bin\flatc.exe --cpp -o ..\src\flatbuffers\ ..\src\flatbuffers\world.fbs
+..\vendor\bin\flatc.exe -c -o ..\src\flatbuffers ..\src\flatbuffers\world.fbs
 
 copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >nul
 copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >nul
