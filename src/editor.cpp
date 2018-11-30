@@ -257,7 +257,7 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 	return result;
 }
 
-void parse_editor_options(const char *text, int64 len, editor *editor) {
+void load_editor_options(const char *text, int64 len, editor *editor) {
 	enum token_type {
 		token_identifer,
 		token_colon,
@@ -344,6 +344,20 @@ void parse_editor_options(const char *text, int64 len, editor *editor) {
 	}
 }
 
+void save_editor_options(const char *file, editor *editor) {
+	char *text = new char[m_megabytes(1)];
+	uint32 offset = 0;
+	offset += sprintf(text + offset, "camera_move_speed: %u\r\n", editor->camera_move_speed);
+	offset += sprintf(text + offset, "camera_rotate_speed: %u\r\n", editor->camera_rotate_speed);
+	file_mapping fm;
+	if (create_file_mapping(file, offset, &fm)) {
+		memcpy(fm.ptr, text, offset);
+		flush_file_mapping(fm);
+		close_file_mapping(fm);
+	}
+	delete []text;
+}
+
 void initialize_editor(editor *editor, d3d *d3d) {
 	*editor = {};
 	initialize_timer(&editor->timer);
@@ -372,7 +386,7 @@ void initialize_editor(editor *editor, d3d *d3d) {
 	{ // options
 		file_mapping option_file_mapping = {};
 		if (open_file_mapping("editor_options.txt", &option_file_mapping, true)) {
-			parse_editor_options((const char *)option_file_mapping.ptr, option_file_mapping.size, editor);
+			load_editor_options((const char *)option_file_mapping.ptr, option_file_mapping.size, editor);
 			close_file_mapping(option_file_mapping);
 		}
 	}
@@ -1789,5 +1803,6 @@ int main(int argc, char **argv) {
 		stop_timer(&editor->timer);
 		editor->last_frame_time_secs = get_timer_duration_secs(editor->timer);
 	}
+	save_editor_options("editor_options.txt", editor);
 	ImGui::DestroyContext(editor->imgui_context);
 }
