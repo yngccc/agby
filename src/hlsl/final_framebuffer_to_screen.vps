@@ -1,4 +1,4 @@
-Texture2D framebuffer_texture : register(t0);
+Texture2D final_framebuffer_texture : register(t0);
 
 sampler texture_sampler : register(s0);
 
@@ -19,13 +19,13 @@ struct ps_output {
 };
 
 float3 linear_to_srgb(float3 rgb) {
-  rgb = max(rgb, float3(0, 0, 0));
-  return max(1.055 * pow(rgb, 0.416666667) - 0.055, 0.0);
+  rgb = clamp(rgb, float3(0, 0, 0), float3(1, 1, 1));
+  return max(1.055 * pow(rgb, 0.416666667) - 0.055, 0);
 }
 
 ps_output pixel_shader(vs_output vs_output) {
   ps_output output;
-	output.color = framebuffer_texture.Sample(texture_sampler, vs_output.texcoord);
+	output.color = final_framebuffer_texture.Sample(texture_sampler, vs_output.texcoord);
   output.color.rgb = linear_to_srgb(output.color.rgb);	
 	return output;
 }

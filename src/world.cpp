@@ -1434,8 +1434,8 @@ void add_model_render_data(world *world, d3d *d3d, uint32 model_index, transform
 
 struct render_world_desc {
 	XMMATRIX camera_view_proj_mat;
-	XMVECTOR camera_position;
-	XMVECTOR camera_view;
+	vec3 camera_position;
+	vec3 camera_view;
 
 	bool render_models;
 	bool render_terrain;
@@ -1465,8 +1465,8 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 			uint32 swap_chain_height;
 			uint32 padding0[2];
 			XMMATRIX camera_view_proj_mat;
-			XMVECTOR camera_position;
-			XMVECTOR camera_view;
+			vec4 camera_position;
+			vec4 camera_view;
 			vec4 sun_light_dir;
 			vec4 sun_light_color;
 			XMMATRIX shadow_proj_mat;
@@ -1475,8 +1475,8 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 			d3d->swap_chain_desc.Height,
 			{},
 			render_world_desc->camera_view_proj_mat,
-			render_world_desc->camera_position,
-			render_world_desc->camera_view,
+			vec4{m_unpack3(render_world_desc->camera_position), 0},
+			vec4{m_unpack3(render_world_desc->camera_view), 0},
 			vec4{world->sun_light_dir.x, world->sun_light_dir.y, world->sun_light_dir.z, 0},
 			vec4{world->sun_light_color.x, world->sun_light_color.y, world->sun_light_color.z, 0},
 			XMMatrixMultiply(XMMatrixLookAtRH(XMVectorSet(m_unpack3(shadow_proj_eye), 0), XMVectorSet(0, 0, 0, 0), XMVectorSet(0, 1, 0, 0)), XMMatrixOrthographicRH(m_unpack3(shadow_proj_box_size), 0))
@@ -1611,17 +1611,17 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 		d3d->context->PSSetShader(d3d->gaussian_blur_y_ps, nullptr, 0);
 		d3d->context->Draw(3, 0);
 	}
-	{ // prepare color framebuffer
+	{ // prepare final framebuffer
 		D3D11_VIEWPORT viewport = {};
-		viewport.Width = (float)d3d->color_framebuffer_width;
-		viewport.Height = (float)d3d->color_framebuffer_height;
+		viewport.Width = (float)d3d->final_framebuffer_width;
+		viewport.Height = (float)d3d->final_framebuffer_height;
 		viewport.MinDepth = 0.0f;
 		viewport.MaxDepth = 1.0f;
 		d3d->context->RSSetViewports(1, &viewport);
 
-		d3d->context->ClearRenderTargetView(d3d->color_framebuffer_render_target_view, Colors::Black);
-		d3d->context->ClearDepthStencilView(d3d->color_framebuffer_depth_view, D3D11_CLEAR_DEPTH, 0, 0);
-		d3d->context->OMSetRenderTargets(1, &d3d->color_framebuffer_render_target_view, d3d->color_framebuffer_depth_view);
+		d3d->context->ClearRenderTargetView(d3d->final_framebuffer_render_target_view, Colors::Black);
+		d3d->context->ClearDepthStencilView(d3d->final_framebuffer_depth_view, D3D11_CLEAR_DEPTH, 0, 0);
+		d3d->context->OMSetRenderTargets(1, &d3d->final_framebuffer_render_target_view, d3d->final_framebuffer_depth_view);
 	}
 	{ // render models
 		d3d->context->VSSetShader(d3d->mesh_vs, nullptr, 0);
@@ -1771,12 +1771,12 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 		d3d->context->ClearRenderTargetView(d3d->swap_chain_render_target_view, Colors::Black);
 		d3d->context->OMSetRenderTargets(1, &d3d->swap_chain_render_target_view, nullptr);
 	}
-	{ // blit color framebuffer
-		d3d->context->VSSetShader(d3d->blit_framebuffer_vs, nullptr, 0);
-		d3d->context->PSSetShader(d3d->blit_framebuffer_ps, nullptr, 0);
+	{ // final framebuffer to screen
+		d3d->context->VSSetShader(d3d->final_framebuffer_to_screen_vs, nullptr, 0);
+		d3d->context->PSSetShader(d3d->final_framebuffer_to_screen_ps, nullptr, 0);
 		d3d->context->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		d3d->context->RSSetState(nullptr);
-		d3d->context->PSSetShaderResources(0, 1, &d3d->color_framebuffer_texture_view);
+		d3d->context->PSSetShaderResources(0, 1, &d3d->final_framebuffer_texture_view);
 		d3d->context->PSSetSamplers(0, 1, &d3d->clamp_edge_sampler_state);
 		d3d->context->Draw(3, 0);
 	}

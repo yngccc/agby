@@ -11,10 +11,11 @@ start /b forfiles /p ..\src\hlsl /m *.vps /c "cmd /c fxc.exe /nologo /Od /Zi /T 
 start /b forfiles /p ..\src\hlsl /m *.cs /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_0 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.cs.fxc @PATH >nul" >nul
 
 echo compiling ispc...
-del *.ispc.* 2>nul
+del *.ispc.*
 ..\vendor\bin\ispc.exe ..\src\ispc\simple.ispc -o simple.ispc.obj -h ..\src\ispc\simple.ispc.h --target=sse4-i32x4 >nul
 
 echo compiling flatbuffers...
+del ..\src\flatbuffers\world_generated.h
 ..\vendor\bin\flatc.exe -c -o ..\src\flatbuffers ..\src\flatbuffers\world.fbs
 
 copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >nul

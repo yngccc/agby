@@ -109,8 +109,8 @@ struct game {
 
 	ImGuiContext *imgui_context;
 
-	XMVECTOR camera_position;
-	XMVECTOR camera_view;
+	vec3 camera_position;
+	vec3 camera_view;
 	float camera_fovy;
 	float camera_znear;
 	float camera_zfar;
@@ -287,9 +287,11 @@ void update_camera(game *game, world *world, window *window) {
 		vec3 camera_position = world->player.transform.translate + translate;
 		vec3 camera_view = vec3_normalize(-translate);
 
-		game->camera_position = XMVectorSet(m_unpack3(camera_position), 0);
-		game->camera_view = XMVectorSet(m_unpack3(camera_view), 0);
-		game->camera_view_mat = XMMatrixLookAtRH(game->camera_position, XMVectorAdd(game->camera_position, game->camera_view), XMVectorSet(0, 1, 0, 0));
+		XMVECTOR p = XMVectorSet(m_unpack3(camera_position), 0);
+		XMVECTOR v = XMVectorSet(m_unpack3(camera_view), 0);
+		game->camera_position = camera_position;
+		game->camera_view = camera_view;
+		game->camera_view_mat = XMMatrixLookAtRH(p, XMVectorAdd(p, v), XMVectorSet(0, 1, 0, 0));
 		game->camera_proj_mat = XMMatrixPerspectiveFovRH(game->camera_fovy, (float)window->width / (float)window->height, game->camera_zfar, game->camera_znear);
 		game->camera_view_proj_mat = XMMatrixMultiply(game->camera_view_mat, game->camera_proj_mat);
 	}

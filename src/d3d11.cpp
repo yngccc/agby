@@ -37,13 +37,13 @@ struct d3d {
 	ID3D11RenderTargetView *swap_chain_render_target_view;
 	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc;
 
-	ID3D11Texture2D *color_framebuffer_texture;
-	ID3D11ShaderResourceView *color_framebuffer_texture_view;
-	ID3D11RenderTargetView *color_framebuffer_render_target_view;
-	ID3D11Texture2D *color_framebuffer_depth_texture;
-	ID3D11DepthStencilView *color_framebuffer_depth_view;
-	uint32 color_framebuffer_width;
-	uint32 color_framebuffer_height;
+	ID3D11Texture2D *final_framebuffer_texture;
+	ID3D11ShaderResourceView *final_framebuffer_texture_view;
+	ID3D11RenderTargetView *final_framebuffer_render_target_view;
+	ID3D11Texture2D *final_framebuffer_depth_texture;
+	ID3D11DepthStencilView *final_framebuffer_depth_view;
+	uint32 final_framebuffer_width;
+	uint32 final_framebuffer_height;
 
 	ID3D11Texture2D *shadow_framebuffer_textures[2];
 	ID3D11ShaderResourceView *shadow_framebuffer_texture_views[2];
@@ -101,8 +101,8 @@ struct d3d {
 	ID3D11InputLayout *reference_grid_input_layout;
 	ID3D11DepthStencilState *reference_grid_depth_stencil_state;
 	
-	ID3D11VertexShader *blit_framebuffer_vs;
-	ID3D11PixelShader *blit_framebuffer_ps;
+	ID3D11VertexShader *final_framebuffer_to_screen_vs;
+	ID3D11PixelShader *final_framebuffer_to_screen_ps;
 
 	ID3D11VertexShader *imgui_vs;
 	ID3D11PixelShader *imgui_ps;
@@ -170,8 +170,8 @@ void initialize_d3d_device_swap_chain(d3d *d3d, window *window) {
 
 void initialize_d3d_framebuffers(d3d *d3d) {
 	{
-		d3d->color_framebuffer_width = d3d->swap_chain_desc.Width;
-		d3d->color_framebuffer_height = d3d->swap_chain_desc.Height;
+		d3d->final_framebuffer_width = d3d->swap_chain_desc.Width;
+		d3d->final_framebuffer_height = d3d->swap_chain_desc.Height;
 
 		D3D11_TEXTURE2D_DESC texture_desc = {};
 		texture_desc.Width = d3d->swap_chain_desc.Width;
@@ -184,14 +184,14 @@ void initialize_d3d_framebuffers(d3d *d3d) {
 		texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 		texture_desc.CPUAccessFlags = 0;
 		texture_desc.MiscFlags = 0;
-		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->color_framebuffer_texture));
-		m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->color_framebuffer_texture, nullptr, &d3d->color_framebuffer_render_target_view));
-		m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->color_framebuffer_texture, nullptr, &d3d->color_framebuffer_texture_view));
+		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->final_framebuffer_texture));
+		m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->final_framebuffer_texture, nullptr, &d3d->final_framebuffer_render_target_view));
+		m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->final_framebuffer_texture, nullptr, &d3d->final_framebuffer_texture_view));
 
 		texture_desc.Format = DXGI_FORMAT_D32_FLOAT;
 		texture_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->color_framebuffer_depth_texture));
-		m_d3d_assert(d3d->device->CreateDepthStencilView(d3d->color_framebuffer_depth_texture, nullptr, &d3d->color_framebuffer_depth_view));
+		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->final_framebuffer_depth_texture));
+		m_d3d_assert(d3d->device->CreateDepthStencilView(d3d->final_framebuffer_depth_texture, nullptr, &d3d->final_framebuffer_depth_view));
 	}
 	{
 		d3d->shadow_framebuffer_width = 1024;
@@ -353,8 +353,8 @@ void initialize_d3d_shaders(d3d *d3d) {
 		depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
 		m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->reference_grid_depth_stencil_state));
 	}
-	{ // blit framebuffer
-		shader_file_mappings shaders(d3d, "hlsl/blit_framebuffer.vs.fxc", "hlsl/blit_framebuffer.ps.fxc", &d3d->blit_framebuffer_vs, &d3d->blit_framebuffer_ps);
+	{ // final framebuffer to screen
+		shader_file_mappings shaders(d3d, "hlsl/final_framebuffer_to_screen.vs.fxc", "hlsl/final_framebuffer_to_screen.ps.fxc", &d3d->final_framebuffer_to_screen_vs, &d3d->final_framebuffer_to_screen_ps);
 	}
 	{ // imgui
 		shader_file_mappings shaders(d3d, "hlsl/imgui.vs.fxc", "hlsl/imgui.ps.fxc", &d3d->imgui_vs, &d3d->imgui_ps);
@@ -437,11 +437,11 @@ void resize_d3d_swap_chain(d3d *d3d, uint32 width, uint32 height) {
 		d3d->swap_chain_desc.Width = width;
 		d3d->swap_chain_desc.Height = height;
 	
-		d3d->color_framebuffer_texture_view->Release();
-		d3d->color_framebuffer_render_target_view->Release();
-		d3d->color_framebuffer_texture->Release();
-		d3d->color_framebuffer_depth_view->Release();
-		d3d->color_framebuffer_depth_texture->Release();
+		d3d->final_framebuffer_texture_view->Release();
+		d3d->final_framebuffer_render_target_view->Release();
+		d3d->final_framebuffer_texture->Release();
+		d3d->final_framebuffer_depth_view->Release();
+		d3d->final_framebuffer_depth_texture->Release();
 
 		initialize_d3d_framebuffers(d3d);
 	}

@@ -36,11 +36,11 @@ enum edit_window_tab {
 const char *edit_window_tab_strs[] = {"Player", "StaticObject", "DynamicObject", "Model", "Light", "Terrain", "Skybox"};
 
 enum tool_type {
-	tool_type_pick,
-
 	tool_type_translate,
 	tool_type_rotate,
 	tool_type_scale,
+
+	tool_type_pick,
 
 	tool_type_terrain_begin,
 	tool_type_terrain_bump,
@@ -56,6 +56,30 @@ enum tool_type {
 	tool_type_terrain_tree,
 	tool_type_terrain_road,
 	tool_type_terrain_end
+};
+
+enum edit_operation_type {
+  edit_operation_object_transform
+};
+
+enum transformable_type {
+	transformable_type_player,
+	transformable_type_static_object,
+	transformable_type_dynamic_object,
+	transformable_type_model
+};
+
+struct transform_operation {
+	transformable_type transformable_type;
+	char id[64];
+	transform original_transform;
+};
+
+struct edit_operation {
+	edit_operation_type type;
+	union {
+		transform_operation transform_operation;
+	};
 };
 
 struct editor {
@@ -127,8 +151,8 @@ struct editor {
 	bool new_terrain_popup;
 
 	bool camera_active;
-	XMVECTOR camera_position;
-	XMVECTOR camera_view;
+	vec3 camera_position;
+	vec3 camera_view;
 	float camera_fovy;
 	float camera_znear;
 	float camera_zfar;
@@ -163,6 +187,13 @@ struct editor {
 
 	uint64 world_frame_memory_arena_size;
 	char world_save_file[256];
+	world_editor_settings old_world_editor_settings;
+
+	edit_operation undoes[256];
+	uint32 undo_count;
+
+	edit_operation *redoes[256];
+	uint32 redo_count;
 };
 
 LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -362,8 +393,8 @@ void initialize_editor(editor *editor, d3d *d3d) {
 	*editor = {};
 	initialize_timer(&editor->timer);
 	{ // misc
-		editor->camera_position = XMVectorSet(20, 20, 20, 0);
-		editor->camera_view = XMVector3Normalize(XMVectorNegate(editor->camera_position));
+		editor->camera_position = vec3{20, 20, 20};
+		editor->camera_view = -vec3_normalize(editor->camera_position);
 		editor->camera_fovy = XMConvertToRadians(40);
 		editor->camera_znear = 0.1f;
 		editor->camera_zfar = 10000.0f;
@@ -501,13 +532,14 @@ void initialize_editor(editor *editor, d3d *d3d) {
 }
 
 bool load_editor_world(editor *editor, world *world, d3d *d3d, const char *file) {
-	world_editor_settings editor_settings;
-	if (!load_world(world, d3d, file, &editor_settings)) {
+	if (!load_world(world, d3d, file, &editor->old_world_editor_settings)) {
 		return false;
 	}
-	editor->camera_position = XMVectorSet(m_unpack3(editor_settings.camera_position), 0);
-	editor->camera_view = XMVectorSet(m_unpack3(editor_settings.camera_view), 0);
-	return true;
+	else {
+		editor->camera_position = editor->old_world_editor_settings.camera_position;
+		editor->camera_view = editor->old_world_editor_settings.camera_view;
+		return true;
+	}
 }
 
 bool save_editor_world(editor *editor, world *world, bool save_as) {
@@ -527,14 +559,12 @@ bool save_editor_world(editor *editor, world *world, bool save_as) {
 			array_copy(world_save_file, editor->world_save_file);
 		}
 	}
-	world_editor_settings editor_settings = {
-		vec3{XMVectorGetX(editor->camera_position), XMVectorGetY(editor->camera_position), XMVectorGetZ(editor->camera_position)},
-		vec3{XMVectorGetX(editor->camera_view), XMVectorGetY(editor->camera_view), XMVectorGetZ(editor->camera_view)},
-	};
+	world_editor_settings editor_settings = {editor->camera_position, editor->camera_view};
 	if (!save_world(world, world_save_file, &editor_settings)) {
 		return false;
 	}
-	for (uint32 i = 0; i < world->terrain_count; i += 1) {
+	else {
+		for (uint32 i = 0; i < world->terrain_count; i += 1) {
 		terrain *terrain = &world->terrains[i];
 		m_assert(terrain->height_texture_data, "");
 		m_assert(terrain->diffuse_texture_data, "");
@@ -550,10 +580,75 @@ bool save_editor_world(editor *editor, world *world, bool save_as) {
 		memcpy(diffuse_texture_ptr, terrain->diffuse_texture_data, texture_size * sizeof(uint32));
     flush_file_mapping(terrain_file_mapping);
 		close_file_mapping(terrain_file_mapping);
-	}
+		}
 
-	array_copy(editor->world_save_file, world_save_file);
-	return true;
+		array_copy(editor->world_save_file, world_save_file);
+		return true;
+	}
+}
+
+bool editor_need_saving(editor *editor, world *world) {
+	if (editor->undo_count > 0) {
+		return true;
+	}
+	else if (editor->camera_position != editor->old_world_editor_settings.camera_position ||
+					 editor->camera_view != editor->old_world_editor_settings.camera_view) {
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
+void editor_add_undo(editor *editor, edit_operation operation) {
+	if (editor->undo_count >= m_countof(editor->undoes)) {
+		uint32 n = 32;
+		memmove(editor->undoes, editor->undoes + n, (m_countof(editor->undoes) - n) * sizeof(editor->undoes[0]));
+		editor->undo_count = m_countof(editor->undoes) - n;
+	}
+	editor->undoes[editor->undo_count] = operation;
+	editor->undo_count += 1;
+}
+
+void editor_pop_undo(editor *editor, world *world) {
+	if (editor->undo_count > 0) {
+		edit_operation *operation = &editor->undoes[editor->undo_count - 1];
+		switch (operation->type) {
+		case edit_operation_object_transform: {
+			transform_operation *op = &operation->transform_operation;
+			switch (op->transformable_type) {
+			case transformable_type_player: {
+				world->player.transform = op->original_transform;
+			} break;
+			case transformable_type_static_object: {
+				for (uint32 i = 0; i < world->static_object_count; i += 1) {
+					if (!strcmp(world->static_objects[i].id, op->id)) {
+						world->static_objects[i].transform = op->original_transform;
+						break;
+					}
+				}
+			} break;
+			case transformable_type_dynamic_object: {
+				for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
+					if (!strcmp(world->dynamic_objects[i].id, op->id)) {
+						world->dynamic_objects[i].transform = op->original_transform;
+						break;
+					}
+				}
+			} break;
+			case transformable_type_model: {
+				for (uint32 i = 0; i < world->model_count; i += 1) {
+					if (!strcmp(world->models[i].file, op->id)) {
+						world->models[i].transform = op->original_transform;
+						break;
+					}
+				}
+			} break;
+			}
+		} break;
+		}
+		editor->undo_count -= 1;
+	}
 }
 
 void check_quit(editor *editor) {
@@ -589,7 +684,12 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 
 	if (editor->quit_popup) {
 		editor->quit_popup = false;
-		ImGui::OpenPopup("##quit_popup");
+		if (editor_need_saving(editor, world)) {
+			ImGui::OpenPopup("##quit_popup");
+		}
+		else {
+			editor->quit = true;
+		}
 	}
 	if (ImGui::BeginPopupModal("##quit_popup", nullptr, window_flags)) {
 		ImGui::Text("Save changes?");
@@ -1446,91 +1546,131 @@ void update_camera(editor *editor, window *window) {
 		pin_cursor(false);
 		editor->camera_active = false;
 	}
-	if (ImGui::IsKeyDown(VK_UP) && ImGui::IsKeyDown(VK_CONTROL)) {
-		editor->camera_position = XMVectorAdd(editor->camera_position, XMVectorScale(editor->camera_view, (float)editor->last_frame_time_secs * 20));
-	}
-	if (ImGui::IsKeyDown(VK_DOWN) && ImGui::IsKeyDown(VK_CONTROL)) {
-		editor->camera_position = XMVectorSubtract(editor->camera_position, XMVectorScale(editor->camera_view, (float)editor->last_frame_time_secs * 20));
-	}
-	if (ImGui::IsKeyDown(VK_RIGHT) && ImGui::IsKeyDown(VK_CONTROL)) {
-		editor->camera_position = XMVectorAdd(editor->camera_position, XMVectorScale(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)), (float)editor->last_frame_time_secs * 20));
-	}
-	if (ImGui::IsKeyDown(VK_LEFT) && ImGui::IsKeyDown(VK_CONTROL)) {
-		editor->camera_position = XMVectorSubtract(editor->camera_position, XMVectorScale(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)), (float)editor->last_frame_time_secs * 20));
-	}
 	if (editor->camera_active) {
-		float move_distance = editor->camera_move_speed * (float)editor->last_frame_time_secs;
+		float move_distance = (float)editor->last_frame_time_secs * editor->camera_move_speed;
 		if (ImGui::IsKeyDown(VK_SHIFT)) {
-			move_distance *= 8;
+			move_distance *= 10;
 		}
 		if (ImGui::IsKeyDown('W')) {
-			XMVECTOR move_vec = XMVectorScale(editor->camera_view, move_distance);
-			editor->camera_position = XMVectorAdd(editor->camera_position, move_vec);
+			editor->camera_position += editor->camera_view * move_distance;
 		}
 		if (ImGui::IsKeyDown('S')) {
-			XMVECTOR move_vec = XMVectorScale(editor->camera_view, -move_distance);
-			editor->camera_position = XMVectorAdd(editor->camera_position, move_vec);
+			editor->camera_position -= editor->camera_view * move_distance;
 		}
 		if (ImGui::IsKeyDown('A')) {
-			XMVECTOR move_vec = XMVectorScale(XMVector3Normalize(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0))), -move_distance);
-			editor->camera_position = XMVectorAdd(editor->camera_position, move_vec);
+			editor->camera_position -= vec3_cross(editor->camera_view, vec3{0, 1, 0}) * move_distance;
 		}
 		if (ImGui::IsKeyDown('D')) {
-			XMVECTOR move_vec = XMVectorScale(XMVector3Normalize(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0))), move_distance);
-			editor->camera_position = XMVectorAdd(editor->camera_position, move_vec);
+			editor->camera_position += vec3_cross(editor->camera_view, vec3{0, 1, 0}) * move_distance;
 		}
 		float rotate_distance = editor->camera_rotate_speed * 0.1f * (float)editor->last_frame_time_secs;
 		float yaw = window->raw_mouse_dx * rotate_distance;
-		editor->camera_view = XMVector3Normalize(XMVector3Rotate(editor->camera_view, XMQuaternionRotationAxis(XMVectorSet(0, 1, 0, 0), -yaw)));
+		editor->camera_view = vec3_normalize(quat_from_axis_rotate(vec3{0, 1, 0}, -yaw) * editor->camera_view);
 		float max_pitch = XMConvertToRadians(80.0f);
-		float pitch = asinf(XMVectorGetY(editor->camera_view));
+		float pitch = asinf(editor->camera_view.y);
 		float dpitch = -window->raw_mouse_dy * rotate_distance;
 		if ((dpitch + pitch) > -max_pitch && (pitch + dpitch) < max_pitch) {
-			XMVECTOR axis = XMVector3Normalize(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)));
-			editor->camera_view = XMVector3Normalize(XMVector3Rotate(editor->camera_view, XMQuaternionRotationAxis(axis, dpitch)));
+			vec3 axis = vec3_normalize(vec3_cross(editor->camera_view, vec3{0, 1, 0}));
+			editor->camera_view = vec3_normalize(quat_from_axis_rotate(axis, dpitch) * editor->camera_view);
+		}
+	}
+	else {
+		float move_distance = (float)editor->last_frame_time_secs * 20;
+		if (ImGui::IsKeyDown(VK_UP) && ImGui::IsKeyDown(VK_CONTROL)) {
+			editor->camera_position += editor->camera_view * move_distance;
+		}
+		if (ImGui::IsKeyDown(VK_DOWN) && ImGui::IsKeyDown(VK_CONTROL)) {
+			editor->camera_position -= editor->camera_view * move_distance;
+		}
+		if (ImGui::IsKeyDown(VK_LEFT) && ImGui::IsKeyDown(VK_CONTROL)) {
+			editor->camera_position -= vec3_cross(editor->camera_view, vec3{0, 1, 0}) * move_distance;
+		}
+		if (ImGui::IsKeyDown(VK_RIGHT) && ImGui::IsKeyDown(VK_CONTROL)) {
+			editor->camera_position += vec3_cross(editor->camera_view, vec3{0, 1, 0}) * move_distance;
 		}
 	}
 	{
-		editor->camera_view_mat = XMMatrixLookAtRH(editor->camera_position, XMVectorAdd(editor->camera_position, editor->camera_view), XMVectorSet(0, 1, 0, 0));
+		XMVECTOR p = XMVectorSet(m_unpack3(editor->camera_position), 0);
+		XMVECTOR v = XMVectorSet(m_unpack3(editor->camera_view), 0);
+		editor->camera_view_mat = XMMatrixLookAtRH(p, XMVectorAdd(p, v), XMVectorSet(0, 1, 0, 0));
 		editor->camera_proj_mat = XMMatrixPerspectiveFovRH(editor->camera_fovy, (float)window->width / (float)window->height, editor->camera_zfar, editor->camera_znear);
 		editor->camera_view_proj_mat = XMMatrixMultiply(editor->camera_view_mat, editor->camera_proj_mat);
-	}
-	if (cursor_inside_window(window)) {
-		XMVECTOR world_position = XMVector3Unproject(XMVectorSet(ImGui::GetMousePos().x, ImGui::GetMousePos().y, 1, 0), 0, 0, (float)window->width, (float)window->height, 0, 1, editor->camera_proj_mat, editor->camera_view_mat, XMMatrixIdentity());
-		XMVECTOR ray_dir = XMVector3Normalize(XMVectorSubtract(world_position, editor->camera_position));
-		editor->camera_to_mouse_ray = {{XMVectorGetX(editor->camera_position), XMVectorGetY(editor->camera_position), XMVectorGetZ(editor->camera_position)}, {XMVectorGetX(ray_dir), XMVectorGetY(ray_dir), XMVectorGetZ(ray_dir)}, editor->camera_zfar};
+		if (cursor_inside_window(window)) {
+			XMVECTOR world_position = XMVector3Unproject(XMVectorSet(ImGui::GetMousePos().x, ImGui::GetMousePos().y, 1, 0), 0, 0, (float)window->width, (float)window->height, 0, 1, editor->camera_proj_mat, editor->camera_view_mat, XMMatrixIdentity());
+			XMVECTOR ray_dir = XMVector3Normalize(XMVectorSubtract(world_position, p));
+			editor->camera_to_mouse_ray = ray{editor->camera_position, vec3{XMVectorGetX(ray_dir), XMVectorGetY(ray_dir), XMVectorGetZ(ray_dir)}, editor->camera_zfar};
+		}
 	}
 }
 
 void tool_gizmo(editor *editor, world *world, d3d *d3d, window *window) {
-	auto transform_gizmo = [&](transform *transform) {
+	auto transform_gizmo = [&](transformable_type type) {
 		for (auto tool_type : {tool_type_translate, tool_type_rotate, tool_type_scale}) {
 			if (editor->tool_type == tool_type) {
-				vec3 camera_position = {XMVectorGetX(editor->camera_position), XMVectorGetY(editor->camera_position), XMVectorGetZ(editor->camera_position)};
-				vec3 camera_view = {XMVectorGetX(editor->camera_view), XMVectorGetY(editor->camera_view), XMVectorGetZ(editor->camera_view)};
-				mat4 camera_view_mat = mat4_look_at(camera_position, camera_position + camera_view);
+				mat4 camera_view_mat = mat4_look_at(editor->camera_position, editor->camera_position + editor->camera_view);
 				mat4 camera_proj_mat = mat4_perspective_project(editor->camera_fovy, window->width / (float)window->height, editor->camera_znear, editor->camera_zfar);
+				transform *transform = nullptr;
+				switch (type) {
+				case transformable_type_player: transform = &world->player.transform; break;
+				case transformable_type_static_object: transform = &world->static_objects[editor->static_object_index].transform; break;
+				case transformable_type_dynamic_object: transform = &world->dynamic_objects[editor->dynamic_object_index].transform; break;
+				case transformable_type_model: transform = &world->models[editor->model_index].transform; break;
+				}
 				mat4 transform_mat = mat4_from_transform(*transform);
+				mat4 old_transform_mat = transform_mat;
 				ImGuizmo::OPERATION operations[] = {ImGuizmo::TRANSLATE, ImGuizmo::ROTATE, ImGuizmo::SCALE};
 				ImGuizmo::MODE modes[] = {ImGuizmo::WORLD, ImGuizmo::LOCAL, ImGuizmo::LOCAL};
 				ImGuizmo::BeginFrame();
 				ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, operations[editor->tool_type], modes[editor->tool_type], (float *)transform_mat);
 				*transform = mat4_get_transform(transform_mat);
+				static bool transforming = false;
+				static struct transform original_transform = transform_identity();
+				if (ImGuizmo::IsUsing()) {
+					if (!transforming && (transform_mat != old_transform_mat)) {
+						transforming = true;
+						original_transform = mat4_get_transform(old_transform_mat);
+					}
+				}
+				else {
+					if (transforming) {
+						transforming = false;
+						edit_operation operation = {edit_operation_object_transform};
+						operation.transform_operation.original_transform = original_transform;
+						switch (type) {
+						case transformable_type_player: {
+							operation.transform_operation.transformable_type = transformable_type_player;
+						} break;
+						case transformable_type_static_object: {
+							operation.transform_operation.transformable_type = transformable_type_static_object;
+							strcpy(operation.transform_operation.id, world->static_objects[editor->static_object_index].id);
+						} break;
+						case transformable_type_dynamic_object: {
+							operation.transform_operation.transformable_type = transformable_type_dynamic_object;
+							strcpy(operation.transform_operation.id, world->dynamic_objects[editor->dynamic_object_index].id);
+						} break;
+						case transformable_type_model: {
+							operation.transform_operation.transformable_type = transformable_type_model;
+							strcpy(operation.transform_operation.id, world->models[editor->model_index].file);
+						} break;
+						}
+						editor_add_undo(editor, operation);
+					}
+				}
 				break;
 			}
 		}
 	};
 	if (editor->edit_window_tab == edit_window_tab_player) {
-		transform_gizmo(&world->player.transform);
+		transform_gizmo(transformable_type_player);
 	}
 	else if (editor->edit_window_tab == edit_window_tab_static_object && editor->static_object_index < world->static_object_count) {
-		transform_gizmo(&world->static_objects[editor->static_object_index].transform);
+		transform_gizmo(transformable_type_static_object);
 	}
 	else if (editor->edit_window_tab == edit_window_tab_dynamic_object && editor->dynamic_object_index < world->dynamic_object_count) {
-		transform_gizmo(&world->dynamic_objects[editor->dynamic_object_index].transform);
+		transform_gizmo(transformable_type_dynamic_object);
 	}
 	else if (editor->edit_window_tab == edit_window_tab_model && editor->model_index < world->model_count) {
-		transform_gizmo(&world->models[editor->model_index].transform);
+		transform_gizmo(transformable_type_model);
 	}
 	else if (editor->edit_window_tab == edit_window_tab_terrain && world->terrain_index < world->terrain_count) {
 		terrain *terrain = &world->terrains[world->terrain_index];
@@ -1620,6 +1760,12 @@ void tool_gizmo(editor *editor, world *world, d3d *d3d, window *window) {
 				}
 			}
 		}
+	}
+}
+
+void check_undo(editor *editor, world *world) {
+	if (ImGui::IsKeyPressed('Z') && ImGui::IsKeyDown(VK_CONTROL)) {
+		editor_pop_undo(editor, world);
 	}
 }
 
@@ -1774,6 +1920,7 @@ int main(int argc, char **argv) {
 		frame_statistic_window(editor);
 		update_camera(editor, window);
 		tool_gizmo(editor, world, d3d, window);
+		check_undo(editor, world);
 		ImGui::Render();
 
 		render_world_desc render_world_desc = {};
