@@ -18,8 +18,12 @@ echo compiling flatbuffers...
 del ..\src\flatbuffers\world_generated.h
 ..\vendor\bin\flatc.exe -c -o ..\src\flatbuffers ..\src\flatbuffers\world.fbs
 
-copy /y ..\vendor\lib\windows\nvtt.dll nvtt.dll >nul
-copy /y ..\vendor\lib\windows\ispc_texcomp.dll ispc_texcomp.dll >nul
+copy /y ..\vendor\lib\vc15_x64\PhysX3_x64.dll PhysX3_x64.dll >nul
+copy /y ..\vendor\lib\vc15_x64\PhysX3Common_x64.dll PhysX3Common_x64.dll >nul
+copy /y ..\vendor\lib\vc15_x64\PhysX3CharacterKinematic_x64.dll PhysX3CharacterKinematic_x64.dll >nul
+copy /y ..\vendor\lib\vc15_x64\PxFoundation_x64.dll PxFoundation_x64.dll >nul
+copy /y ..\vendor\lib\vc15_x64\nvtt.dll nvtt.dll >nul
+copy /y ..\vendor\lib\vc15_x64\ispc_texcomp.dll ispc_texcomp.dll >nul
 
 if "%~1"=="prebuild_only" goto :end
 
@@ -28,27 +32,24 @@ mkdir compiler_output
 
 echo compiling cpp...
 set cflags=/nologo /Od /MD /EHsc /GS /sdl /FC /W3 /WX
-if "%~2"=="clang" (
-  set cflags=%cflags% -Wno-missing-braces -Wno-microsoft-include -mssse3
-)
-set dirs=/I ..\vendor\include /I ..\vendor\include\bullet /link /LIBPATH:..\vendor\lib\windows
+rem set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
+set dirs=/I ..\vendor\include /I ..\vendor\include\bullet /I ..\vendor\include\physx /link /LIBPATH:..\vendor\lib\vc15_x64
 set windows_libs=user32.lib gdi32.lib Shcore.lib Wtsapi32.lib Comdlg32.lib d3d11.lib
 set bullet_libs=BulletCollision.lib BulletDynamics.lib LinearMath.lib
-rem set no_console=/SUBSYSTEM:windows /ENTRY:mainCRTStartup
+set physx_libs=PhysX3_x64.lib PhysX3Common_x64.lib PhysX3Extensions_x64.lib PhysX3CharacterKinematic_x64.lib PhysX3Vehicle_x64.lib PxFoundation_x64.lib
 
-set compile_editor_cmd=start /b cmd /c "cl ..\src\editor.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% > compiler_output\editor.txt"
-set compile_game_cmd=start /b cmd /c "cl ..\src\game.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% > compiler_output\game.txt"
+set compile_editor_cmd=start /b cmd /c "cl ..\src\editor.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% %physx_libs% > compiler_output\editor.txt"
+set compile_game_cmd=start /b cmd /c "cl ..\src\game.cpp %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% %physx_libs% > compiler_output\game.txt"
 set compile_import_cmd=start /b cmd /c "cl ..\src\import.cpp %cflags% %dirs% %windows_libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
 set compile_ray_tracer_cmd=start /b cmd /c "cl ..\src\ray_tracer.cpp %cflags% %dirs% %windows_libs% > compiler_output\ray_tracer.txt"
 set compile_test_cmd=start /b cmd /c "cl ..\src\test.cpp %cflags% %dirs% %windows_libs% simple.ispc.obj > compiler_output\test.txt"
 
-if "%~2"=="clang" (
-  set compile_editor_cmd=start /b cmd /c "clang-cl ..\src\editor.cpp -o editor.clang.exe %cflags% %dir% %no_console% %windows_libs% > compiler_output\editor.txt"
-  set compile_game_cmd=start /b cmd /c "clang-cl ..\src\game.cpp -o game.clang.exe %cflags% %dir% %no_console% %windows_libs% > compiler_output\game.txt"
-  set compile_import_cmd=start /b cmd /c "clang-cl ..\src\import.cpp -o import.clang.exe %cflags% %dir% %windows_libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
-  set compile_ray_tracer_cmd=start /b cmd /c "clang-cl ..\src\ray_tracer.cpp -o ray_tracer.clang.exe %cflags% %dir% %windows_libs% > compiler_output\ray_tracer.txt"
-  set compile_test_cmd=start /b cmd /c "clang-cl ..\src\test.cpp -o test.clang.exe %cflags% %dir% %windows_libs% simple.ispc.obj> compiler_output\test.txt"
-)
+rem set cflags=%cflags% -Wno-missing-braces -Wno-microsoft-include -Wno-unused-function -mssse3
+rem set compile_editor_cmd=start /b cmd /c "clang-cl ..\src\editor.cpp -o editor.exe %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% %physx_libs% > compiler_output\editor.txt"
+rem set compile_game_cmd=start /b cmd /c "clang-cl ..\src\game.cpp -o game.exe %cflags% %dirs% %no_console% %windows_libs% %bullet_libs% %physx_libs% > compiler_output\game.txt"
+rem set compile_import_cmd=start /b cmd /c "clang-cl ..\src\import.cpp -o import.exe %cflags% %dirs% %windows_libs% nvtt.lib ispc_texcomp.lib > compiler_output\import.txt"
+rem set compile_ray_tracer_cmd=start /b cmd /c "clang-cl ..\src\ray_tracer.cpp -o ray_tracer.exe %cflags% %dirs% %windows_libs% > compiler_output\ray_tracer.txt"
+rem set compile_test_cmd=start /b cmd /c "clang-cl ..\src\test.cpp -o test.exe %cflags% %dirs% %windows_libs% simple.ispc.obj> compiler_output\test.txt"
 
 if "%~1"=="" set compile_all=true
 if "%~1"=="all" set compile_all=true

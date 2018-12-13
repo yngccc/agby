@@ -1,27 +1,27 @@
 [
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/editor.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"command": "clang-cl src/editor.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -Wno-unused-function -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
 		"file": "src/editor.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/game.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"command": "clang-cl src/game.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -Wno-unused-function -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
 		"file": "src/game.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/import.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"command": "clang-cl src/import.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -Wno-unused-function -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
 		"file": "src/import.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/ray_tracer.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"command": "clang-cl src/ray_tracer.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -Wno-unused-function -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
 		"file": "src/ray_tracer.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/test.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -mssse3 /I vendor/include /I vendor/include/bullet",
+		"command": "clang-cl src/test.cpp /Od /W3 -Wno-missing-braces -Wno-microsoft-include -Wno-unused-function -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
 		"file": "src/test.cpp"
 	}
 ]

@@ -15,11 +15,16 @@
 static_assert(sizeof(flatbuffers::Transform) == sizeof(struct transform), "");
 static_assert(sizeof(flatbuffers::Mat4) == 64, "");
 
+#define BT_NO_SIMD_OPERATOR_OVERLOADS
 #include <bullet/btBulletCollisionCommon.h>
 #include <bullet/btBulletDynamicsCommon.h>
 #include <bullet/BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h>
 #include <bullet/BulletCollision/CollisionDispatch/btGhostObject.h>
 #include <bullet/BulletDynamics/Character/btKinematicCharacterController.h>
+
+#define NDEBUG
+#include <physx/PxPhysicsAPI.h>
+#undef NDEBUG
 
 enum collision_type {
 	collision_type_none,
@@ -365,20 +370,33 @@ void initialize_world(world *world, d3d *d3d) {
 		vertex_buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
 		vertex_buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 
+		D3D11_SUBRESOURCE_DATA vertex_buffer_data = D3D11_SUBRESOURCE_DATA{box_vertices};
 		vertex_buffer_desc.ByteWidth = sizeof(box_vertices);
-		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{box_vertices}, &world->box_vertex_buffer));
+		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->box_vertex_buffer));
+
+		vertex_buffer_data = D3D11_SUBRESOURCE_DATA{sphere_vertices};
 		vertex_buffer_desc.ByteWidth = sizeof(sphere_vertices);
-		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{sphere_vertices}, &world->sphere_vertex_buffer));
+		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->sphere_vertex_buffer));
+
+		vertex_buffer_data = D3D11_SUBRESOURCE_DATA{hemisphere_vertices};
 		vertex_buffer_desc.ByteWidth = sizeof(hemisphere_vertices);
-		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{hemisphere_vertices}, &world->hemisphere_vertex_buffer));
+		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->hemisphere_vertex_buffer));
+
+		vertex_buffer_data = D3D11_SUBRESOURCE_DATA{cylinder_vertices};
 		vertex_buffer_desc.ByteWidth = sizeof(cylinder_vertices);
-		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{cylinder_vertices}, &world->cylinder_vertex_buffer));
+		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->cylinder_vertex_buffer));
+
+		vertex_buffer_data = D3D11_SUBRESOURCE_DATA{hollow_cylinder_vertices};
 		vertex_buffer_desc.ByteWidth = sizeof(hollow_cylinder_vertices);
-		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{hollow_cylinder_vertices}, &world->hollow_cylinder_vertex_buffer));
+		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->hollow_cylinder_vertex_buffer));
+
+		vertex_buffer_data = D3D11_SUBRESOURCE_DATA{hollow_circle_vertices};
 		vertex_buffer_desc.ByteWidth = sizeof(hollow_circle_vertices);
-		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{hollow_circle_vertices}, &world->hollow_circle_vertex_buffer));
+		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->hollow_circle_vertex_buffer));
+
+		vertex_buffer_data = D3D11_SUBRESOURCE_DATA{torus_vertices};
 		vertex_buffer_desc.ByteWidth = sizeof(torus_vertices);
-		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{torus_vertices}, &world->torus_vertex_buffer));
+		m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->torus_vertex_buffer));
 
 		{ // reference grid
 			undo_allocation_scope_exit(&world->frame_memory_arena);
@@ -408,7 +426,8 @@ void initialize_world(world *world, d3d *d3d) {
 			}
 			
 			vertex_buffer_desc.ByteWidth = vertex_count * 12;
-			m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &D3D11_SUBRESOURCE_DATA{vertices}, &world->reference_grid_vertex_buffer));
+			D3D11_SUBRESOURCE_DATA vertex_buffer_data = {vertices};
+			m_d3d_assert(d3d->device->CreateBuffer(&vertex_buffer_desc, &vertex_buffer_data, &world->reference_grid_vertex_buffer));
 		}
 	}
 	{
@@ -460,6 +479,15 @@ void initialize_world(world *world, d3d *d3d) {
 		world->bt_dynamics_world = new btDiscreteDynamicsWorld(world->bt_collision_dispatcher, world->bt_broad_phase, world->bt_constraint_solver, world->bt_collision_config);
 		world->bt_dynamics_world->getPairCache()->setInternalGhostPairCallback(new btGhostPairCallback());
 		world->bt_dynamics_world->setGravity(btVector3(0, -9.81f, 0));
+	}
+	{
+		static physx::PxDefaultAllocator default_allocator_callback;
+		static physx::PxDefaultErrorCallback default_error_callback;
+
+		physx::PxFoundation *foundation = PxCreateFoundation(PX_FOUNDATION_VERSION, default_allocator_callback, default_error_callback);
+		if(!foundation) {
+			fatal("PxCreateFoundation failed!");
+		}
 	}
 	void reset_world(struct world*, struct d3d*);
 	reset_world(world, d3d);
@@ -584,11 +612,13 @@ bool add_model(world *world, d3d *d3d, const char *model_file, transform transfo
 
 			buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 			buffer_desc.ByteWidth = gpk_primitive->vertex_count * sizeof(struct gpk_model_vertex);
-			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &D3D11_SUBRESOURCE_DATA{model_file_mapping.ptr + gpk_primitive->vertices_offset}, &primitive->vertex_buffer));
+			D3D11_SUBRESOURCE_DATA vertex_buffer_data = {model_file_mapping.ptr + gpk_primitive->vertices_offset};
+			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &primitive->vertex_buffer));
 
 			buffer_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
 			buffer_desc.ByteWidth = gpk_primitive->index_count * sizeof(uint16);
-			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &D3D11_SUBRESOURCE_DATA{model_file_mapping.ptr + gpk_primitive->indices_offset}, &primitive->index_buffer));			
+			vertex_buffer_data = {model_file_mapping.ptr + gpk_primitive->indices_offset};
+			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &primitive->index_buffer));			
 		}
 	}
 
@@ -791,7 +821,8 @@ bool add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 			buffer_desc.ByteWidth = vertex_count * sizeof(struct terrain_vertex);
 			buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
 			buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &D3D11_SUBRESOURCE_DATA{vertices, 0, 0}, &terrain->vertex_buffer));
+			D3D11_SUBRESOURCE_DATA vertex_buffer_data = {vertices, 0, 0};
+			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &terrain->vertex_buffer));
 		}
 		{
 			undo_allocation_scope_exit(&world->general_memory_arena);
@@ -813,7 +844,8 @@ bool add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 			buffer_desc.ByteWidth = index_count * sizeof(uint32);
 			buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
 			buffer_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &D3D11_SUBRESOURCE_DATA{indices, 0, 0}, &terrain->index_buffer));
+			D3D11_SUBRESOURCE_DATA vertex_buffer_data = {indices, 0, 0};
+			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &terrain->index_buffer));
 			terrain->index_count = index_count;
 		}
 	}
@@ -882,7 +914,6 @@ bool add_skybox(world *world, d3d *d3d, const char *skybox_file) {
 		subresource_data[i] = {cubemap_data + i * cubemap_face_size, gpk_skybox->cubemap_width / gpk_skybox->cubemap_format_block_dimension * gpk_skybox->cubemap_format_block_size, 0};
 	}
 	m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, subresource_data, &skybox->cube_texture));
-	D3D11_SHADER_RESOURCE_VIEW_DESC shader_resource_view_desc = {};
 	m_d3d_assert(d3d->device->CreateShaderResourceView(skybox->cube_texture, nullptr, &skybox->cube_texture_view));
 
 	world->skybox_count += 1;
@@ -1077,7 +1108,7 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 		m_assert(fb_terrains->size() < world->terrain_capacity, "");
 		for (uint32 i = 0; i < fb_terrains->size(); i += 1) {
 			auto fb_terrain = (*fb_terrains)[i];
-			auto terrain = &world->terrains[i];
+			// auto terrain = &world->terrains[i];
 			m_assert(fb_terrain->file(), "");
 			char terrain_file[256];
 			snprintf(terrain_file, sizeof(terrain_file), "assets/terrains/%s", fb_terrain->file()->c_str());
@@ -1090,7 +1121,7 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 		m_assert(fb_skyboxes->size() < world->skybox_capacity, "");
 		for (uint32 i = 0; i < fb_skyboxes->size(); i += 1) {
 			auto fb_skybox = (*fb_skyboxes)[i];
-			auto skybox = &world->skyboxes[i];
+			// auto skybox = &world->skyboxes[i];
 			m_assert(fb_skybox->file(), "");
 			char skybox_file[256];
 			snprintf(skybox_file, sizeof(skybox_file), "assets/skyboxes/%s", fb_skybox->file()->c_str());
@@ -1551,7 +1582,7 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 
 		model_render_data *model_render_data = world->render_data.model_list;
 		while (model_render_data) {
-			model *model = model_render_data->model;
+			// model *model = model_render_data->model;
 			uint32 model_constant_buffer_offset = model_render_data->model_mat_constant_buffer_offset / 16;
 			uint32 model_constant_count = 16;
 			d3d->context->VSSetConstantBuffers1(1, 1, &world->constant_buffer, &model_constant_buffer_offset, &model_constant_count);
