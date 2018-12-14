@@ -71,12 +71,12 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
-    <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
-    <LibraryPath>$(SolutionDir)..\..\vendor\lib\windows;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\physx;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)..\..\vendor\lib\vc15_x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
-    <LibraryPath>$(SolutionDir)..\..\vendor\lib\windows;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\physx;$(SolutionDir)..\..\vendor\include\bullet;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)..\..\vendor\lib\vc15_x64;$(LibraryPath)</LibraryPath>
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -87,9 +87,11 @@
       <ConformanceMode>true</ConformanceMode>
       <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>Shcore.lib;Wtsapi32.lib;Comdlg32.lib;d3d11.lib;BulletCollision.lib;BulletDynamics.lib;LinearMath.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Shcore.lib;Wtsapi32.lib;Comdlg32.lib;d3d11.lib;PhysX3_x64.lib;PhysX3Common_x64.lib;PhysX3Extensions_x64.lib;PhysX3CharacterKinematic_x64.lib;PhysX3Vehicle_x64.lib;PxFoundation_x64.lib;BulletCollision.lib;BulletDynamics.lib;LinearMath.lib;nvtt.lib;ispc_texcomp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -127,7 +129,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>Shcore.lib;Wtsapi32.lib;Comdlg32.lib;d3d11.lib;BulletCollision.lib;BulletDynamics.lib;LinearMath.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Shcore.lib;Wtsapi32.lib;Comdlg32.lib;d3d11.lib;PhysX3_x64.lib;PhysX3Common_x64.lib;PhysX3Extensions_x64.lib;PhysX3CharacterKinematic_x64.lib;PhysX3Vehicle_x64.lib;PxFoundation_x64.lib;BulletCollision.lib;BulletDynamics.lib;LinearMath.lib;nvtt.lib;ispc_texcomp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

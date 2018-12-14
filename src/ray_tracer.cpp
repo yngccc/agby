@@ -28,9 +28,6 @@ const uint32 block_height = 16;
 const uint32 block_pixel_count = block_width * block_height;
 const uint32 block_count = (image_width / block_width) * (image_height / block_height);
 const block_position *block_positions = [] {
-	uint32 block_first_pixel_x = image_width / 2 - block_width;
-	uint32 block_first_pixel_y = image_height / 2 - block_height;
-
 	block_position *positions = new block_position[block_count];
 	block_position current_position = {image_width / block_width / 2 * block_width, image_height / block_height / 2 * block_height};
 	positions[0] = current_position;
@@ -78,7 +75,7 @@ const block_position *block_positions = [] {
 }();
 
 uint32 block_index = 0;
-std::atomic<uint32> block_pixel_index = 0;
+std::atomic<uint32> block_pixel_index(0);
 HANDLE block_pixel_semaphore = CreateSemaphoreA(nullptr, block_pixel_count, block_pixel_count, nullptr);
 
 struct rng {
@@ -462,7 +459,6 @@ DWORD thread_func(void *param) {
 	mat4 view_mat = camera_view_mat4(scene->camera);
 	mat4 proj_mat = camera_project_mat4(scene->camera);
 	vec4 view_port = {0, 0, (float)image_width, (float)image_height};
-	uint32 image_pixel_count = image_width * image_height;
 
 	while (true) {
 		uint32 pixel_index = block_pixel_index.load();
