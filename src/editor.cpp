@@ -1330,21 +1330,9 @@ void edit_window_model_tab(editor *editor, world *world, d3d *d3d) {
 						model->collision.box = collision_box{1, 1, 1};
 					}
 				}
-				if (ImGui::Selectable("capsule_x", model->collision.type == collision_type_capsule_x)) {
-					if (model->collision.type != collision_type_capsule_x) {
-						model->collision.type = collision_type_capsule_x;
-						model->collision.capsule = collision_capsule{1, 2};
-					}
-				}
-				if (ImGui::Selectable("capsule_y", model->collision.type == collision_type_capsule_y)) {
-					if (model->collision.type != collision_type_capsule_y) {
-						model->collision.type = collision_type_capsule_y;
-						model->collision.capsule = collision_capsule{1, 2};
-					}
-				}
-				if (ImGui::Selectable("capsule_z", model->collision.type == collision_type_capsule_z)) {
-					if (model->collision.type != collision_type_capsule_z) {
-						model->collision.type = collision_type_capsule_z;
+				if (ImGui::Selectable("capsule", model->collision.type == collision_type_capsule)) {
+					if (model->collision.type != collision_type_capsule) {
+						model->collision.type = collision_type_capsule;
 						model->collision.capsule = collision_capsule{1, 2};
 					}
 				}
@@ -1356,7 +1344,7 @@ void edit_window_model_tab(editor *editor, world *world, d3d *d3d) {
 			if (model->collision.type == collision_type_box) {
 				ImGui::InputFloat3("extents", &model->collision.box.extents[0]);
 			}
-			if (model->collision.type == collision_type_capsule_x || model->collision.type == collision_type_capsule_y || model->collision.type == collision_type_capsule_z) {
+			if (model->collision.type == collision_type_capsule) {
 				ImGui::InputFloat("radius", &model->collision.capsule.radius);
 				ImGui::InputFloat("height", &model->collision.capsule.height);
 			}

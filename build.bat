@@ -31,11 +31,10 @@ rem set cc_options=%cc_options% /SUBSYSTEM:windows /ENTRY:mainCRTStartup
 
 if "%cc%"=="clang-cl" set cc_options=%cc_options% -fdiagnostics-absolute-paths -mssse3 -Wno-missing-braces -Wno-microsoft-include -Wno-unused-function -Wno-unknown-pragmas -Wno-return-type-c-linkage
 
-set cc_options=%cc_options% /I ..\vendor\include /I ..\vendor\include\bullet /I ..\vendor\include\physx
+set cc_options=%cc_options% /I ..\vendor\include /I ..\vendor\include\physx
 
 set cc_options=%cc_options% user32.lib gdi32.lib Shcore.lib Wtsapi32.lib Comdlg32.lib d3d11.lib
-set cc_options=%cc_options% PhysX3_x64.lib PhysX3Common_x64.lib PhysX3Extensions_x64.lib PhysX3CharacterKinematic_x64.lib PhysX3Vehicle_x64.lib PxFoundation_x64.lib
-set cc_options=%cc_options% BulletCollision.lib BulletDynamics.lib LinearMath.lib
+set cc_options=%cc_options% PhysX3CHECKED_x64.lib PhysX3CommonCHECKED_x64.lib PhysX3CharacterKinematicCHECKED_x64.lib PhysX3ExtensionsCHECKED.lib PhysX3VehicleCHECKED.lib PxFoundationCHECKED_x64.lib
 set cc_options=%cc_options% nvtt.lib ispc_texcomp.lib simple.ispc.obj
 set cc_options=%cc_options% /link /LIBPATH:..\vendor\lib\vc15_x64
 

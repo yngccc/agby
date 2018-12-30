@@ -1,27 +1,27 @@
 [
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/editor.cpp -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
+		"command": "clang-cl src/editor.cpp -mssse3 -Ivendor/include -Ivendor/include/physx",
 		"file": "src/editor.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/game.cpp -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
+		"command": "clang-cl src/game.cpp -mssse3 -Ivendor/include -Ivendor/include/physx",
 		"file": "src/game.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/import.cpp -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
+		"command": "clang-cl src/import.cpp -mssse3 -Ivendor/include -Ivendor/include/physx",
 		"file": "src/import.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/ray_tracer.cpp -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
+		"command": "clang-cl src/ray_tracer.cpp -mssse3 -Ivendor/include -Ivendor/include/physx",
 		"file": "src/ray_tracer.cpp"
 	},
 	{ 
 		"directory": "c:/work/agby",
-		"command": "clang-cl src/test.cpp -mssse3 /I vendor/include /I vendor/include/bullet /I vendor/include/physx",
+		"command": "clang-cl src/test.cpp -mssse3 -Ivendor/include -Ivendor/include/physx",
 		"file": "src/test.cpp"
 	}
 ]

@@ -11,16 +11,11 @@
 #include "gpk.cpp"
 #include "d3d11.cpp"
 
+#include <stack>
+
 #include "flatbuffers/world_generated.h"
 static_assert(sizeof(flatbuffers::Transform) == sizeof(struct transform), "");
 static_assert(sizeof(flatbuffers::Mat4) == 64, "");
-
-#define BT_NO_SIMD_OPERATOR_OVERLOADS
-#include <bullet/btBulletCollisionCommon.h>
-#include <bullet/btBulletDynamicsCommon.h>
-#include <bullet/BulletCollision/CollisionShapes/btHeightfieldTerrainShape.h>
-#include <bullet/BulletCollision/CollisionDispatch/btGhostObject.h>
-#include <bullet/BulletDynamics/Character/btKinematicCharacterController.h>
 
 #define NDEBUG
 #include <physx/PxPhysicsAPI.h>
@@ -30,12 +25,10 @@ enum collision_type {
 	collision_type_none,
 	collision_type_sphere,
 	collision_type_box,
-	collision_type_capsule_x,
-	collision_type_capsule_y,
-	collision_type_capsule_z
+	collision_type_capsule
 };
 
-const char *collision_type_strs[] = {"none", "sphere", "box", "capsule_x", "capsule_y", "capsule_z"};
+const char *collision_type_strs[] = {"none", "sphere", "box", "capsule"};
 
 struct collision_sphere {
 	float radius;
@@ -59,36 +52,13 @@ struct collision {
 	};
 };
 
-float collision_get_bottom(collision collision) {
-	if (collision.type == collision_type_sphere) {
-		return -collision.sphere.radius;
-	}
-	else if (collision.type == collision_type_box) {
-		vec3 half_extents = collision.box.extents * 0.5f;
-		return -half_extents.y;
-	}
-	else if (collision.type == collision_type_capsule_x) {
-		return -collision.capsule.radius;
-	}
-	else if (collision.type == collision_type_capsule_y) {
-		return -collision.capsule.height * 0.5f - collision.capsule.radius;
-	}
-	else if (collision.type == collision_type_capsule_z) {
-		return -collision.capsule.radius;
-	}
-	return 0;
-}
-
 struct player {
 	uint32 model_index;
 	transform transform;
 	uint32 animation_index;
 	double animation_time;
 
-	btCollisionShape *bt_collision_shape;
-	btRigidBody *bt_rigid_body;
-
-	float feet_translate;	
+	physx::PxController *physx_controller;
 };
 
 struct static_object {
@@ -98,8 +68,7 @@ struct static_object {
 	double animation_time;
 	char *id;
 
-	btCollisionShape *bt_collision_shape;
-	btCollisionObject *bt_collision_object;
+	physx::PxRigidStatic *physx_rigid_staic;
 };
 
 struct dynamic_object {
@@ -109,8 +78,7 @@ struct dynamic_object {
 	double animation_time;
 	char *id;
 
-	btCollisionShape *bt_collision_shape;
-	btRigidBody *bt_rigid_body;
+	physx::PxRigidDynamic *physx_rigid_dynamic;
 };
 
 struct model_scene {
@@ -232,9 +200,6 @@ struct terrain {
 	ID3D11ShaderResourceView *height_texture_view;
 	int16 *height_texture_data;
 
-	btHeightfieldTerrainShape *bt_terrain_shape;
-	btCollisionObject *bt_terrain_collision_object;
-	
 	ID3D11Texture2D *diffuse_texture;
 	ID3D11ShaderResourceView *diffuse_texture_view;
 	uint32 *diffuse_texture_data;
@@ -315,12 +280,6 @@ struct world {
 	vec3 sun_light_dir;
 	vec3 sun_light_color;
 
-	btDefaultCollisionConfiguration *bt_collision_config;
-	btCollisionDispatcher *bt_collision_dispatcher;
-	btDbvtBroadphase *bt_broad_phase;
-	btSequentialImpulseConstraintSolver *bt_constraint_solver;
-	btDiscreteDynamicsWorld *bt_dynamics_world;
-
 	memory_arena frame_memory_arena;
 	memory_arena general_memory_arena;
 
@@ -349,6 +308,13 @@ struct world {
 	ID3D11ShaderResourceView *default_normal_texture_view;
 	ID3D11Texture2D *default_height_texture;
 	ID3D11ShaderResourceView *default_height_texture_view;
+
+	physx::PxFoundation *physx_foundation;
+	physx::PxPvd *physx_pvd;
+	physx::PxPvdTransport *physx_pvd_transport;
+	physx::PxPhysics *physx_physics;
+	physx::PxScene *physx_scene;
+	physx::PxControllerManager *physx_controller_manager;
 };
 
 void initialize_world(world *world, d3d *d3d) {
@@ -472,22 +438,37 @@ void initialize_world(world *world, d3d *d3d) {
 		m_d3d_assert(d3d->device->CreateShaderResourceView(world->default_height_texture, nullptr, &world->default_height_texture_view));
 	}
 	{
-		world->bt_collision_config = new btDefaultCollisionConfiguration();
-		world->bt_collision_dispatcher = new btCollisionDispatcher(world->bt_collision_config);
-		world->bt_broad_phase = new btDbvtBroadphase();
-		world->bt_constraint_solver = new btSequentialImpulseConstraintSolver();
-		world->bt_dynamics_world = new btDiscreteDynamicsWorld(world->bt_collision_dispatcher, world->bt_broad_phase, world->bt_constraint_solver, world->bt_collision_config);
-		world->bt_dynamics_world->getPairCache()->setInternalGhostPairCallback(new btGhostPairCallback());
-		world->bt_dynamics_world->setGravity(btVector3(0, -9.81f, 0));
-	}
-	{
-		static physx::PxDefaultAllocator default_allocator_callback;
-		static physx::PxDefaultErrorCallback default_error_callback;
+		static physx::PxDefaultAllocator allocator_callback;
+		static physx::PxDefaultErrorCallback error_callback;
 
-		physx::PxFoundation *foundation = PxCreateFoundation(PX_FOUNDATION_VERSION, default_allocator_callback, default_error_callback);
-		if(!foundation) {
+		world->physx_foundation = PxCreateFoundation(PX_FOUNDATION_VERSION, allocator_callback, error_callback);
+		if(!world->physx_foundation) {
 			fatal("PxCreateFoundation failed!");
 		}
+
+		bool record_mem_allocation = true;
+		world->physx_pvd = nullptr;
+		world->physx_pvd_transport = nullptr;
+		// world->physx_pvd = PxCreatePvd(*world->physx_foundation);
+		// world->physx_pvd_transport = physx::PxDefaultPvdSocketTransportCreate("127.0.0.1", 5425, 10);
+		// world->physx_pvd->connect(*world->physx_pvd_transport, physx::PxPvdInstrumentationFlag::eALL);
+
+		physx::PxTolerancesScale tolerance_scale = physx::PxTolerancesScale();
+		tolerance_scale.length = 1;
+		tolerance_scale.speed = 10;
+		world->physx_physics = PxCreatePhysics(PX_PHYSICS_VERSION, *world->physx_foundation, tolerance_scale, record_mem_allocation, world->physx_pvd);
+		m_assert(world->physx_physics, "");
+
+		physx::PxSceneDesc scene_desc = physx::PxSceneDesc(tolerance_scale);
+		scene_desc.gravity = physx::PxVec3(0, -10, 0);
+		scene_desc.filterShader = physx::PxDefaultSimulationFilterShader;
+		scene_desc.cpuDispatcher = physx::PxDefaultCpuDispatcherCreate(1);
+
+		world->physx_scene = world->physx_physics->createScene(scene_desc);
+		m_assert(world->physx_scene, "");
+
+		world->physx_controller_manager = PxCreateControllerManager(*world->physx_scene);
+		m_assert(world->physx_controller_manager, "");
 	}
 	void reset_world(struct world*, struct d3d*);
 	reset_world(world, d3d);
@@ -761,12 +742,6 @@ bool add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 
 		terrain->height_texture_data = allocate_memory<int16>(&world->general_memory_arena, height_texture_width * height_texture_height);
 		memcpy(terrain->height_texture_data, height_texture_data, height_texture_size);
-		
-		terrain->bt_terrain_shape = new btHeightfieldTerrainShape(terrain->width * terrain->sample_per_meter, terrain->height * terrain->sample_per_meter, terrain->height_texture_data, terrain->max_height / INT16_MAX, -terrain->max_height, terrain->max_height, 1, PHY_SHORT, false);
-		terrain->bt_terrain_shape->setLocalScaling(btVector3(1.0f / terrain->sample_per_meter, 1, 1.0f / terrain->sample_per_meter));
-		terrain->bt_terrain_collision_object = new btCollisionObject();
-		terrain->bt_terrain_collision_object->setCollisionShape(terrain->bt_terrain_shape);
-		world->bt_dynamics_world->addCollisionObject(terrain->bt_terrain_collision_object);
 	}
 	{ // diffuse texture
 		uint32 diffuse_texture_width = terrain->width * terrain->sample_per_meter;
@@ -858,8 +833,6 @@ bool remove_terrain(world *world, uint32 index) {
 		terrain *terrain = &world->terrains[index];
 		terrain->height_texture->Release();
 		terrain->height_texture_view->Release();
-		delete terrain->bt_terrain_shape;
-		delete terrain->bt_terrain_collision_object;
 		terrain->diffuse_texture->Release();
 		terrain->diffuse_texture_view->Release();
 		terrain->vertex_buffer->Release();
@@ -935,43 +908,12 @@ collision fb_collision_to_collision(flatbuffers::CollisionShape fb_collision_typ
 		collision.type = collision_type_box;
 		collision.box = collision_box{vec3{fb_extents.x(), fb_extents.y(), fb_extents.z()}};
 	}
-	else if (fb_collision_type == CollisionShape_CapsuleX) {
-		CapsuleX *fb_capsule = (CapsuleX *)fb_collision;
-		collision.type = collision_type_capsule_x;
-		collision.capsule = collision_capsule{fb_capsule->radius(), fb_capsule->height()};
-	}
-	else if (fb_collision_type == CollisionShape_CapsuleY) {
-		CapsuleY *fb_capsule = (CapsuleY *)fb_collision;
-		collision.type = collision_type_capsule_y;
-		collision.capsule = collision_capsule{fb_capsule->radius(), fb_capsule->height()};
-	}
-	else if (fb_collision_type == CollisionShape_CapsuleZ) {
-		CapsuleZ *fb_capsule = (CapsuleZ *)fb_collision;
-		collision.type = collision_type_capsule_z;
+	else if (fb_collision_type == CollisionShape_Capsule) {
+		Capsule *fb_capsule = (Capsule *)fb_collision;
+		collision.type = collision_type_capsule;
 		collision.capsule = collision_capsule{fb_capsule->radius(), fb_capsule->height()};
 	}
 	return collision;
-}
-
-btCollisionShape *collision_to_bt_collision(collision collision) {
-	if (collision.type == collision_type_sphere) {
-		return new btSphereShape(collision.sphere.radius);
-	}
-	else if (collision.type == collision_type_box) {
-		vec3 half_extents = collision.box.extents * 0.5f;
-		btVector3 bt_half_extents(m_unpack3(half_extents));
-		return new btBoxShape(bt_half_extents);
-	}
-	else if (collision.type == collision_type_capsule_x) {
-		return new btCapsuleShapeX(collision.capsule.radius, collision.capsule.height);
-	}
-	else if (collision.type == collision_type_capsule_y) {
-		return new btCapsuleShape(collision.capsule.radius, collision.capsule.height);
-	}
-	else if (collision.type == collision_type_capsule_z) {
-		return new btCapsuleShapeZ(collision.capsule.radius, collision.capsule.height);
-	}
-	return new btEmptyShape();
 }
 
 struct world_editor_settings {
@@ -1020,20 +962,14 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 		else {
 			world->player.transform = transform_identity();
 		}
-		if (world->player.model_index < world->model_count) {
-			model *model = &world->models[world->player.model_index];
-			world->player.bt_collision_shape = collision_to_bt_collision(model->collision);
-			world->player.feet_translate = collision_get_bottom(model->collision);
-		}
-		else {
-			world->player.bt_collision_shape = new btSphereShape(0.1f);
-			world->player.feet_translate = -0.1f;
-		}
-		world->player.bt_rigid_body = new btRigidBody(10, nullptr, world->player.bt_collision_shape);
-		btTransform bt_transform(btQuaternion(m_unpack4(world->player.transform.rotate)), btVector3(m_unpack3(world->player.transform.translate)));
-		world->player.bt_rigid_body->setWorldTransform(bt_transform);
-		world->player.bt_rigid_body->setActivationState(DISABLE_DEACTIVATION);
-		world->bt_dynamics_world->addRigidBody(world->player.bt_rigid_body);
+
+		physx::PxCapsuleControllerDesc controller_desc;
+		controller_desc.radius = 0.5f;
+		controller_desc.height = 2;
+		controller_desc.material = world->physx_physics->createMaterial(1, 1, 1);
+		world->player.physx_controller = world->physx_controller_manager->createController(controller_desc);
+		world->player.physx_controller->setPosition(physx::PxExtendedVec3(m_unpack3(world->player.transform.translate)));
+		m_assert(world->player.physx_controller, "");
 	}
 
 	auto fb_static_objects = fb_world->staticObjects();
@@ -1054,19 +990,6 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 			m_assert(fb_static_object->id(), "");
 			static_object->id = allocate_memory<char>(&world->general_memory_arena, fb_static_object->id()->size() + 1);
 			strcpy(static_object->id, fb_static_object->id()->c_str());
-
-			if (static_object->model_index < world->model_count) {
-				model *model = &world->models[static_object->model_index];
-				static_object->bt_collision_shape = collision_to_bt_collision(model->collision);
-			}
-			else {
-				static_object->bt_collision_shape = new btSphereShape(0.1f);
-			}
-			static_object->bt_collision_object = new btCollisionObject();
-			static_object->bt_collision_object->setCollisionShape(static_object->bt_collision_shape);
-			btTransform bt_transform(btQuaternion(m_unpack4(static_object->transform.rotate)), btVector3(m_unpack3(static_object->transform.translate)));
-			static_object->bt_collision_object->setWorldTransform(bt_transform);
-			world->bt_dynamics_world->addCollisionObject(static_object->bt_collision_object);
 		}
 	}
 
@@ -1088,18 +1011,6 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 			m_assert(fb_dynamic_object->id(), "");
 			dynamic_object->id = allocate_memory<char>(&world->general_memory_arena, fb_dynamic_object->id()->size() + 1);
 			strcpy(dynamic_object->id, fb_dynamic_object->id()->c_str());
-
-			if (dynamic_object->model_index < world->model_count) {
-				model *model = &world->models[dynamic_object->model_index];
-				dynamic_object->bt_collision_shape = collision_to_bt_collision(model->collision);
-			}
-			else {
-				dynamic_object->bt_collision_shape = new btSphereShape(0.1f);
-			}
-			dynamic_object->bt_rigid_body = new btRigidBody(10, nullptr, dynamic_object->bt_collision_shape);
-			btTransform bt_transform(btQuaternion(m_unpack4(dynamic_object->transform.rotate)), btVector3(m_unpack3(dynamic_object->transform.translate)));
-			dynamic_object->bt_rigid_body->setWorldTransform(bt_transform);
-			world->bt_dynamics_world->addRigidBody(dynamic_object->bt_rigid_body);
 		}
 	}
 
@@ -1108,7 +1019,6 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 		m_assert(fb_terrains->size() < world->terrain_capacity, "");
 		for (uint32 i = 0; i < fb_terrains->size(); i += 1) {
 			auto fb_terrain = (*fb_terrains)[i];
-			// auto terrain = &world->terrains[i];
 			m_assert(fb_terrain->file(), "");
 			char terrain_file[256];
 			snprintf(terrain_file, sizeof(terrain_file), "assets/terrains/%s", fb_terrain->file()->c_str());
@@ -1121,7 +1031,6 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 		m_assert(fb_skyboxes->size() < world->skybox_capacity, "");
 		for (uint32 i = 0; i < fb_skyboxes->size(); i += 1) {
 			auto fb_skybox = (*fb_skyboxes)[i];
-			// auto skybox = &world->skyboxes[i];
 			m_assert(fb_skybox->file(), "");
 			char skybox_file[256];
 			snprintf(skybox_file, sizeof(skybox_file), "assets/skyboxes/%s", fb_skybox->file()->c_str());
@@ -1211,17 +1120,9 @@ bool save_world(world *world, const char *file, world_editor_settings *editor_se
 				collision_shape_type = CollisionShape_Box;
 				collision_shape = fb_builder.CreateStruct(Box(Vec3(m_unpack3(model->collision.box.extents)))).Union();
 			}
-			else if (model->collision.type == collision_type_capsule_x) {
-				collision_shape_type = CollisionShape_CapsuleX;
-				collision_shape = fb_builder.CreateStruct(CapsuleX(model->collision.capsule.radius, model->collision.capsule.height)).Union();
-			}
-			else if (model->collision.type == collision_type_capsule_y) {
-				collision_shape_type = CollisionShape_CapsuleY;
-				collision_shape = fb_builder.CreateStruct(CapsuleY(model->collision.capsule.radius, model->collision.capsule.height)).Union();
-			}
-			else if (model->collision.type == collision_type_capsule_z) {
-				collision_shape_type = CollisionShape_CapsuleZ;
-				collision_shape = fb_builder.CreateStruct(CapsuleZ(model->collision.capsule.radius, model->collision.capsule.height)).Union();
+			else if (model->collision.type == collision_type_capsule) {
+				collision_shape_type = CollisionShape_Capsule;
+				collision_shape = fb_builder.CreateStruct(Capsule(model->collision.capsule.radius, model->collision.capsule.height)).Union();
 			}
 			models[i] = CreateModel(fb_builder, file, &transform, collision_shape_type, collision_shape);
 		}
@@ -1431,7 +1332,7 @@ void add_model_render_data(world *world, d3d *d3d, uint32 model_index, transform
 			XMMATRIX transform_mat = XMMatrixMultiply(XMMatrixScaling(extents.x, extents.y, extents.z), xmmatrix_transform(&transform));
 			model_render_data->shape_constant_buffer_offsets[0] = append_world_constant_buffer(world, &transform_mat, sizeof(transform_mat));
 		}
-		else if (model->collision.type == collision_type_capsule_x || model->collision.type == collision_type_capsule_y || model->collision.type == collision_type_capsule_z) {
+		else if (model->collision.type == collision_type_capsule) {
 			model_render_data->shape_count = 3;
 			model_render_data->shape_vertex_buffers[0] = world->hollow_cylinder_vertex_buffer;
 			model_render_data->shape_vertex_buffers[1] = world->hemisphere_vertex_buffer;
@@ -1441,12 +1342,6 @@ void add_model_render_data(world *world, d3d *d3d, uint32 model_index, transform
 			model_render_data->shape_vertex_counts[2] = sizeof(hemisphere_vertices);
 			
 			XMMATRIX transform_mat = xmmatrix_transform(&transform);
-			if (model->collision.type == collision_type_capsule_x) {
-				transform_mat = XMMatrixMultiply(XMMatrixRotationAxis(XMVectorSet(0, 0, 1, 0), (float)M_PI_2), transform_mat);
-			}
-			else if (model->collision.type == collision_type_capsule_z) {
-				transform_mat = XMMatrixMultiply(XMMatrixRotationAxis(XMVectorSet(1, 0, 0, 0), (float)M_PI_2), transform_mat);
-			}
 			float radius = model->collision.capsule.radius;
 			float height = model->collision.capsule.height * 0.5f;
 			XMMATRIX transform_mats[3];
@@ -1582,7 +1477,6 @@ void render_world(world *world, d3d *d3d, render_world_desc *render_world_desc) 
 
 		model_render_data *model_render_data = world->render_data.model_list;
 		while (model_render_data) {
-			// model *model = model_render_data->model;
 			uint32 model_constant_buffer_offset = model_render_data->model_mat_constant_buffer_offset / 16;
 			uint32 model_constant_count = 16;
 			d3d->context->VSSetConstantBuffers1(1, 1, &world->constant_buffer, &model_constant_buffer_offset, &model_constant_count);
