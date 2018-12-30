@@ -210,62 +210,40 @@ void player_input(game *game, world *world, d3d *d3d, window *window) {
 	// 	quat yaw = quat_from_axis_rotate(vec3{0, 1, 0}, world->player_third_person_camera_yaw);
 	// 	move_vec = vec3_normalize(yaw * vec3{0, 0, 1});
 	// }
-
-	// vec3 feet_position = world->player.transform.translate + vec3{0, world->player.feet_translate + 0.1f, 0};
-	// btVector3 ray_from(m_unpack3(feet_position));
-	// btVector3 ray_end = ray_from - btVector3(0, 0.2f, 0);
-	// btCollisionWorld::ClosestRayResultCallback ray_call_back(ray_from, ray_end);
-	// world->bt_dynamics_world->rayTest(ray_from, ray_end, ray_call_back);
-	// bool on_ground = ray_call_back.hasHit();
-		
-	// vec3 velocity = {0, 0, 0};
-	// float speed = 1.0f;
-	// if (ImGui::GetIO().KeyShift) {
-	// 	speed = 10.0f;
-	// }
-	// bool key_down = false;
-	// if (ImGui::IsKeyDown('W')) {
-	// 	velocity += move_vec * speed;
-	// 	key_down = true;
-	// }
-	// if (ImGui::IsKeyDown('S')) {
-	// 	velocity += -move_vec * speed;
-	// 	key_down = true;
-	// }
-	// if (ImGui::IsKeyDown('A')) {
-	// 	velocity += vec3{move_vec.z, 0, -move_vec.x} * speed;
-	// 	key_down = true;
-	// }
-	// if (ImGui::IsKeyDown('D')) {
-	// 	velocity += vec3{-move_vec.z, 0, move_vec.x} * speed;
-	// 	key_down = true;
-	// }
-	// if (on_ground && key_down) {
-	// 	world->player.bt_rigid_body->setLinearVelocity(btVector3(velocity.x, velocity.y, velocity.z));
-	// 	if (world->camera_type == camera_type_player_third) {
-	// 		quat yaw = quat_from_between(vec3{0, 0, 1}, vec3_normalize(velocity));
-	// 		world->player.bt_rigid_body->getWorldTransform().setRotation(btQuaternion(m_unpack4(yaw)));
-	// 	}
-	// }
+	{
+		vec3 player_displacement = vec3{0, 0, 0};
+		float player_speed = 1.0f;
+		if (ImGui::GetIO().KeyShift) {
+			player_speed = 5.0f;
+		}
+		if (ImGui::IsKeyDown('W')) {
+			player_displacement += vec3{0, 0, 1} * player_speed;
+		}
+		else if  (ImGui::IsKeyDown('S')) {
+			player_displacement += vec3{0, 0, -1} * player_speed;
+		}
+		else if  (ImGui::IsKeyDown('A')) {
+			player_displacement += vec3{1, 0, 0} * player_speed;
+		}
+		else if  (ImGui::IsKeyDown('D')) {
+			player_displacement += vec3{-1, 0, 1} * player_speed;
+		}
+		world->player.physx_controller->move(physx::PxVec3(m_unpack3(player_displacement)), 0, game->last_frame_time_secs, physx::PxControllerFilters());
+		physx::PxExtendedVec3 player_position = world->player.physx_controller->getPosition();
+		world->player.transform.translate = vec3{(float)player_position.x, (float)player_position.y, (float)player_position.z};
+	}
 }
 
-void physics_step(game *game, world *world) {
-	world->bt_dynamics_world->stepSimulation((float)game->last_frame_time_secs);
+void simulate_physics(game *game, world *world) {
+	static double accumulate = 0;
+	static double time_step = 1.0f / 60.0f;
 
-	if (world->player.bt_rigid_body) {
-		btVector3 t = world->player.bt_rigid_body->getWorldTransform().getOrigin();
-		btQuaternion q = world->player.bt_rigid_body->getWorldTransform().getRotation();
-		world->player.transform.translate = {t.x(), t.y(), t.z()};
-		world->player.transform.rotate = {q.x(), q.y(), q.z(), q.w()};
-	}
-	for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
-		dynamic_object *dynamic_object = &world->dynamic_objects[i];
-		if (dynamic_object->bt_rigid_body) {
-			btVector3 t = dynamic_object->bt_rigid_body->getWorldTransform().getOrigin();
-			btQuaternion q = dynamic_object->bt_rigid_body->getWorldTransform().getRotation();
-			dynamic_object->transform.translate = {t.x(), t.y(), t.z()};
-			dynamic_object->transform.rotate = {q.x(), q.y(), q.z(), q.w()};
-		}
+	accumulate += game->last_frame_time_secs;
+	while (accumulate >= time_step) {
+		accumulate -= time_step;
+		world->physx_scene->simulate(time_step);
+		bool simulate_result = world->physx_scene->fetchResults(true);
+		m_assert(simulate_result, "");
 	}
 }
 
@@ -347,7 +325,7 @@ int main(int argc, char **argv) {
 		ImGui::NewFrame();
  		common_hotkeys(game, world, window);
 		player_input(game, world, d3d, window);
-		physics_step(game, world);
+		simulate_physics(game, world);
 		world->player.animation_time += game->last_frame_time_secs;
 		update_camera(game, world, window);
 		ImGui::EndFrame();

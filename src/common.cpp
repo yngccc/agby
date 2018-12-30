@@ -30,8 +30,6 @@
 #include <cfloat>
 
 #include <array>
-#include <stack>
-#include <vector>
 
 typedef int8_t int8;
 typedef int16_t int16;

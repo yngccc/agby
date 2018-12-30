@@ -34,23 +34,13 @@ struct Box {
   extents: Vec3;
 }
 
-struct CapsuleX {
-  radius: float;
-	height: float;
-}
-
-struct CapsuleY {
-  radius: float;
-	height: float;
-}
-
-struct CapsuleZ {
+struct Capsule {
   radius: float;
 	height: float;
 }
 
 union CollisionShape {
-  Sphere, Box, CapsuleX, CapsuleY, CapsuleZ,
+  Sphere, Box, Capsule
 }
 
 table Player {
