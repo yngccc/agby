@@ -87,6 +87,10 @@ struct editor {
 
 	timer timer;
 	double last_frame_time_secs;
+	float *frame_time_ring_buffer;
+	uint32 frame_time_ring_buffer_capacity;
+	uint32 frame_time_ring_buffer_read_index;
+	uint32 frame_time_ring_buffer_write_index;
 
 	ImGuiContext *imgui_context;
 
@@ -163,10 +167,10 @@ struct editor {
 	XMMATRIX camera_view_proj_mat;
 	ray camera_to_mouse_ray;
 
-	bool render_reference_grid;
 	bool render_models;
 	bool render_terrain;
 	bool render_skybox;
+	bool render_reference_grid;
 	bool render_shadow_proj_box;
 
 	bool focus_model;
@@ -391,29 +395,35 @@ void save_editor_options(const char *file, editor *editor) {
 
 void initialize_editor(editor *editor, d3d *d3d) {
 	*editor = {};
+
 	initialize_timer(&editor->timer);
-	{ // misc
-		editor->camera_position = vec3{20, 20, 20};
-		editor->camera_view = -vec3_normalize(editor->camera_position);
-		editor->camera_fovy = XMConvertToRadians(40);
-		editor->camera_znear = 0.1f;
-		editor->camera_zfar = 10000.0f;
-		editor->camera_move_speed = 10;
-		editor->camera_rotate_speed = 10;
+
+	editor->frame_time_ring_buffer_capacity = 100000;
+	editor->frame_time_ring_buffer_read_index = 0;
+	editor->frame_time_ring_buffer_write_index = 0;
+	editor->frame_time_ring_buffer = new float[editor->frame_time_ring_buffer_capacity];
+
+	editor->camera_position = vec3{20, 20, 20};
+	editor->camera_view = -vec3_normalize(editor->camera_position);
+	editor->camera_fovy = XMConvertToRadians(40);
+	editor->camera_znear = 0.1f;
+	editor->camera_zfar = 10000.0f;
+	editor->camera_move_speed = 10;
+	editor->camera_rotate_speed = 10;
 		
-		editor->static_object_index = UINT32_MAX;
-		editor->dynamic_object_index = UINT32_MAX;
-		editor->model_index = UINT32_MAX;
+	editor->static_object_index = UINT32_MAX;
+	editor->dynamic_object_index = UINT32_MAX;
+	editor->model_index = UINT32_MAX;
 
-		editor->render_reference_grid = true;
-		editor->render_models = true;
-		editor->render_terrain = true;
-		editor->render_skybox = true;
-		editor->render_shadow_proj_box = false;
+	editor->render_reference_grid = true;
+	editor->render_models = true;
+	editor->render_terrain = true;
+	editor->render_skybox = true;
+	editor->render_shadow_proj_box = false;
 
-		editor->terrain_brush_tool_radius = 5;
-		editor->terrain_brush_tool_speed = 2;
-	}
+	editor->terrain_brush_tool_radius = 5;
+	editor->terrain_brush_tool_speed = 2;
+
 	{ // options
 		file_mapping option_file_mapping = {};
 		if (open_file_mapping("editor_options.txt", &option_file_mapping, true)) {
@@ -1084,11 +1094,11 @@ void top_menu(editor *editor, world *world, d3d *d3d) {
 		if (ImGui::BeginMenu("View")) {
 			ImGui::MenuItem("Frame stat window", nullptr, &editor->show_frame_statistic_window);
 			ImGui::Separator();
-			ImGui::MenuItem("Reference Grid", nullptr, &editor->render_reference_grid);
 			ImGui::MenuItem("Models", nullptr, &editor->render_models);
 			ImGui::MenuItem("Terrain", nullptr, &editor->render_terrain);
 			ImGui::MenuItem("Skybox", nullptr, &editor->render_skybox);
 			ImGui::Separator();
+			ImGui::MenuItem("Reference Grid", nullptr, &editor->render_reference_grid);
 			ImGui::MenuItem("ShadowProjBox", nullptr, &editor->render_shadow_proj_box);
 			ImGui::EndMenu();
 		}
@@ -1514,11 +1524,13 @@ void memories_window(editor *editor, world *world, d3d *d3d) {
 	ImGui::PopID();
 }
 
-void frame_statistic_window(editor *editor) {
+void frame_statistic_window(editor *editor, window *window) {
 	if (editor->show_frame_statistic_window) {
 		ImGui::PushID("frame_statistic_window");
+		ImGui::SetNextWindowPos(ImVec2(window->width / 2, window->height / 2), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 		if (ImGui::Begin("Frame statistic", &editor->show_frame_statistic_window)) {
-			ImGui::Text("Frame time: %.3f", editor->last_frame_time_secs);
+			ImGui::Text("Frame time: %.3f ms", editor->last_frame_time_secs * 1000);
+			// ImGui::PlotLines("frame_time_plot", editor->frame_time_ring_buffer_size, editor->frame_time_count);
 		}
 		ImGui::End();
 		ImGui::PopID();
@@ -1785,8 +1797,7 @@ void append_terrain_brush_constants(editor *editor, world *world, d3d *d3d) {
 			uint32 height;
 			float max_height;
 		} terrain_brush_constants = {
-			XMMatrixMultiply(XMMatrixScaling(editor->terrain_brush_tool_radius, 1, editor->terrain_brush_tool_radius),
-											 XMMatrixTranslation(m_unpack3(editor->terrain_brush_tool_position))),
+			XMMatrixMultiply(XMMatrixScaling(editor->terrain_brush_tool_radius, 1, editor->terrain_brush_tool_radius), XMMatrixTranslation(m_unpack3(editor->terrain_brush_tool_position))),
 			terrain->width, terrain->height, terrain->max_height
 		};
 		uint32 offset = append_world_constant_buffer(world, &terrain_brush_constants, sizeof(terrain_brush_constants));
@@ -1905,7 +1916,7 @@ int main(int argc, char **argv) {
 		bottom_menu(editor);
 		edit_window(editor, world, d3d);
 		memories_window(editor, world, d3d);
-		frame_statistic_window(editor);
+		frame_statistic_window(editor, window);
 		update_camera(editor, window);
 		tool_gizmo(editor, world, d3d, window);
 		check_undo(editor, world);
@@ -1921,7 +1932,7 @@ int main(int argc, char **argv) {
 		render_world_desc.render_shadow_proj_box = editor->render_shadow_proj_box;
 		render_world_desc.editor = editor;
 		render_world_desc.append_extra_model_constants = append_extra_model_constants;
-		render_world_desc.render_reference_grid = render_reference_grid;
+		render_world_desc.render_reference_grid = editor->render_reference_grid ? render_reference_grid : nullptr;
 		render_world_desc.append_terrain_brush_constants = append_terrain_brush_constants;
 		render_world_desc.render_terrain_brush = render_terrain_brush;
 		render_world_desc.render_imgui = render_imgui;
