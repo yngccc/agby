@@ -367,7 +367,7 @@ void initialize_world(world *world, d3d *d3d) {
 		{ // reference grid
 			undo_allocation_scope_exit(&world->frame_memory_arena);
 			float size = 50;
-			uint32 n = 10;
+			uint32 n = 50;
 			float gap = size / n;
 			uint32 vertex_count = (n + 1) * 2 * 2;
 			vec3 *vertices = allocate_memory<vec3>(&world->frame_memory_arena, vertex_count);

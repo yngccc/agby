@@ -210,43 +210,28 @@ void player_input(game *game, world *world, d3d *d3d, window *window) {
 	// 	quat yaw = quat_from_axis_rotate(vec3{0, 1, 0}, world->player_third_person_camera_yaw);
 	// 	move_vec = vec3_normalize(yaw * vec3{0, 0, 1});
 	// }
-
-	// vec3 feet_position = world->player.transform.translate + vec3{0, world->player.feet_translate + 0.1f, 0};
-	// btVector3 ray_from(m_unpack3(feet_position));
-	// btVector3 ray_end = ray_from - btVector3(0, 0.2f, 0);
-	// btCollisionWorld::ClosestRayResultCallback ray_call_back(ray_from, ray_end);
-	// world->bt_dynamics_world->rayTest(ray_from, ray_end, ray_call_back);
-	// bool on_ground = ray_call_back.hasHit();
-		
-	// vec3 velocity = {0, 0, 0};
-	// float speed = 1.0f;
-	// if (ImGui::GetIO().KeyShift) {
-	// 	speed = 10.0f;
-	// }
-	// bool key_down = false;
-	// if (ImGui::IsKeyDown('W')) {
-	// 	velocity += move_vec * speed;
-	// 	key_down = true;
-	// }
-	// if (ImGui::IsKeyDown('S')) {
-	// 	velocity += -move_vec * speed;
-	// 	key_down = true;
-	// }
-	// if (ImGui::IsKeyDown('A')) {
-	// 	velocity += vec3{move_vec.z, 0, -move_vec.x} * speed;
-	// 	key_down = true;
-	// }
-	// if (ImGui::IsKeyDown('D')) {
-	// 	velocity += vec3{-move_vec.z, 0, move_vec.x} * speed;
-	// 	key_down = true;
-	// }
-	// if (on_ground && key_down) {
-	// 	world->player.bt_rigid_body->setLinearVelocity(btVector3(velocity.x, velocity.y, velocity.z));
-	// 	if (world->camera_type == camera_type_player_third) {
-	// 		quat yaw = quat_from_between(vec3{0, 0, 1}, vec3_normalize(velocity));
-	// 		world->player.bt_rigid_body->getWorldTransform().setRotation(btQuaternion(m_unpack4(yaw)));
-	// 	}
-	// }
+	{
+		vec3 player_displacement = vec3{0, 0, 0};
+		float player_speed = 1.0f;
+		if (ImGui::GetIO().KeyShift) {
+			player_speed = 5.0f;
+		}
+		if (ImGui::IsKeyDown('W')) {
+			player_displacement += vec3{0, 0, 1} * player_speed;
+		}
+		else if  (ImGui::IsKeyDown('S')) {
+			player_displacement += vec3{0, 0, -1} * player_speed;
+		}
+		else if  (ImGui::IsKeyDown('A')) {
+			player_displacement += vec3{1, 0, 0} * player_speed;
+		}
+		else if  (ImGui::IsKeyDown('D')) {
+			player_displacement += vec3{-1, 0, 1} * player_speed;
+		}
+		world->player.physx_controller->move(physx::PxVec3(m_unpack3(player_displacement)), 0, game->last_frame_time_secs, physx::PxControllerFilters());
+		physx::PxExtendedVec3 player_position = world->player.physx_controller->getPosition();
+		world->player.transform.translate = vec3{(float)player_position.x, (float)player_position.y, (float)player_position.z};
+	}
 }
 
 void simulate_physics(game *game, world *world) {

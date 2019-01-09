@@ -237,6 +237,24 @@ void list_remove(T **list_head, T *node) {
 	}
 }
 
+uint32 ring_buffer_size(uint32 capacity, uint32 read_index, uint32 write_index) {
+	if (write_index > read_index) {
+		return write_index - read_index;
+	}
+	else if (write_index < read_index) {
+		return write_index + capacity - read_index;
+	}
+	else {
+		return 0;
+	}
+}
+
+template <typename T>
+void ring_buffer_write(const T *buffer, uint32 capacity, uint32 read_index, uint32 *write_index, T elem) {
+	buffer[*write_index] = elem;
+	*write_index = (*write_index + 1) % capacity;
+}
+
 const char *get_file_name(const char *path) {
 	const char *ptr_0 = strrchr(path, '/');
 	const char *ptr_1 = strrchr(path, '\\');
