@@ -3,6 +3,47 @@ call "C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary
 mkdir "%~dp0/build" 2>nul
 pushd "%~dp0/build"
 
+if "%~1"=="skip_prebuild" (
+	if "%~2"=="editor" (
+	  set compile_editor=true
+	) else if "%~2"=="game" (
+	  set compile_game=true
+	) else if "%~2"=="import" (
+	  set compile_import=true
+	) else if "%~2"=="ray_tracer" (
+	  set compile_ray_tracer=true
+	) else if "%~2"=="test" (
+	  set compile_test=true
+  ) else (
+	  set compile_all=true
+	)
+  set skip_prebuild=true
+) else if "%~1"=="prebuild_only" (
+  set prebuild_only=true
+) else if "%~1"=="editor" (
+  set compile_editor=true
+) else if "%~1"=="game" (
+  set compile_game=true
+) else if "%~1"=="import" (
+  set compile_import=true
+) else if "%~1"=="ray_tracer" (
+  set compile_ray_tracer=true
+) else if "%~1"=="test" (
+  set compile_test=true
+) else (
+  set compile_all=true
+)
+
+if "%compile_all%"=="true" (
+  set compile_editor=true
+  set compile_game=true
+  set compile_import=true
+  set compile_ray_tracer=true
+  set compile_test=true
+)
+
+if "%skip_prebuild%"=="true" goto :skip_prebuild
+
 echo compiling hlsl...
 mkdir hlsl 2>nul
 start /b forfiles /p ..\src\hlsl /m *.vps /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_0 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.fxc @PATH >nul" >nul
@@ -17,9 +58,9 @@ echo compiling flatbuffers...
 
 copy /y ..\vendor\lib\vc15_x64\*.dll >nul
 
-if "%~1"=="prebuild_only" goto :end
+:skip_prebuild
+if "%prebuild_only%"=="true" goto :end
 
-echo compiling cpp...
 rem set cc=cl
 set cc=clang-cl
 
@@ -47,40 +88,25 @@ set compile_test_cmd=start /b cmd /c "%cc% ..\src\test.cpp /Fetest.exe %cc_optio
 mkdir compiler_output 2>nul
 del /Q compiler_output\*
 
-if "%~1"=="" set compile_all=true
-if "%~1"=="all" set compile_all=true
-if "%compile_all%"=="true" (
-  set compile_editor=true
-  set compile_game=true
-  set compile_import=true
-  set compile_ray_tracer=true
-  set compile_test=true
-
-	%compile_editor_cmd%
-	%compile_game_cmd%
-	%compile_import_cmd%
-	%compile_ray_tracer_cmd%
-	%compile_test_cmd%
+if "%compile_editor%"=="true" (
+  echo compiling editor
+  %compile_editor_cmd%
 )
-if "%~1"=="editor" (
-  set compile_editor=true
-	%compile_editor_cmd%
+if "%compile_game%"=="true" (
+  echo compiling game
+  %compile_game_cmd%
 )
-if "%~1"=="game" (
-  set compile_game=true
-	%compile_game_cmd%
+if "%compile_import%"=="true" (
+  echo compiling import
+  %compile_import_cmd%
 )
-if "%~1"=="import" (
-  set compile_import=true
-	%compile_import_cmd%
+if "%compile_ray_tracer%"=="true" (
+  echo compiling ray_tracer
+  %compile_ray_tracer_cmd%
 )
-if "%~1"=="ray_tracer" (
-  set compile_ray_tracer=true
-	%compile_ray_tracer_cmd%
-)
-if "%~1"=="test" (
-  set compile_test=true
-	%compile_test_cmd%
+if "%compile_test%"=="true" (
+  echo compiling test
+  %compile_test_cmd%
 )
 
 if "%compile_editor%"=="true" (

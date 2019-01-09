@@ -1527,7 +1527,7 @@ void memories_window(editor *editor, world *world, d3d *d3d) {
 void frame_statistic_window(editor *editor, window *window) {
 	if (editor->show_frame_statistic_window) {
 		ImGui::PushID("frame_statistic_window");
-		ImGui::SetNextWindowPos(ImVec2(window->width / 2, window->height / 2), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowPos(ImVec2((float)window->width / 2, (float)window->height / 2), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 		if (ImGui::Begin("Frame statistic", &editor->show_frame_statistic_window)) {
 			ImGui::Text("Frame time: %.3f ms", editor->last_frame_time_secs * 1000);
 			// ImGui::PlotLines("frame_time_plot", editor->frame_time_ring_buffer_size, editor->frame_time_count);
