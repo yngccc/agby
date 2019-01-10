@@ -127,6 +127,40 @@ int main(int argc, char **argv) {
       }
     }
   }
+	m_test(ring_buffer) {
+		m_case(double_elems) {
+			uint32 buffer[2] = {};
+			uint32 value1 = 10;
+			uint32 value2 = 100;
+			uint32 read_index = 0;
+			uint32 write_index = 0;
+			ring_buffer_write(buffer, m_countof(buffer), &read_index, &write_index, value1);
+			m_assert(ring_buffer_size(m_countof(buffer), read_index, write_index) == 1);
+			m_assert(buffer[read_index] == value1);
+			ring_buffer_write(buffer, m_countof(buffer), &read_index, &write_index, value2);
+			m_assert(ring_buffer_size(m_countof(buffer), read_index, write_index) == 1);
+		  m_assert(buffer[read_index] == value2);
+		}
+		m_case(many_elems) {
+			uint32 buffer[256] = {};
+			uint32 read_index = 0;
+			uint32 write_index = 0;
+			for (uint32 i = 0; i < m_countof(buffer) - 1; i += 1) {
+				ring_buffer_write(buffer, m_countof(buffer), &read_index, &write_index, i);
+			}
+			uint32 size = ring_buffer_size(m_countof(buffer), read_index, write_index);
+			m_assert(size == (m_countof(buffer) - 1));
+			for (uint32 i = 0; i < size; i += 1) {
+				m_assert(buffer[(read_index + i) % m_countof(buffer)] == i);
+			}
+			uint32 value = 9999;
+			for (uint32 i = 0; i < 10; i += 1) {
+				ring_buffer_write(buffer, m_countof(buffer), &read_index, &write_index, value);
+			}
+			m_assert(ring_buffer_size(m_countof(buffer), read_index, write_index) == size);
+			m_assert(read_index == 10);
+		}
+	}
 	m_test(memory_pool) {
 		memory_pool memory_pool = {};
 		uint32 block_count = 1024;

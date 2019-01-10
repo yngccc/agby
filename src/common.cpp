@@ -250,8 +250,11 @@ uint32 ring_buffer_size(uint32 capacity, uint32 read_index, uint32 write_index) 
 }
 
 template <typename T>
-void ring_buffer_write(const T *buffer, uint32 capacity, uint32 read_index, uint32 *write_index, T elem) {
+void ring_buffer_write(T *buffer, uint32 capacity, uint32 *read_index, uint32 *write_index, T elem) {
 	buffer[*write_index] = elem;
+	if (ring_buffer_size(capacity, *read_index, *write_index) == (capacity - 1)) {
+		*read_index = (*read_index + 1) % capacity;
+	}
 	*write_index = (*write_index + 1) % capacity;
 }
 
