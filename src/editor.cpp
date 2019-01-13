@@ -87,10 +87,10 @@ struct editor {
 
 	timer timer;
 	double last_frame_time_secs;
-	float *frame_time_buffer;
-	uint32 frame_time_buffer_capacity;
-	uint32 frame_time_buffer_size;
-	uint32 frame_time_buffer_read_index;
+	float *frame_time_ring_buffer;
+	uint32 frame_time_ring_buffer_capacity;
+	uint32 frame_time_ring_buffer_read_index;
+	uint32 frame_time_ring_buffer_write_index;
 
 	ImGuiContext *imgui_context;
 
@@ -398,10 +398,10 @@ void initialize_editor(editor *editor, d3d *d3d) {
 
 	initialize_timer(&editor->timer);
 
-	editor->frame_time_buffer_capacity = 10000;
-	editor->frame_time_buffer_size = 0;
-	editor->frame_time_buffer_read_index = 0;
-	editor->frame_time_buffer = new float[editor->frame_time_buffer_capacity];
+	editor->frame_time_ring_buffer_capacity = 200;
+	editor->frame_time_ring_buffer_read_index = 0;
+	editor->frame_time_ring_buffer_write_index = 0;
+	editor->frame_time_ring_buffer = new float[editor->frame_time_ring_buffer_capacity];
 
 	editor->camera_position = vec3{20, 20, 20};
 	editor->camera_view = -vec3_normalize(editor->camera_position);
@@ -489,7 +489,7 @@ void initialize_editor(editor *editor, d3d *d3d) {
 	}
 	{ // textures
 		auto create_texture = [&](const char *file, DXGI_FORMAT fmt, ID3D11Texture2D **texture, ID3D11ShaderResourceView **shader_resource_view) {
-			uint8* texture_data;
+			uint8 *texture_data;
 			int32 width, height, channel;
 			texture_data = stbi_load(file, &width, &height, &channel, 4);
 			m_assert(texture_data, "%s", file);
@@ -1524,13 +1524,19 @@ void memories_window(editor *editor, world *world, d3d *d3d) {
 	ImGui::PopID();
 }
 
+float frame_time_ring_buffer_values_getter(void *data, int index) {
+	editor *editor = (struct editor *)data;
+	return editor->frame_time_ring_buffer[(editor->frame_time_ring_buffer_read_index + index) % editor->frame_time_ring_buffer_capacity];
+}
+
 void frame_statistic_window(editor *editor, window *window) {
 	if (editor->show_frame_statistic_window) {
 		ImGui::PushID("frame_statistic_window");
 		ImGui::SetNextWindowPos(ImVec2((float)window->width / 2, (float)window->height / 2), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 		if (ImGui::Begin("Frame statistic", &editor->show_frame_statistic_window)) {
 			ImGui::Text("Frame time: %.3f ms", editor->last_frame_time_secs * 1000);
-			ImGui::PlotLines("frame_time_plot", editor->frame_time_buffer + editor->frame_time_buffer_read_index, editor->frame_time_buffer_size);
+			uint32 count = ring_buffer_size(editor->frame_time_ring_buffer_capacity, editor->frame_time_ring_buffer_read_index, editor->frame_time_ring_buffer_write_index);
+			ImGui::PlotLines("frame_time_plot", frame_time_ring_buffer_values_getter, editor, count);
 		}
 		ImGui::End();
 		ImGui::PopID();
@@ -1948,9 +1954,9 @@ int main(int argc, char **argv) {
 		
 		stop_timer(&editor->timer);
 		editor->last_frame_time_secs = get_timer_duration_secs(editor->timer);
-		if (editor->frame_time_buffer_size == editor->frame_time_buffer_capacity) {
-		}
-		editor->frame_time_buffer[editor->frame_time_buffer_size++] = editor->last_frame_time_secs;
+		ring_buffer_write(editor->frame_time_ring_buffer, editor->frame_time_ring_buffer_capacity, &editor->frame_time_ring_buffer_read_index,
+											&editor->frame_time_ring_buffer_write_index, (float)editor->last_frame_time_secs);
+		Sleep(16);
 	}
 	save_editor_options("editor_options.txt", editor);
 	ImGui::DestroyContext(editor->imgui_context);
