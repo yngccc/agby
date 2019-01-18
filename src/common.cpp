@@ -258,6 +258,108 @@ void ring_buffer_write(T *buffer, uint32 capacity, uint32 *read_index, uint32 *w
 	*write_index = (*write_index + 1) % capacity;
 }
 
+struct string {
+	const char *str;
+	uint32 len;
+};
+
+bool string_equal(string s1, string s2) {
+	if (s1.len != s2.len) {
+		return false;
+	}
+	else {
+		return !memcmp(s1.str, s2.str, s1.len);
+	}
+}
+
+uint32 murmur3_32 (const void *key, uint32 len) {
+	uint32 seed = 0xdeadbeef;
+
+  const uint8 *data = (const uint8 *)key;
+  const int nblocks = len / 4;
+
+  uint32 h1 = seed;
+
+  const uint32 c1 = 0xcc9e2d51;
+  const uint32 c2 = 0x1b873593;
+
+  const uint32 *blocks = (const uint32 *)(data + nblocks * 4);
+
+  for(int i = -nblocks; i; i++) {
+    uint32 k1 = blocks[i];
+    k1 *= c1;
+    k1 = _rotl(k1, 15);
+    k1 *= c2;
+    h1 ^= k1;
+    h1 = _rotl(h1, 13); 
+    h1 = h1*5 + 0xe6546b64;
+  }
+
+  const uint8 *tail = (const uint8 *)(data + nblocks * 4);
+  uint32 k1 = 0;
+
+  switch(len & 3) {
+  case 3: k1 ^= tail[2] << 16;
+  case 2: k1 ^= tail[1] << 8;
+  case 1: k1 ^= tail[0];
+		k1 *= c1;
+		k1 = _rotl(k1, 15);
+		k1 *= c2;
+		h1 ^= k1;
+  };
+
+  h1 ^= len;
+  h1 ^= h1 >> 16;
+  h1 *= 0x85ebca6b;
+  h1 ^= h1 >> 13;
+  h1 *= 0xc2b2ae35;
+  h1 ^= h1 >> 16;
+	return h1;
+} 
+																				 
+struct string_hash_table_elem {
+	string key;
+	void *value;
+};
+
+struct string_hash_table {
+	string_hash_table_elem *elems;
+	void *empty_str_elem_value;
+	bool empty_str_elem_used;
+	uint32 capacity;
+	uint32 size;
+};
+
+bool string_hash_table_get(const string_hash_table *table, string key, void **value) {
+	if (key.len == 0) {
+		if (table->empty_str_elem_used) {
+			*value = table->empty_str_elem_value;
+			// return true;
+// 		}
+// 		else {
+// 			return false;
+// 		}
+// 	}
+// 	else {
+// 		uint32 hash = murmur3_32(key.str, key.len);
+// 		uint32 index = hash % table->capacity;
+// 		if (table->elems[index].key.str) {
+			
+// 		}
+// 		else {
+// 			return false;
+// 		}
+// 	}
+// }
+
+// bool string_hash_table_insert(string_hash_table *table, string key, void *value) {
+// 	return false;
+// }
+
+// bool string_hash_table_remove(string_hash_table *table, string key) {
+// 	return false;
+// }
+
 const char *get_file_name(const char *path) {
 	const char *ptr_0 = strrchr(path, '/');
 	const char *ptr_1 = strrchr(path, '\\');
