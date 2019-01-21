@@ -39,7 +39,6 @@ typedef uint8_t uint8;
 typedef uint16_t uint16;
 typedef uint32_t uint32;
 typedef uint64_t uint64;
-typedef unsigned int uint;
 
 #define m_countof(x) (sizeof(x) / sizeof(x[0]))
 
@@ -259,17 +258,41 @@ void ring_buffer_write(T *buffer, uint32 capacity, uint32 *read_index, uint32 *w
 }
 
 struct string {
-	const char *str;
+	union {
+		const char *str;
+		char str_array[8];
+	};
 	uint32 len;
 };
 
-bool string_equal(string s1, string s2) {
+bool operator==(const string &s1, const string &s2) {
 	if (s1.len != s2.len) {
 		return false;
 	}
 	else {
-		return !memcmp(s1.str, s2.str, s1.len);
+		if (s1.len < sizeof(string::str_array)) {
+			return !memcmp(s1.str_array, s2.str_array, s1.len);
+		}
+		else {
+			return !memcmp(s1.str, s2.str, s1.len);
+		}
 	}
+}
+
+bool operator!=(const string &s1, const string &s2) {
+	return !(s1 == s2);
+}
+
+string string_from_cstr(const char *str) {
+	string s;
+	s.len = (uint32)strlen(str);
+	if (s.len < sizeof(string::str_array)) {
+		memcpy(s.str_array, str, s.len + 1);
+	}
+	else {
+		s.str = str;
+	}
+	return s;
 }
 
 uint32 murmur3_32 (const void *key, uint32 len) {
@@ -285,7 +308,7 @@ uint32 murmur3_32 (const void *key, uint32 len) {
 
   const uint32 *blocks = (const uint32 *)(data + nblocks * 4);
 
-  for(int i = -nblocks; i; i++) {
+  for(int i = -nblocks; i; i += 1) {
     uint32 k1 = blocks[i];
     k1 *= c1;
     k1 = _rotl(k1, 15);
@@ -316,49 +339,217 @@ uint32 murmur3_32 (const void *key, uint32 len) {
   h1 ^= h1 >> 16;
 	return h1;
 } 
-																				 
-struct string_hash_table_elem {
-	string key;
-	void *value;
+
+template <typename KEY, typename VALUE>
+struct hash_map_elem {
+	KEY key;
+	VALUE value;
 };
 
-struct string_hash_table {
-	string_hash_table_elem *elems;
-	void *empty_str_elem_value;
-	bool empty_str_elem_used;
+template <typename KEY, typename VALUE>
+struct hash_map {
+	hash_map_elem<KEY, VALUE> *elems;
+	VALUE zero_elem_value;
+	bool zero_elem_used;
 	uint32 capacity;
 	uint32 size;
 };
 
-bool string_hash_table_get(const string_hash_table *table, string key, void **value) {
-	if (key.len == 0) {
-		if (table->empty_str_elem_used) {
-			*value = table->empty_str_elem_value;
-			// return true;
-// 		}
-// 		else {
-// 			return false;
-// 		}
-// 	}
-// 	else {
-// 		uint32 hash = murmur3_32(key.str, key.len);
-// 		uint32 index = hash % table->capacity;
-// 		if (table->elems[index].key.str) {
-			
-// 		}
-// 		else {
-// 			return false;
-// 		}
-// 	}
-// }
+bool hash_map_key_is_zero(string s) {
+	return s.len == 0;
+}
 
-// bool string_hash_table_insert(string_hash_table *table, string key, void *value) {
-// 	return false;
-// }
+bool hash_map_key_is_zero(uint64 i) {
+	return i == 0;
+}
 
-// bool string_hash_table_remove(string_hash_table *table, string key) {
-// 	return false;
-// }
+template <typename VALUE>
+bool hash_map_elem_is_empty(const hash_map_elem<string, VALUE> *elem) {
+	return elem->key.str == nullptr && elem->key.len == 0;
+}
+
+template <typename VALUE>
+bool hash_map_elem_is_empty(const hash_map_elem<uint32, VALUE> *elem) {
+	return elem->key == 0;
+}
+
+template <typename VALUE>
+hash_map_elem<string, VALUE> *hash_map_get_first(const hash_map<string, VALUE> *map, string key) {
+	uint32 hash;
+	if (key.len < sizeof(string::str_array)) {
+		hash = murmur3_32(key.str_array, key.len);
+	}
+	else {
+	  hash = murmur3_32(key.str, key.len);
+	}
+	uint32 index = hash & (map->capacity - 1);
+	return map->elems + index;
+}
+
+template <typename VALUE>
+hash_map_elem<uint32, VALUE> *hash_map_get_first(const hash_map<uint32, VALUE> *map, uint32 key) {
+	uint32 hash = murmur3_32(&key, sizeof(key));
+	uint32 index = hash & (map->capacity - 1);
+	return map->elems + index;
+}
+
+template <typename KEY, typename VALUE>
+hash_map_elem<KEY, VALUE> *hash_map_get_next(const hash_map<KEY, VALUE> *map, hash_map_elem<KEY, VALUE> *elem) {
+	if (elem + 1 != map->elems + map->capacity) {
+		return elem + 1;
+	}
+	else {
+		return map->elems;
+	}
+}
+
+template <typename KEY, typename VALUE>
+uint32 hash_map_get_offset(const hash_map<KEY, VALUE> *map, hash_map_elem<KEY, VALUE> *elem1, hash_map_elem<KEY, VALUE> *elem2) {
+	ptrdiff_t diff = elem2 - elem1;
+	if (diff >= 0) {
+		return (uint32)diff;
+	}
+	else {
+		return (uint32)((ptrdiff_t)map->capacity + diff);
+	}
+}
+
+template <typename KEY, typename VALUE>
+void hash_map_initialize(hash_map<KEY, VALUE> *map, uint32 capacity) {
+	m_assert(capacity >= 256 && is_pow2(capacity), "");
+	*map = {};
+	map->capacity = capacity;
+	map->elems = new hash_map_elem<KEY, VALUE>[capacity]();
+}
+
+template <typename KEY, typename VALUE>
+void hash_map_delete(hash_map<KEY, VALUE> *map) {
+	delete[] map->elems;
+	*map = {};
+}
+
+template <typename KEY, typename VALUE>
+void hash_map_resize(hash_map<KEY, VALUE> *map, uint32 new_capacity) {
+	m_assert(is_pow2(new_capacity), "");
+	m_assert(map->size * 4  <= new_capacity * 3, "");
+
+	hash_map_elem<KEY, VALUE> *old_elem_begin = map->elems;
+	hash_map_elem<KEY, VALUE> *old_elem_end = map->elems + map->capacity;
+
+	map->capacity = new_capacity;
+	map->elems = new hash_map_elem<KEY, VALUE>[new_capacity]();
+
+	for (hash_map_elem<KEY, VALUE> *old_elem = old_elem_begin; old_elem != old_elem_end; old_elem += 1) {
+		if (!hash_map_elem_is_empty(old_elem)) {
+			for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, old_elem->key); ; elem = hash_map_get_next(map, elem)) {
+				if (hash_map_elem_is_empty(elem)) {
+					*elem = *old_elem;
+					break;
+				}
+			}
+		}
+	}
+
+	delete[] old_elem_begin;	
+}
+
+template <typename KEY, typename VALUE>
+bool hash_map_get(const hash_map<KEY, VALUE> *map, KEY key, VALUE *value) {
+	if (hash_map_key_is_zero(key)) {
+		if (!map->zero_elem_used) {
+			return false;
+		}
+		else {
+			*value = map->zero_elem_value;
+			return true;
+		}
+	}
+	else {
+		for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
+			if (hash_map_elem_is_empty(elem)) {
+				return false;
+			}
+			else if (elem->key == key) {
+				*value = elem->value;
+				return true;
+			}
+		}
+	}
+}
+
+template <typename KEY, typename VALUE>
+bool hash_map_insert(hash_map<KEY, VALUE> *map, KEY key, VALUE value) {
+	if (hash_map_key_is_zero(key)) {
+		if (map->zero_elem_used) {
+			return false;
+		}
+		else {
+			map->zero_elem_value = value;
+			map->zero_elem_used = true;
+			map->size += 1;
+			return true;
+		}
+	}
+	else {
+		for (;;) {
+			for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
+				if (hash_map_elem_is_empty(elem)) {
+					if ((map->size + 1) * 4 >= map->capacity * 3) {
+						hash_map_resize(map, map->capacity * 2);
+						break;
+					}
+					else {
+						elem->key = key;
+						elem->value = value;
+						map->size += 1;
+						return true;
+					}
+				}
+				else if (elem->key == key) {
+					return false;
+				}
+			}
+		}
+	}
+}
+
+template <typename KEY, typename VALUE>
+bool hash_map_remove(hash_map<KEY, VALUE> *map, KEY key) {
+	if (hash_map_key_is_zero(key)) {
+		if (map->zero_elem_used) {
+			map->zero_elem_used = false;
+			map->zero_elem_value = {};
+			map->size -= 1;
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+	else {
+		for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
+			if (hash_map_elem_is_empty(elem)) {
+				return false;
+			}
+			else if (elem->key == key) {
+				for (hash_map_elem<KEY, VALUE> *next_elem = hash_map_get_next(map, elem); ; next_elem = hash_map_get_next(map, next_elem)) {
+					if (hash_map_elem_is_empty(next_elem)) {
+						memset(elem, 0, sizeof(*elem));
+						map->size -= 1;
+						return true;
+					}
+					else {
+						hash_map_elem<KEY, VALUE> *ideal_elem = hash_map_get_first(map, next_elem->key);
+						if (hash_map_get_offset(map, ideal_elem, elem) < hash_map_get_offset(map, ideal_elem, next_elem)) {
+							*elem = *next_elem;
+							elem = next_elem;
+						}
+					}
+				}
+			}
+		}
+	}
+}
 
 const char *get_file_name(const char *path) {
 	const char *ptr_0 = strrchr(path, '/');
@@ -377,34 +568,34 @@ const char *get_file_name(const char *path) {
 	}
 }
 
-void *allocate_virtual_memory(uint64 size) {
-	static SYSTEM_INFO system_info = [] {
-		SYSTEM_INFO system_info;
-		GetSystemInfo(&system_info);
-		return system_info;
-	}();
-	size = round_up(size, (uint64)system_info.dwPageSize);
-	char *mem = (char *)VirtualAlloc(nullptr, size + 2 * system_info.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-	if (!mem) {
-		return nullptr;
-	}
-	DWORD old_protect;
-	if (!VirtualProtect(mem, system_info.dwPageSize, PAGE_NOACCESS, &old_protect) ||
-		  !VirtualProtect(mem + system_info.dwPageSize + size, system_info.dwPageSize, PAGE_NOACCESS, &old_protect)) {
-		VirtualFree(mem, 0, MEM_RELEASE);
-		return nullptr;
-	}
-	return mem + system_info.dwPageSize;
-}
+// void *allocate_virtual_memory(uint64 size) {
+// 	static SYSTEM_INFO system_info = [] {
+// 		SYSTEM_INFO system_info;
+// 		GetSystemInfo(&system_info);
+// 		return system_info;
+// 	}();
+// 	size = round_up(size, (uint64)system_info.dwPageSize);
+// 	char *mem = (char *)VirtualAlloc(nullptr, size + 2 * system_info.dwPageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+// 	if (!mem) {
+// 		return nullptr;
+// 	}
+// 	DWORD old_protect;
+// 	if (!VirtualProtect(mem, system_info.dwPageSize, PAGE_NOACCESS, &old_protect) ||
+// 		  !VirtualProtect(mem + system_info.dwPageSize + size, system_info.dwPageSize, PAGE_NOACCESS, &old_protect)) {
+// 		VirtualFree(mem, 0, MEM_RELEASE);
+// 		return nullptr;
+// 	}
+// 	return mem + system_info.dwPageSize;
+// }
 
-void free_virtual_memory(void *memory) {
-	static SYSTEM_INFO system_info = [] {
-		SYSTEM_INFO system_info;
-		GetSystemInfo(&system_info);
-		return system_info;
-	}();
-	VirtualFree((char *)memory - system_info.dwPageSize, 0, MEM_RELEASE);
-}
+// void free_virtual_memory(void *memory) {
+// 	static SYSTEM_INFO system_info = [] {
+// 		SYSTEM_INFO system_info;
+// 		GetSystemInfo(&system_info);
+// 		return system_info;
+// 	}();
+// 	VirtualFree((char *)memory - system_info.dwPageSize, 0, MEM_RELEASE);
+// }
 
 struct memory_arena {
 	uint8 *memory;
@@ -413,14 +604,14 @@ struct memory_arena {
 };
 
 bool initialize_memory_arena(uint64 capacity, memory_arena *arena) {
-	arena->memory = (uint8 *)allocate_virtual_memory(capacity);
+	arena->memory = new uint8[capacity]();
 	arena->size = 0;
 	arena->capacity = capacity;
 	return arena->memory != nullptr;
 }
 
 void destroy_memory_arena(memory_arena *arena) {
-	free_virtual_memory(arena->memory);
+	delete[] arena->memory;
 	*arena = {};
 }
 
@@ -453,11 +644,11 @@ struct memory_pool {
 	uint32 block_count;
 	uint32 block_size;
 	uint32 block_alignment;
-	void *memory;
+	uint8 *memory;
 };
 
 void clear_memory_pool(memory_pool *pool) {
-	char *free_block = (char *)pool->memory;
+	uint8 *free_block = (uint8 *)pool->memory;
 	for (uint64 i = 0; i < (pool->block_count - 1); i += 1) {
 		*(void **)free_block = free_block + pool->block_size;
 		free_block += pool->block_size;
@@ -475,7 +666,7 @@ bool initialize_memory_pool(memory_pool *pool, uint32 block_count, uint32 block_
 	uint64 memory_size = block_size * block_count;
 	pool->block_size = block_size;
 	pool->block_count = block_count;
-	pool->memory = allocate_virtual_memory(memory_size);
+	pool->memory = new uint8[memory_size]();
 	if (!pool->memory) {
 		return false;
 	}
@@ -484,7 +675,7 @@ bool initialize_memory_pool(memory_pool *pool, uint32 block_count, uint32 block_
 }
 
 void destroy_memory_pool(memory_pool *pool) {
-	free_virtual_memory(pool->memory);
+	delete[] pool->memory;
 	*pool = {};
 }
 

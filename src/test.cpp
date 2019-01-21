@@ -67,7 +67,7 @@ struct test_case_guard {
     printf("[Testing ");                                                                                     \
     printf(#test_name);                                                                                      \
     printf("]\n");                                                                                           \
-    num_test_performed += 1;                                                                                 \
+    test_performed_count += 1;                                                                                 \
   }                                                                                                          \
   for (test_guard _test = {0, _trigger_test_##test_name}; _test.trigger && _test.counter < 1; _test.counter += 1)
 
@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  uint32 num_test_performed = 0;
+  uint32 test_performed_count = 0;
 
   m_test(array) {
     m_case(remove) {
@@ -159,6 +159,49 @@ int main(int argc, char **argv) {
 			}
 			m_assert(ring_buffer_size(m_countof(buffer), read_index, write_index) == size);
 			m_assert(read_index == 10);
+		}
+	}
+	m_test(hash_map) {
+		m_case(insert) {
+			hash_map<string, int> map;
+			hash_map_initialize(&map, 512);
+			string key = string_from_cstr("hello");
+			int value = 0;
+			m_assert(!hash_map_get(&map, key, &value));
+			m_assert(value == 0);
+			m_assert(hash_map_insert(&map, key, 0x1234));
+			m_assert(hash_map_get(&map, key, &value));
+			m_assert(value == 0x1234);
+			for (int i = 0; i < 256; i += 1) {
+				char str[8];
+				snprintf(str, sizeof(str), "%d", i);
+				string key = string_from_cstr(str);
+				m_assert(hash_map_insert(&map, key, i));
+			}
+			for (int i = 0; i < 256; i += 1) {
+				char str[8];
+				snprintf(str, sizeof(str), "%d", i);
+				string key = string_from_cstr(str);
+				int value = 0;
+				m_assert(hash_map_get(&map, key, &value));
+				m_assert(value == i);
+			}
+			for (int i = 256; i < 1024; i += 1) {
+				char str[8];
+				snprintf(str, sizeof(str), "%d", i);
+				string key = string_from_cstr(str);
+				m_assert(hash_map_insert(&map, key, i));
+			}
+			for (int i = 256; i < 1024; i += 1) {
+				char str[8];
+				snprintf(str, sizeof(str), "%d", i);
+				string key = string_from_cstr(str);
+				int value = 0;
+				m_assert(hash_map_get(&map, key, &value));
+				m_assert(value == i);
+			}
+			m_assert(hash_map_remove(&map, key));
+			hash_map_delete(&map);
 		}
 	}
 	m_test(memory_pool) {
@@ -247,5 +290,5 @@ int main(int argc, char **argv) {
     }
   }
 	
-  printf("Performed %d tests\n", num_test_performed);
+  printf("Performed %d tests\n", test_performed_count);
 }
