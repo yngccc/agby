@@ -258,10 +258,7 @@ void ring_buffer_write(T *buffer, uint32 capacity, uint32 *read_index, uint32 *w
 }
 
 struct string {
-	union {
-		const char *str;
-		char str_array[8];
-	};
+	const char *ptr;
 	uint32 len;
 };
 
@@ -270,12 +267,7 @@ bool operator==(const string &s1, const string &s2) {
 		return false;
 	}
 	else {
-		if (s1.len < sizeof(string::str_array)) {
-			return !memcmp(s1.str_array, s2.str_array, s1.len);
-		}
-		else {
-			return !memcmp(s1.str, s2.str, s1.len);
-		}
+		return !memcmp(s1.ptr, s2.ptr, s1.len);
 	}
 }
 
@@ -283,16 +275,18 @@ bool operator!=(const string &s1, const string &s2) {
 	return !(s1 == s2);
 }
 
-string string_from_cstr(const char *str) {
-	string s;
-	s.len = (uint32)strlen(str);
-	if (s.len < sizeof(string::str_array)) {
-		memcpy(s.str_array, str, s.len + 1);
+bool operator==(const string &s1, const char *s2) {
+	uint32 s2_len = strlen(s2);
+	if (s1.len != s2_len) {
+		return false;
 	}
 	else {
-		s.str = str;
+		return !memcmp(s1.ptr, s2, s1.len);
 	}
-	return s;
+}
+
+bool operator!=(const string &s1, const char *s2) {
+	return !(s1 == s2);
 }
 
 uint32 murmur3_32 (const void *key, uint32 len) {
@@ -365,7 +359,7 @@ bool hash_map_key_is_zero(uint64 i) {
 
 template <typename VALUE>
 bool hash_map_elem_is_empty(const hash_map_elem<string, VALUE> *elem) {
-	return elem->key.str == nullptr && elem->key.len == 0;
+	return elem->key.ptr == nullptr && elem->key.len == 0;
 }
 
 template <typename VALUE>
@@ -375,13 +369,7 @@ bool hash_map_elem_is_empty(const hash_map_elem<uint32, VALUE> *elem) {
 
 template <typename VALUE>
 hash_map_elem<string, VALUE> *hash_map_get_first(const hash_map<string, VALUE> *map, string key) {
-	uint32 hash;
-	if (key.len < sizeof(string::str_array)) {
-		hash = murmur3_32(key.str_array, key.len);
-	}
-	else {
-	  hash = murmur3_32(key.str, key.len);
-	}
+	uint32 hash = murmur3_32(key.ptr, key.len);
 	uint32 index = hash & (map->capacity - 1);
 	return map->elems + index;
 }
@@ -947,20 +935,19 @@ bool save_file_dialog(char *file, uint32 file_buf_size) {
 
 struct window {
 	HWND handle;
-	bool fullscreen;
-	WINDOWPLACEMENT placement;
 	uint32 width;
 	uint32 height;
+	uint32 screen_width;
+	uint32 screen_height;
 	int16 mouse_x;
 	int16 mouse_y;
 	int32 raw_mouse_dx;
 	int32 raw_mouse_dy;
 };
 
-void initialize_window(window *window, int32 width, int32 height, LRESULT (*window_message_callback)(HWND, UINT, WPARAM, LPARAM)) {
+void initialize_window(window *window, LRESULT (*window_message_callback)(HWND, UINT, WPARAM, LPARAM)) {
 	*window = {};
 
-	SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE);
 	HMODULE instance_handle = GetModuleHandle(nullptr);
 	WNDCLASSA window_class = {};
 	window_class.style = CS_HREDRAW | CS_VREDRAW;
@@ -972,12 +959,17 @@ void initialize_window(window *window, int32 width, int32 height, LRESULT (*wind
 	window_class.lpszClassName = "agby_window_class";
 	m_assert(RegisterClassA(&window_class), "");
 
-	int32 window_x = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
-	int32 window_y = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
+	int screen_width = GetSystemMetrics(SM_CXSCREEN);
+	int screen_height = GetSystemMetrics(SM_CYSCREEN);
+
+	int window_width = screen_width * 0.7f;
+	int window_height = screen_height * 0.8f;
+	int window_x = (screen_width - window_width) * 0.5f;
+	int window_y = (screen_height - window_height) * 0.5f;
 	DWORD window_style = WS_OVERLAPPEDWINDOW;
 	char window_title[128];
-	snprintf(window_title, sizeof(window_title), "%dx%d", width, height);
-	HWND window_handle = CreateWindowExA(0, window_class.lpszClassName, window_title, window_style, window_x, window_y, width, height, nullptr, nullptr, instance_handle, window);
+	snprintf(window_title, sizeof(window_title), "%dx%d", window_width, window_height);
+	HWND window_handle = CreateWindowExA(0, window_class.lpszClassName, window_title, window_style, window_x, window_y, window_width, window_height, nullptr, nullptr, instance_handle, window);
 	m_assert(window_handle, "");
 
 	RAWINPUTDEVICE raw_input_device;
@@ -989,10 +981,19 @@ void initialize_window(window *window, int32 width, int32 height, LRESULT (*wind
 
 	*window = {};
 	window->handle = window_handle;
-	window->placement = {sizeof(WINDOWPLACEMENT)};
-	window->width = width;
-	window->height = height;
+	window->width = screen_width;
+	window->height = screen_height;
+	window->screen_width = screen_width;
+	window->screen_height = screen_height;
 };
+
+void handle_window_messages(window *window) {
+	MSG msg;
+	while (PeekMessageA(&msg, window->handle, 0, 0, PM_REMOVE)) {
+		TranslateMessage(&msg);
+		DispatchMessageA(&msg);
+	}
+}
 
 void show_window(window *window) {
 	ShowWindow(window->handle, SW_SHOW);
@@ -1007,30 +1008,30 @@ void set_window_title(window *window, const char* fmt, ...) {
 	SetWindowText(window->handle, buf);
 }
 
-void handle_window_messages(window *window) {
-	MSG msg;
-	while (PeekMessageA(&msg, window->handle, 0, 0, PM_REMOVE)) {
-		TranslateMessage(&msg);
-		DispatchMessageA(&msg);
-	}
-}
-
-void set_window_fullscreen(window *window, bool fullscreen) {
-	HWND hwnd = window->handle;
-	DWORD dwStyle = GetWindowLongA(hwnd, GWL_STYLE);
-	if (fullscreen) {
-		MONITORINFO mi = {sizeof(mi)};
-		if (GetWindowPlacement(hwnd, &window->placement) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
-			SetWindowLongA(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
-			SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+void set_window_size(window *window, uint32 width, uint32 height) {
+	width = clamp(width, 256u, window->screen_width);
+	height = clamp(height, 256u, window->screen_height);
+	if (window->width != width || window->height != height) {
+		HWND hwnd = window->handle;
+		DWORD dw_style = GetWindowLongA(hwnd, GWL_STYLE);
+		if (width == window->screen_width && height == window->screen_height) {
+			MONITORINFO mi = {sizeof(mi)};
+			if (GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+				SetWindowLongA(hwnd, GWL_STYLE, dw_style & ~WS_OVERLAPPEDWINDOW);
+				SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+				window->width = width;
+				window->height = height;
+			}
+		}
+		else {
+			int window_x = (window->screen_width - width) * 0.5f;
+			int window_y = (window->screen_height - height) * 0.5f;
+			SetWindowLongA(hwnd, GWL_STYLE, dw_style | WS_OVERLAPPEDWINDOW);
+			SetWindowPos(hwnd, HWND_TOP, window_x, window_y, width, height, SWP_FRAMECHANGED);
+			window->width = width;
+			window->height = height;
 		}
 	}
-	else {
-		SetWindowLongA(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
-		SetWindowPlacement(hwnd, &window->placement);
-		SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-	}
-	window->fullscreen = fullscreen;
 }
 
 bool cursor_inside_window(window *window) {

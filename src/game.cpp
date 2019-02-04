@@ -4,12 +4,13 @@
 
 #include "common.cpp"
 #include "math.cpp"
-#include "d3d11.cpp"
+#include "d3d.cpp"
 #include "world.cpp"
 
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include <imgui/imgui.cpp>
 #include <imgui/imgui_draw.cpp>
+#include <imgui/imgui_widgets.cpp>
 
 struct {
 	bool initialized;
@@ -168,7 +169,16 @@ void initialize_game(game *game, d3d *d3d) {
 
 void common_hotkeys(game *game, world *world, window *window) {
 	if (ImGui::IsKeyPressed(VK_F11)) {
-		set_window_fullscreen(window, !window->fullscreen);
+		static uint32 width = window->width;
+		static uint32 height = window->height;
+		if (window->width == window->screen_width && window->height == window->screen_height) {
+			set_window_size(window, width, height);
+		}
+		else {
+			width = window->width;
+			height = window->height;
+			set_window_size(window, window->screen_width, window->screen_height);
+		}
 	}
 	if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
 		game->quit = true;
@@ -241,8 +251,8 @@ void simulate_physics(game *game, world *world) {
 	accumulate += game->last_frame_time_secs;
 	while (accumulate >= time_step) {
 		accumulate -= time_step;
-		world->physx_scene->simulate(time_step);
-		bool simulate_result = world->physx_scene->fetchResults(true);
+		world->px_scene->simulate(time_step);
+		bool simulate_result = world->px_scene->fetchResults(true);
 		m_assert(simulate_result, "");
 	}
 
@@ -296,7 +306,7 @@ int main(int argc, char **argv) {
 	set_current_dir_to_exe_dir();
 	
 	window *window = new struct window;
-	initialize_window(window, (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.75), (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.75), window_message_callback);
+	initialize_window(window, window_message_callback);
 	// set_window_fullscreen(window, true);
 
 	d3d *d3d = new struct d3d;

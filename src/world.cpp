@@ -9,7 +9,7 @@
 #include "geometry.cpp"
 #include "simd.cpp"
 #include "gpk.cpp"
-#include "d3d11.cpp"
+#include "d3d.cpp"
 
 #include <stack>
 
@@ -62,21 +62,21 @@ struct player {
 };
 
 struct static_object {
+	string id;
 	uint32 model_index;
 	transform transform;
 	uint32 animation_index;
 	double animation_time;
-	char *id;
 
 	physx::PxRigidStatic *physx_rigid_staic;
 };
 
 struct dynamic_object {
+	string id;
 	uint32 model_index;
 	transform transform;
 	uint32 animation_index;
 	double animation_time;
-	char *id;
 
 	physx::PxRigidDynamic *physx_rigid_dynamic;
 };
@@ -181,6 +181,7 @@ struct model {
 	uint32 texture_count;
 	transform transform;
 	collision collision;
+	physx::PxGeometryHolder px_geometry_holder;
 	char file[32];
 };
 
@@ -309,12 +310,12 @@ struct world {
 	ID3D11Texture2D *default_height_texture;
 	ID3D11ShaderResourceView *default_height_texture_view;
 
-	physx::PxFoundation *physx_foundation;
-	physx::PxPvd *physx_pvd;
-	physx::PxPvdTransport *physx_pvd_transport;
-	physx::PxPhysics *physx_physics;
-	physx::PxScene *physx_scene;
-	physx::PxControllerManager *physx_controller_manager;
+	physx::PxFoundation *px_foundation;
+	physx::PxPvd *px_pvd;
+	physx::PxPvdTransport *px_pvd_transport;
+	physx::PxPhysics *px_physics;
+	physx::PxScene *px_scene;
+	physx::PxControllerManager *px_controller_manager;
 };
 
 void initialize_world(world *world, d3d *d3d) {
@@ -441,34 +442,34 @@ void initialize_world(world *world, d3d *d3d) {
 		static physx::PxDefaultAllocator allocator_callback;
 		static physx::PxDefaultErrorCallback error_callback;
 
-		world->physx_foundation = PxCreateFoundation(PX_FOUNDATION_VERSION, allocator_callback, error_callback);
-		if(!world->physx_foundation) {
+		world->px_foundation = PxCreateFoundation(PX_FOUNDATION_VERSION, allocator_callback, error_callback);
+		if(!world->px_foundation) {
 			fatal("PxCreateFoundation failed!");
 		}
 
 		bool record_mem_allocation = true;
-		world->physx_pvd = nullptr;
-		world->physx_pvd_transport = nullptr;
-		// world->physx_pvd = PxCreatePvd(*world->physx_foundation);
-		// world->physx_pvd_transport = physx::PxDefaultPvdSocketTransportCreate("127.0.0.1", 5425, 10);
-		// world->physx_pvd->connect(*world->physx_pvd_transport, physx::PxPvdInstrumentationFlag::eALL);
+		world->px_pvd = nullptr;
+		world->px_pvd_transport = nullptr;
+		// world->px_pvd = PxCreatePvd(*world->px_foundation);
+		// world->px_pvd_transport = physx::PxDefaultPvdSocketTransportCreate("127.0.0.1", 5425, 10);
+		// world->px_pvd->connect(*world->px_pvd_transport, physx::PxPvdInstrumentationFlag::eALL);
 
 		physx::PxTolerancesScale tolerance_scale = physx::PxTolerancesScale();
 		tolerance_scale.length = 1;
 		tolerance_scale.speed = 10;
-		world->physx_physics = PxCreatePhysics(PX_PHYSICS_VERSION, *world->physx_foundation, tolerance_scale, record_mem_allocation, world->physx_pvd);
-		m_assert(world->physx_physics, "");
+		world->px_physics = PxCreatePhysics(PX_PHYSICS_VERSION, *world->px_foundation, tolerance_scale, record_mem_allocation, world->px_pvd);
+		m_assert(world->px_physics, "");
 
 		physx::PxSceneDesc scene_desc = physx::PxSceneDesc(tolerance_scale);
 		scene_desc.gravity = physx::PxVec3(0, -10, 0);
 		scene_desc.filterShader = physx::PxDefaultSimulationFilterShader;
 		scene_desc.cpuDispatcher = physx::PxDefaultCpuDispatcherCreate(1);
 
-		world->physx_scene = world->physx_physics->createScene(scene_desc);
-		m_assert(world->physx_scene, "");
+		world->px_scene = world->px_physics->createScene(scene_desc);
+		m_assert(world->px_scene, "");
 
-		world->physx_controller_manager = PxCreateControllerManager(*world->physx_scene);
-		m_assert(world->physx_controller_manager, "");
+		world->px_controller_manager = PxCreateControllerManager(*world->px_scene);
+		m_assert(world->px_controller_manager, "");
 	}
 	void reset_world(struct world*, struct d3d*);
 	reset_world(world, d3d);
@@ -532,6 +533,16 @@ bool add_model(world *world, d3d *d3d, const char *model_file, transform transfo
 	snprintf(model->file, sizeof(model->file), "%s", file_name);
 	model->transform = transform;
 	model->collision = collision;
+	model->px_geometry_holder = physx::PxGeometryHolder();
+	if (collision.type == collision_type_sphere) {
+		model->px_geometry_holder = physx::PxGeometryHolder(physx::PxSphereGeometry(collision.sphere.radius));
+	}
+	else if (collision.type == collision_type_box) {
+		model->px_geometry_holder = physx::PxGeometryHolder(physx::PxBoxGeometry(m_unpack3(collision.box.extents * 0.5f)));
+	}
+	else if (collision.type == collision_type_capsule) {
+		model->px_geometry_holder = physx::PxGeometryHolder(physx::PxCapsuleGeometry(collision.capsule.radius, collision.capsule.height * 0.5f));
+	}
 	model->scene_count = gpk_model->scene_count;
 	model->node_count = gpk_model->node_count;
 	model->mesh_count = gpk_model->mesh_count;
@@ -962,12 +973,11 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 		else {
 			world->player.transform = transform_identity();
 		}
-
 		physx::PxCapsuleControllerDesc controller_desc;
 		controller_desc.radius = 0.5f;
 		controller_desc.height = 2;
-		controller_desc.material = world->physx_physics->createMaterial(1, 1, 1);
-		world->player.physx_controller = world->physx_controller_manager->createController(controller_desc);
+		controller_desc.material = world->px_physics->createMaterial(1, 1, 1);
+		world->player.physx_controller = world->px_controller_manager->createController(controller_desc);
 		world->player.physx_controller->setPosition(physx::PxExtendedVec3(m_unpack3(world->player.transform.translate)));
 		m_assert(world->player.physx_controller, "");
 	}
@@ -980,6 +990,10 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 			auto fb_static_object = (*fb_static_objects)[i];
 			auto static_object = &world->static_objects[i];
 			*static_object = {};
+			m_assert(fb_static_object->id(), "");
+			char *id_cstr = allocate_memory<char>(&world->general_memory_arena, fb_static_object->id()->size() + 1);
+			strcpy(id_cstr, fb_static_object->id()->c_str());
+			static_object->id = {id_cstr, fb_static_object->id()->size()};
 			static_object->model_index = fb_static_object->modelIndex();
 			if (fb_static_object->transform()) {
 				memcpy(&static_object->transform, fb_static_object->transform(), sizeof(struct transform));
@@ -987,9 +1001,6 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 			else {
 				static_object->transform = transform_identity();
 			}
-			m_assert(fb_static_object->id(), "");
-			static_object->id = allocate_memory<char>(&world->general_memory_arena, fb_static_object->id()->size() + 1);
-			strcpy(static_object->id, fb_static_object->id()->c_str());
 		}
 	}
 
@@ -1001,6 +1012,10 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 			auto fb_dynamic_object = (*fb_dynamic_objects)[i];
 			auto dynamic_object = &world->dynamic_objects[i];
 			*dynamic_object = {};
+			m_assert(fb_dynamic_object->id(), "");
+			char *id_cstr = allocate_memory<char>(&world->general_memory_arena, fb_dynamic_object->id()->size() + 1);
+			strcpy(id_cstr, fb_dynamic_object->id()->c_str());
+			dynamic_object->id = {id_cstr, fb_dynamic_object->id()->size()};
 			dynamic_object->model_index = fb_dynamic_object->modelIndex();
 			if (fb_dynamic_object->transform()) {
 				memcpy(&dynamic_object->transform, fb_dynamic_object->transform(), sizeof(struct transform));
@@ -1008,9 +1023,6 @@ bool load_world(world *world, d3d *d3d, const char *file, world_editor_settings 
 			else {
 				dynamic_object->transform = transform_identity();
 			}
-			m_assert(fb_dynamic_object->id(), "");
-			dynamic_object->id = allocate_memory<char>(&world->general_memory_arena, fb_dynamic_object->id()->size() + 1);
-			strcpy(dynamic_object->id, fb_dynamic_object->id()->c_str());
 		}
 	}
 
@@ -1082,7 +1094,7 @@ bool save_world(world *world, const char *file, world_editor_settings *editor_se
 		std::vector<Offset<StaticObject>> static_objects(world->static_object_count);
 		for (uint32 i = 0; i < world->static_object_count; i += 1) {
 			auto static_object = &world->static_objects[i];
-			auto id = fb_builder.CreateString(static_object->id);
+			auto id = fb_builder.CreateString(static_object->id.ptr);
 			Transform transform;
 			memcpy(&transform, &static_object->transform, sizeof(struct transform));
 			static_objects[i] = CreateStaticObject(fb_builder, id, static_object->model_index, &transform);
@@ -1094,7 +1106,7 @@ bool save_world(world *world, const char *file, world_editor_settings *editor_se
 		std::vector<Offset<DynamicObject>> dynamic_objects(world->dynamic_object_count);
 		for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
 			auto dynamic_object = &world->dynamic_objects[i];
-			auto id = fb_builder.CreateString(dynamic_object->id);
+			auto id = fb_builder.CreateString(dynamic_object->id.ptr);
 			Transform transform;
 			memcpy(&transform, &dynamic_object->transform, sizeof(struct transform));
 			float mass = 0;

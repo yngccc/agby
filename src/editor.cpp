@@ -4,7 +4,7 @@
 
 #include "common.cpp"
 #include "math.cpp"
-#include "d3d11.cpp"
+#include "d3d.cpp"
 #include "world.cpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -13,7 +13,7 @@
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #include <imgui/imgui.cpp>
 #include <imgui/imgui_draw.cpp>
-#include <imgui/wip/imgui_tabs.cpp>
+#include <imgui/imgui_widgets.cpp>
 #include <imgui/ImGuizmo.cpp>
 
 struct {
@@ -173,7 +173,7 @@ struct editor {
 	bool render_reference_grid;
 	bool render_shadow_proj_box;
 
-	bool focus_model;
+	bool adjust_model;
 
 	bool show_frame_statistic_window;
 	bool show_camera_settings_window;
@@ -632,7 +632,7 @@ void editor_pop_undo(editor *editor, world *world) {
 			} break;
 			case transformable_type_static_object: {
 				for (uint32 i = 0; i < world->static_object_count; i += 1) {
-					if (!strcmp(world->static_objects[i].id, op->id)) {
+					if (world->static_objects[i].id == op->id) {
 						world->static_objects[i].transform = op->original_transform;
 						break;
 					}
@@ -640,7 +640,7 @@ void editor_pop_undo(editor *editor, world *world) {
 			} break;
 			case transformable_type_dynamic_object: {
 				for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
-					if (!strcmp(world->dynamic_objects[i].id, op->id)) {
+					if (world->dynamic_objects[i].id == op->id) {
 						world->dynamic_objects[i].transform = op->original_transform;
 						break;
 					}
@@ -673,7 +673,16 @@ void check_quit(editor *editor) {
 
 void check_toggle_fullscreen(window *window) {
 	if (ImGui::IsKeyPressed(VK_F11)) {
-		set_window_fullscreen(window, !window->fullscreen);
+		static uint32 width = window->width;
+		static uint32 height = window->height;
+		if (window->width == window->screen_width && window->height == window->screen_height) {
+			set_window_size(window, width, height);
+		}
+		else {
+			width = window->width;
+			height = window->height;
+			set_window_size(window, window->screen_width, window->screen_height);
+		}
 	}
 }
 
@@ -748,7 +757,7 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
 			for (uint32 i = 0; i < world->static_object_count; i += 1) {
-				if (!strcmp(id, world->static_objects[i].id)) {
+				if (world->static_objects[i].id == id) {
 					duplicate = true;
 					break;
 				}
@@ -772,8 +781,9 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 				static_object->transform = transform_identity();
 				static_object->animation_index = UINT32_MAX;
 				static_object->animation_time = 0;
-				static_object->id = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
-				strcpy(static_object->id, id);
+				char *id_cstr = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
+				strcpy(id_cstr, id);
+				static_object->id = {id_cstr, (uint32)strlen(id)};
 				close_popup();
 			}
 		}
@@ -806,7 +816,7 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
 			for (uint32 i = 0; i < world->static_object_count; i += 1) {
-				if (!strcmp(id, world->static_objects[i].id) && i != editor->static_object_index) {
+				if (world->static_objects[i].id == id && i != editor->static_object_index) {
 					duplicate = true;
 					break;
 				}
@@ -821,8 +831,9 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 			}
 			else {
 				static_object *static_object = &world->static_objects[editor->static_object_index];
-				static_object->id = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
-				strcpy(static_object->id, id);
+				char *id_cstr = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
+				strcpy(id_cstr, id);
+				static_object->id = {id_cstr, (uint32)strlen(id)};
 				close_popup();
 			}
 		}
@@ -856,7 +867,7 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
 			for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
-				if (!strcmp(id, world->dynamic_objects[i].id)) {
+				if (world->dynamic_objects[i].id == id) {
 					duplicate = true;
 					break;
 				}
@@ -880,8 +891,9 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 				dynamic_object->transform = transform_identity();
 				dynamic_object->animation_index = UINT32_MAX;
 				dynamic_object->animation_time = 0;
-				dynamic_object->id = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
-				strcpy(dynamic_object->id, id);
+				char *id_cstr = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
+				strcpy(id_cstr, id);
+				dynamic_object->id = {id_cstr, (uint32)strlen(id_cstr)};
 				close_popup();
 			}
 		}
@@ -914,7 +926,7 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
 			for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
-				if (!strcmp(id, world->dynamic_objects[i].id) && i != editor->dynamic_object_index) {
+				if (world->dynamic_objects[i].id == id && i != editor->dynamic_object_index) {
 					duplicate = true;
 					break;
 				}
@@ -929,8 +941,9 @@ void check_popups(editor *editor, world *world, d3d *d3d) {
 			}
 			else {
 				dynamic_object *dynamic_object = &world->dynamic_objects[editor->dynamic_object_index];
-				dynamic_object->id = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
-				strcpy(dynamic_object->id, id);
+				char *id_cstr = allocate_memory<char>(&world->general_memory_arena, strlen(id) + 1);
+				strcpy(id_cstr, id);
+				dynamic_object->id = {id_cstr, (uint32)strlen(id_cstr)};
 				close_popup();
 			}
 		}
@@ -1225,10 +1238,10 @@ void edit_window_static_object_tab(editor *editor, world *world) {
 		editor->add_static_object_popup = true;
 	}
 	static_object *static_object = editor->static_object_index < world->static_object_count ? &world->static_objects[editor->static_object_index] : nullptr;
-	const char *id = static_object ? static_object->id : nullptr;
+	const char *id = static_object ? static_object->id.ptr : nullptr;
 	if (ImGui::BeginCombo("static objects", id)) {
 		for (uint32 i = 0; i < world->static_object_count; i += 1) {
-			if (ImGui::Selectable(world->static_objects[i].id, editor->static_object_index == i)) {
+			if (ImGui::Selectable(world->static_objects[i].id.ptr, editor->static_object_index == i)) {
 				editor->static_object_index = i;
 				static_object = &world->static_objects[i];
 			}
@@ -1256,10 +1269,10 @@ void edit_window_dynamic_object_tab(editor *editor, world *world) {
 		editor->add_dynamic_object_popup = true;
 	}
 	dynamic_object *dynamic_object = editor->dynamic_object_index < world->dynamic_object_count ? &world->dynamic_objects[editor->dynamic_object_index] : nullptr;
-	const char *id = dynamic_object ? dynamic_object->id : nullptr;
+	const char *id = dynamic_object ? dynamic_object->id.ptr : nullptr;
 	if (ImGui::BeginCombo("dynamic objects", id)) {
 		for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
-			if (ImGui::Selectable(world->dynamic_objects[i].id, editor->dynamic_object_index == i)) {
+			if (ImGui::Selectable(world->dynamic_objects[i].id.ptr, editor->dynamic_object_index == i)) {
 				editor->dynamic_object_index = i;
 				dynamic_object = &world->dynamic_objects[i];
 			}
@@ -1295,6 +1308,8 @@ void edit_window_model_tab(editor *editor, world *world, d3d *d3d) {
 			}
 		}
 	}
+	ImGui::SameLine();
+	ImGui::Checkbox("Adjust", &editor->adjust_model);
 	ImGui::Separator();
 	model *model = editor->model_index < world->model_count ? &world->models[editor->model_index] : nullptr;
 	const char *file = model ? model->file : nullptr;
@@ -1308,8 +1323,6 @@ void edit_window_model_tab(editor *editor, world *world, d3d *d3d) {
 		ImGui::EndCombo();
 	}
 	if (model) {
-		ImGui::SameLine();
-		ImGui::Checkbox("Focus", &editor->focus_model);
 		ImGui::InputFloat3("T", &model->transform.translate[0]);
 		ImGui::InputFloat3("R", &model->transform.rotate[0], "%.3f", ImGuiInputTextFlags_ReadOnly);
 		float scale = model->transform.scale[0];
@@ -1459,14 +1472,18 @@ void edit_window(editor *editor, world *world, d3d *d3d) {
 	if (ImGui::Begin("Edit", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 		editor->edit_window_pos = ImGui::GetWindowPos();
 		editor->edit_window_size = ImGui::GetWindowSize();
-		ImGui::BeginTabBar("edit_window_tab_type", ImGuiTabBarFlags_NoReorder);
+		ImGui::BeginTabBar("edit_window_tab_type");
 		for (int32 i = 0; i < m_countof(edit_window_tab_strs); i += 1) {
-			if (ImGui::TabItem(edit_window_tab_strs[i])) {
+			if (ImGui::BeginTabItem(edit_window_tab_strs[i])) {
 				editor->edit_window_tab = i;
+				ImGui::EndTabItem();
 			}
 		}
 		ImGui::EndTabBar();
 		ImGui::Separator();
+		if (editor->adjust_model && editor->edit_window_tab != edit_window_tab_model) {
+			editor->adjust_model = false;
+		}
 		switch (editor->edit_window_tab) {
 		case edit_window_tab_player: {
 			edit_window_player_tab(editor, world);
@@ -1648,11 +1665,11 @@ void tool_gizmo(editor *editor, world *world, d3d *d3d, window *window) {
 						} break;
 						case transformable_type_static_object: {
 							operation.transform_operation.transformable_type = transformable_type_static_object;
-							strcpy(operation.transform_operation.id, world->static_objects[editor->static_object_index].id);
+							strcpy(operation.transform_operation.id, world->static_objects[editor->static_object_index].id.ptr);
 						} break;
 						case transformable_type_dynamic_object: {
 							operation.transform_operation.transformable_type = transformable_type_dynamic_object;
-							strcpy(operation.transform_operation.id, world->dynamic_objects[editor->dynamic_object_index].id);
+							strcpy(operation.transform_operation.id, world->dynamic_objects[editor->dynamic_object_index].id.ptr);
 						} break;
 						case transformable_type_model: {
 							operation.transform_operation.transformable_type = transformable_type_model;
@@ -1776,7 +1793,7 @@ void check_undo(editor *editor, world *world) {
 }
 
 void append_extra_model_constants(editor *editor, world *world, d3d *d3d) {
-	if (editor->model_index < world->model_count && editor->focus_model) {
+	if (editor->adjust_model && editor->model_index < world->model_count) {
 		add_model_render_data(world, d3d, editor->model_index, transform_identity(), 0, 0, true);
 	}
 }
@@ -1884,7 +1901,7 @@ int main(int argc, char **argv) {
 	set_current_dir_to_exe_dir();
 
 	window *window = new struct window;
-	initialize_window(window, (int32)(GetSystemMetrics(SM_CXSCREEN) * 0.75), (int32)(GetSystemMetrics(SM_CYSCREEN) * 0.75), window_message_callback);
+	initialize_window(window, window_message_callback);
 	// set_window_fullscreen(window, true);
 
 	d3d *d3d = new struct d3d;
@@ -1942,7 +1959,7 @@ int main(int argc, char **argv) {
 		render_world_desc.append_terrain_brush_constants = append_terrain_brush_constants;
 		render_world_desc.render_terrain_brush = render_terrain_brush;
 		render_world_desc.render_imgui = render_imgui;
-		if (editor->model_index < world->model_count && editor->focus_model) {
+		if (editor->adjust_model) {
 			render_world_desc.render_models = false;
 			render_world_desc.render_terrain = false;
 			render_world_desc.render_skybox = false;
@@ -1956,7 +1973,6 @@ int main(int argc, char **argv) {
 		editor->last_frame_time_secs = get_timer_duration_secs(editor->timer);
 		ring_buffer_write(editor->frame_time_ring_buffer, editor->frame_time_ring_buffer_capacity, &editor->frame_time_ring_buffer_read_index,
 											&editor->frame_time_ring_buffer_write_index, (float)editor->last_frame_time_secs);
-		Sleep(16);
 	}
 	save_editor_options("editor_options.txt", editor);
 	ImGui::DestroyContext(editor->imgui_context);

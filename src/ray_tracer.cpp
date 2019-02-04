@@ -518,7 +518,7 @@ int main() {
 	set_current_dir_to_exe_dir();
 
 	window *window = new struct window;
-	initialize_window(window, image_width, image_height, window_message_callback);
+	initialize_window(window, window_message_callback);
 	show_window(window);
 	
 	scene *scene = new struct scene;

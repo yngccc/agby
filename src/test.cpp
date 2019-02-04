@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
 		m_case(insert) {
 			hash_map<string, int> map;
 			hash_map_initialize(&map, 512);
-			string key = string_from_cstr("hello");
+			string key = {"hello", (uint32)strlen("hello")};
 			int value = 0;
 			m_assert(!hash_map_get(&map, key, &value));
 			m_assert(value == 0);
@@ -175,13 +175,13 @@ int main(int argc, char **argv) {
 			for (int i = 0; i < 256; i += 1) {
 				char str[8];
 				snprintf(str, sizeof(str), "%d", i);
-				string key = string_from_cstr(str);
+				string key = {str, (uint32)strlen(str)};
 				m_assert(hash_map_insert(&map, key, i));
 			}
 			for (int i = 0; i < 256; i += 1) {
 				char str[8];
 				snprintf(str, sizeof(str), "%d", i);
-				string key = string_from_cstr(str);
+				string key = {str, (uint32)strlen(str)};
 				int value = 0;
 				m_assert(hash_map_get(&map, key, &value));
 				m_assert(value == i);
@@ -189,13 +189,13 @@ int main(int argc, char **argv) {
 			for (int i = 256; i < 1024; i += 1) {
 				char str[8];
 				snprintf(str, sizeof(str), "%d", i);
-				string key = string_from_cstr(str);
+				string key = {str, (uint32)strlen(str)};
 				m_assert(hash_map_insert(&map, key, i));
 			}
 			for (int i = 256; i < 1024; i += 1) {
 				char str[8];
 				snprintf(str, sizeof(str), "%d", i);
-				string key = string_from_cstr(str);
+				string key = {str, (uint32)strlen(str)};
 				int value = 0;
 				m_assert(hash_map_get(&map, key, &value));
 				m_assert(value == i);
