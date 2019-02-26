@@ -21,6 +21,7 @@ struct {
 	bool quit;
 	window *window;
 	d3d *d3d;
+	d3d12 *d3d12;
 } window_message_channel = {};
 
 enum edit_window_tab {
@@ -1907,6 +1908,9 @@ int main(int argc, char **argv) {
 	d3d *d3d = new struct d3d;
 	initialize_d3d(d3d, window);
 
+	d3d12 *d3d12 = new struct d3d12;
+	initialize_d3d12(d3d12, window);
+	
 	editor *editor = new struct editor;
 	initialize_editor(editor, d3d);
 
@@ -1920,6 +1924,7 @@ int main(int argc, char **argv) {
 	
 	window_message_channel.window = window;
 	window_message_channel.d3d = d3d;
+	window_message_channel.d3d12 = d3d12;
 	window_message_channel.initialized = true;
 	show_window(window);
 

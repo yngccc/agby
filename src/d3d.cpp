@@ -7,7 +7,9 @@
 #include "common.cpp"
 
 #include <d3d11_1.h>
-// #include <d3d12.h>
+#include <d3d12.h>
+#include <d3d12sdklayers.h>
+#include <dxgi1_5.h>
 #include <directxmath.h>
 #include <directxcolors.h>
 
@@ -112,6 +114,31 @@ struct d3d {
 	ID3D11BlendState *imgui_blend_state;
 };
 
+const uint32 d3d12_max_frame_count = 4;
+
+struct d3d12 {
+	uint32 frame_count;
+	uint32 frame_index;
+
+	ID3D12CommandQueue *command_queue;
+	ID3D12CommandAllocator *command_allocator;
+	ID3D12CommandList *command_list;
+
+	ID3D12DescriptorHeap *rtv_heap;
+	uint32 rtv_descriptor_size;
+	ID3D12Resource *render_targets[d3d12_max_frame_count];
+
+	ID3D12RootSignature *root_signature;
+
+	ID3D12PipelineState *pipeline_state;
+	
+	ID3D12Device *device;
+	IDXGISwapChain4 *swap_chain;
+	IDXGIAdapter1 *adapter;
+	IDXGIFactory5 *factory;
+	ID3D12Debug *debug_controller;
+};
+
 void initialize_d3d_device_swap_chain(d3d *d3d, window *window) {
 	*d3d = {};
 
@@ -157,7 +184,6 @@ void initialize_d3d_device_swap_chain(d3d *d3d, window *window) {
 	d3d->swap_chain_desc.Height = window_height;
 	d3d->swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	d3d->swap_chain_desc.SampleDesc.Count = 1;
-	d3d->swap_chain_desc.SampleDesc.Quality = 0;
 	d3d->swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	d3d->swap_chain_desc.BufferCount = 2;
 	d3d->swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
@@ -448,4 +474,175 @@ void resize_d3d_swap_chain(d3d *d3d, uint32 width, uint32 height) {
 	}
 }
 
+void initialize_d3d12(d3d12 *d3d12, window *window) {
+	*d3d12 = {};
+	d3d12->frame_count = 2;
+	
+	UINT dxgiFactoryFlags = 0;
 
+	m_d3d_assert(D3D12GetDebugInterface(IID_PPV_ARGS(&d3d12->debug_controller)));
+	d3d12->debug_controller->EnableDebugLayer();
+	dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+
+	m_d3d_assert(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&d3d12->factory)));
+
+	for (uint32 i = 0; d3d12->factory->EnumAdapters1(i, &d3d12->adapter) != DXGI_ERROR_NOT_FOUND; i += 1) {
+		DXGI_ADAPTER_DESC1 adapter_desc;
+		d3d12->adapter->GetDesc1(&adapter_desc);
+		if (!(adapter_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
+			if (SUCCEEDED(D3D12CreateDevice(d3d12->adapter, D3D_FEATURE_LEVEL_12_0, _uuidof(ID3D12Device), nullptr))) {
+				break;
+			}
+		}
+	}
+	m_d3d_assert(D3D12CreateDevice(d3d12->adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12->device)));
+
+	D3D12_COMMAND_QUEUE_DESC queue_desc = {};
+	queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+	queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+	m_d3d_assert(d3d12->device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&d3d12->command_queue)));
+
+	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {};
+	swap_chain_desc.Width = window->width;
+	swap_chain_desc.Height = window->height;
+	swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	swap_chain_desc.SampleDesc.Count = 1;
+	swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	swap_chain_desc.BufferCount = d3d12->frame_count;
+	swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+
+	m_d3d_assert(d3d12->factory->CreateSwapChainForHwnd(d3d12->command_queue, window->handle, &swap_chain_desc, nullptr, nullptr, (IDXGISwapChain1 **)&d3d12->swap_chain));
+	d3d12->frame_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
+
+	D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc = {};
+	rtv_heap_desc.NumDescriptors = d3d12->frame_count;
+	rtv_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtv_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	m_d3d_assert(d3d12->device->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&d3d12->rtv_heap)));
+	d3d12->rtv_descriptor_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = d3d12->rtv_heap->GetCPUDescriptorHandleForHeapStart();
+	for (uint32 i = 0; i < d3d12->frame_count; i += 1) {
+		m_d3d_assert(d3d12->swap_chain->GetBuffer(i, IID_PPV_ARGS(&d3d12->render_targets[i])));
+		d3d12->device->CreateRenderTargetView(d3d12->render_targets[i], nullptr, rtv_handle);
+		rtv_handle.ptr += d3d12->rtv_descriptor_size;
+	}
+
+	m_d3d_assert(d3d12->device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&d3d12->command_allocator)));
+	m_d3d_assert(d3d12->device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, d3d12->command_allocator, nullptr, IID_PPV_ARGS(&d3d12->command_list)));
+
+	D3D12_ROOT_SIGNATURE_DESC root_signature_desc = {};
+	root_signature_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+	ID3DBlob *signature;
+	ID3DBlob *error;
+	m_d3d_assert(D3D12SerializeRootSignature(&root_signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
+	m_d3d_assert(d3d12->device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&d3d12->root_signature)));
+
+	D3D12_INPUT_ELEMENT_DESC input_element_descs[] = {{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+																										{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+
+	struct hlsl_bytecode_file {
+		file_mapping file_mapping;
+		D3D12_SHADER_BYTECODE bytecode;
+		hlsl_bytecode_file(const char *file) {
+			m_assert(open_file_mapping(file, &file_mapping, true), "");
+			bytecode.pShaderBytecode = file_mapping.ptr;
+			bytecode.BytecodeLength = file_mapping.size;
+		}
+		~hlsl_bytecode_file() {
+			close_file_mapping(file_mapping);
+		}
+	};
+	
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {};
+	pso_desc.InputLayout = {input_element_descs, m_countof(input_element_descs)};
+	pso_desc.pRootSignature = d3d12->root_signature;
+	hlsl_bytecode_file vs_file("hlsl/triangle.vs.fxc");
+	hlsl_bytecode_file ps_file("hlsl/triangle.ps.fxc");
+	pso_desc.VS = vs_file.bytecode;
+	pso_desc.PS = ps_file.bytecode;
+	pso_desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+	pso_desc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	pso_desc.RasterizerState.FrontCounterClockwise = FALSE;
+	pso_desc.RasterizerState.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+	pso_desc.RasterizerState.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+	pso_desc.RasterizerState.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+	pso_desc.RasterizerState.DepthClipEnable = TRUE;
+	pso_desc.RasterizerState.MultisampleEnable = FALSE;
+	pso_desc.RasterizerState.AntialiasedLineEnable = FALSE;
+	pso_desc.RasterizerState.ForcedSampleCount = 0;
+	pso_desc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+	pso_desc.BlendState.AlphaToCoverageEnable = FALSE;
+	pso_desc.BlendState.IndependentBlendEnable = FALSE;
+	for (uint32 i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; i += 1) {
+		pso_desc.BlendState.RenderTarget[i] =
+			{
+			 FALSE, FALSE,
+			 D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+			 D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
+			 D3D12_LOGIC_OP_NOOP,
+			 D3D12_COLOR_WRITE_ENABLE_ALL
+			};
+	}
+	pso_desc.DepthStencilState.DepthEnable = FALSE;
+	pso_desc.DepthStencilState.StencilEnable = FALSE;
+	pso_desc.SampleMask = UINT_MAX;
+	pso_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	pso_desc.NumRenderTargets = 1;
+	pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	pso_desc.SampleDesc.Count = 1;
+	m_d3d_assert(d3d12->device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&d3d12->pipeline_state)));
+	
+    // {
+		// 	Vertex triangleVertices[] =
+    //     {
+		// 		 {{0.0f, 0.25f * m_aspectRatio, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f}},
+		// 		 {{0.25f, -0.25f * m_aspectRatio, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f}},
+		// 		 {{-0.25f, -0.25f * m_aspectRatio, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f}}
+    //     };
+
+		// 	const UINT vertexBufferSize = sizeof(triangleVertices);
+
+		// 	// Note: using upload heaps to transfer static data like vert buffers is not 
+		// 	// recommended. Every time the GPU needs it, the upload heap will be marshalled 
+		// 	// over. Please read up on Default Heap usage. An upload heap is used here for 
+		// 	// code simplicity and because there are very few verts to actually transfer.
+		// 	ThrowIfFailed(m_device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+		// 																									D3D12_HEAP_FLAG_NONE,
+		// 																									&CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize),
+		// 																									D3D12_RESOURCE_STATE_GENERIC_READ,
+		// 																									nullptr,
+		// 																									IID_PPV_ARGS(&m_vertexBuffer)));
+
+		// 	// Copy the triangle data to the vertex buffer.
+		// 	UINT8* pVertexDataBegin;
+		// 	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+		// 	ThrowIfFailed(m_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+		// 	memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
+		// 	m_vertexBuffer->Unmap(0, nullptr);
+
+		// 	// Initialize the vertex buffer view.
+		// 	m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
+		// 	m_vertexBufferView.StrideInBytes = sizeof(Vertex);
+		// 	m_vertexBufferView.SizeInBytes = vertexBufferSize;
+    // }
+
+    // // Create synchronization objects and wait until assets have been uploaded to the GPU.
+    // {
+    //     ThrowIfFailed(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
+    //     m_fenceValue = 1;
+
+    //     // Create an event handle to use for frame synchronization.
+    //     m_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    //     if (m_fenceEvent == nullptr)
+    //     {
+    //         ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+    //     }
+
+    //     // Wait for the command list to execute; we are reusing the same command 
+    //     // list in our main loop but for now, we just want to wait for setup to 
+    //     // complete before continuing.
+    //     WaitForPreviousFrame();
+    // }
+}
