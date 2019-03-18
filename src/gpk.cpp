@@ -2,7 +2,8 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#pragma once
+#ifndef __GPK_CPP__
+#define __GPK_CPP__
 
 #define m_gpk_model_format_str "GPK_MODEL_FORMAT"
 #define m_gpk_skybox_format_str "GPK_SKYBOX_FORMAT"
@@ -136,7 +137,7 @@ struct gpk_model_material {
 struct gpk_model_image {
 	uint32 width;
 	uint32 height;
-	uint32 mipmap_count;
+	uint32 mips;
 	uint32 layer_count;
 	uint32 size;
 	uint32 format;
@@ -168,3 +169,5 @@ struct gpk_terrain {
 	uint32 height_map_offset;
 	uint32 diffuse_map_offset;
 };
+
+#endif // __GPK_CPP__

@@ -2,7 +2,8 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#pragma once
+#ifndef __GEOMETRY_CPP__
+#define __GEOMETRY_CPP__
 
 #include "math.cpp"
 
@@ -2700,3 +2701,5 @@ const vec3 torus_vertices[] = {
 	{1.030f, 0.000f, -0.000f}, {1.017f, -0.015f, 0.134f}, {1.026f, -0.015f, -0.000f}, 
 	{1.030f, 0.000f, -0.000f}, {1.021f, 0.000f, 0.134f}, {1.017f, -0.015f, 0.134f}
 };
+
+#endif // __GEOMETRY_CPP__

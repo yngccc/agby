@@ -4,28 +4,43 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 15.0.27130.2020
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "import", "import\import.vcxproj", "{671B707A-E1DA-4859-8E8B-34F984E53BFA}"
-	ProjectSection(ProjectDependencies) = postProject
-		{49027F53-5645-4E83-93B2-7801C5F23287} = {49027F53-5645-4E83-93B2-7801C5F23287}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test\test.vcxproj", "{D9B845C7-F214-4B0F-92B2-DD31197901B4}"
-	ProjectSection(ProjectDependencies) = postProject
-		{49027F53-5645-4E83-93B2-7801C5F23287} = {49027F53-5645-4E83-93B2-7801C5F23287}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "editor", "editor\editor.vcxproj", "{C5BD4379-FEF5-4364-860D-CD11795ED00D}"
-	ProjectSection(ProjectDependencies) = postProject
-		{49027F53-5645-4E83-93B2-7801C5F23287} = {49027F53-5645-4E83-93B2-7801C5F23287}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "game", "game\game.vcxproj", "{00FE37CB-EBED-4F22-B012-14BA1C7A9E3F}"
-	ProjectSection(ProjectDependencies) = postProject
-		{49027F53-5645-4E83-93B2-7801C5F23287} = {49027F53-5645-4E83-93B2-7801C5F23287}
-	EndProjectSection
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "prebuild_events", "prebuild_events\prebuild_events.vcxproj", "{49027F53-5645-4E83-93B2-7801C5F23287}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ray_tracer", "ray_tracer\ray_tracer.vcxproj", "{245F7607-7822-47A7-9E82-C61BA4E072C7}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hlsl", "hlsl", "{E1246798-C815-40CF-8759-5F67D164A3D0}"
+	ProjectSection(SolutionItems) = preProject
+		..\..\src\hlsl\basic.rt.hlsl = ..\..\src\hlsl\basic.rt.hlsl
+		..\..\src\hlsl\blit_to_swap_chain.vps.hlsl = ..\..\src\hlsl\blit_to_swap_chain.vps.hlsl
+		..\..\build.bat = ..\..\build.bat
+		..\..\src\hlsl\collision_shape.vps.hlsl = ..\..\src\hlsl\collision_shape.vps.hlsl
+		..\..\src\hlsl\common.h = ..\..\src\hlsl\common.h
+		..\..\src\hlsl\gaussian_blur_x.vps.hlsl = ..\..\src\hlsl\gaussian_blur_x.vps.hlsl
+		..\..\src\hlsl\gaussian_blur_y.vps.hlsl = ..\..\src\hlsl\gaussian_blur_y.vps.hlsl
+		..\..\src\hlsl\gbuffer.vps.hlsl = ..\..\src\hlsl\gbuffer.vps.hlsl
+		..\..\src\hlsl\gbuffer_direct_lit.vps.hlsl = ..\..\src\hlsl\gbuffer_direct_lit.vps.hlsl
+		..\..\src\hlsl\imgui.vps.hlsl = ..\..\src\hlsl\imgui.vps.hlsl
+		..\..\src\hlsl\mesh.vps.hlsl = ..\..\src\hlsl\mesh.vps.hlsl
+		..\..\src\hlsl\mesh_shadow.vps.hlsl = ..\..\src\hlsl\mesh_shadow.vps.hlsl
+		..\..\src\hlsl\pbr_mesh.vps.hlsl = ..\..\src\hlsl\pbr_mesh.vps.hlsl
+		..\..\src\hlsl\reference_grid.vps.hlsl = ..\..\src\hlsl\reference_grid.vps.hlsl
+		..\..\src\hlsl\skybox.vps.hlsl = ..\..\src\hlsl\skybox.vps.hlsl
+		..\..\src\hlsl\terrain.vps.hlsl = ..\..\src\hlsl\terrain.vps.hlsl
+		..\..\src\hlsl\terrain_brush.vps.hlsl = ..\..\src\hlsl\terrain_brush.vps.hlsl
+		..\..\src\hlsl\terrain_shadow.vps.hlsl = ..\..\src\hlsl\terrain_shadow.vps.hlsl
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "miscs", "miscs", "{CCCD23EF-6FBB-4993-A0A2-D11D6F0E742B}"
+	ProjectSection(SolutionItems) = preProject
+		..\..\build.bat = ..\..\build.bat
+		..\..\src\ispc\simple.ispc = ..\..\src\ispc\simple.ispc
+		..\..\src\flatbuffers\world.fbs = ..\..\src\flatbuffers\world.fbs
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -65,14 +80,6 @@ Global
 		{00FE37CB-EBED-4F22-B012-14BA1C7A9E3F}.Release|x64.Build.0 = Release|x64
 		{00FE37CB-EBED-4F22-B012-14BA1C7A9E3F}.Release|x86.ActiveCfg = Release|Win32
 		{00FE37CB-EBED-4F22-B012-14BA1C7A9E3F}.Release|x86.Build.0 = Release|Win32
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Debug|x64.ActiveCfg = Debug|x64
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Debug|x64.Build.0 = Debug|x64
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Debug|x86.ActiveCfg = Debug|Win32
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Debug|x86.Build.0 = Debug|Win32
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Release|x64.ActiveCfg = Release|x64
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Release|x64.Build.0 = Release|x64
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Release|x86.ActiveCfg = Release|Win32
-		{49027F53-5645-4E83-93B2-7801C5F23287}.Release|x86.Build.0 = Release|Win32
 		{245F7607-7822-47A7-9E82-C61BA4E072C7}.Debug|x64.ActiveCfg = Debug|x64
 		{245F7607-7822-47A7-9E82-C61BA4E072C7}.Debug|x64.Build.0 = Debug|x64
 		{245F7607-7822-47A7-9E82-C61BA4E072C7}.Debug|x86.ActiveCfg = Debug|Win32

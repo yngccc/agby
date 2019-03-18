@@ -1,5 +1,5 @@
 /***************************************************************************************************/
-/*					Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.					 */
+/*			Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.		   */
 /***************************************************************************************************/
 
 #include "common.cpp"
@@ -119,7 +119,24 @@ struct scene {
 	camera camera;
 };
 
-#define m_d3d_assert(d3d_call) { HRESULT hr = d3d_call; if (FAILED(hr)) { _com_error err(hr); const char *err_msg = err.ErrorMessage(); fatal("D3D Error:\n\nCode: %s\nError: %s\nFile: %s\nLine: %d", #d3d_call, err_msg, __FILE__, __LINE__); } }
+#define m_d3d_assert(d3d_call) \
+{ \
+	HRESULT hr = d3d_call; \
+	if (FAILED(hr)) { \
+		const char *err_msg = _com_error(hr).ErrorMessage(); \
+		if (IsDebuggerPresent()) { \
+			__debugbreak(); \
+		} \
+		else { \
+			char msg[2048]; \
+			snprintf(msg, sizeof(msg), "D3D Error:\n\nCode: %s\nError: %s", #d3d_call, err_msg); \
+			DWORD response; \
+			char title[] = "Fatal Error"; \
+			WTSSendMessageA(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, title, sizeof(title) - 1, msg, (DWORD)strlen(msg), MB_OK, 0, &response, FALSE); \
+		} \
+		ExitProcess(1); \
+	} \
+}
 
 struct d3d {
 	ID3D11Device *device = nullptr;
@@ -256,16 +273,16 @@ void init_d3d(d3d *d3d, window *window) {
 	
 	file_mapping shader_file_mapping;
 
-	m_assert(open_file_mapping("hlsl/blit_framebuffer.vs.fxc", &shader_file_mapping, true), "");
+	m_assert(file_mapping_open("hlsl/blit_framebuffer.vs.fxc", &shader_file_mapping, true));
 	m_d3d_assert(d3d->device->CreateVertexShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->blit_framebuffer_vs));
-	close_file_mapping(shader_file_mapping);
+	file_mapping_close(shader_file_mapping);
 
-	m_assert(open_file_mapping("hlsl/blit_framebuffer.ps.fxc", &shader_file_mapping, true), "");
+	m_assert(file_mapping_open("hlsl/blit_framebuffer.ps.fxc", &shader_file_mapping, true));
 	m_d3d_assert(d3d->device->CreatePixelShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->blit_framebuffer_ps));
-	close_file_mapping(shader_file_mapping);
+	file_mapping_close(shader_file_mapping);
 
 #if USE_GPU
-	m_assert(open_file_mapping("hlsl/trace.cs.fxc", &shader_file_mapping, true), "");
+	m_assert(open_file_mapping("hlsl/trace.cs.fxc", &shader_file_mapping, true));
 	m_d3d_assert(d3d->device->CreateComputeShader(shader_file_mapping.ptr, shader_file_mapping.size, nullptr, &d3d->trace_cs));
 	close_file_mapping(shader_file_mapping);
 #endif	
@@ -437,7 +454,7 @@ vec3 trace(scene *scene, rng *rng, ray ray, uint32 bounce) {
 			}
 		}
 		else {
-			m_assert(false, "unimplemented material type found");
+			m_assert(false);
 			return vec3{0, 0, 0};
 		}
 	}
@@ -518,8 +535,8 @@ int main() {
 	set_current_dir_to_exe_dir();
 
 	window *window = new struct window;
-	initialize_window(window, window_message_callback);
-	show_window(window);
+	window_init(window, window_message_callback);
+	window_show(window);
 	
 	scene *scene = new struct scene;
 	initialize_scene(scene);
@@ -576,11 +593,11 @@ int main() {
 	HANDLE *thread_handles = new HANDLE[thread_count];
 	for (uint32 i = 0; i < thread_count; i += 1) {
 		thread_handles[i] = CreateThread(nullptr, 0, thread_func, &thread_param, 0, nullptr);
-		m_assert(thread_handles[i], "");
+		m_assert(thread_handles[i]);
 	}
 
 	while (true) {
-		handle_window_messages(window);
+		window_handle_messages(window);
 		if (current_block_done()) {
 			D3D11_MAPPED_SUBRESOURCE mapped_subresource = {};
 			m_d3d_assert(d3d->context->Map(d3d->image, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource));

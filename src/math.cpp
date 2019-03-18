@@ -2,7 +2,8 @@
 /*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
 /***************************************************************************************************/
 
-#pragma once
+#ifndef __MATH_CPP__
+#define __MATH_CPP__
 
 #include "common.cpp"
 
@@ -334,7 +335,7 @@ float vec2_len(vec2 v) {
 
 vec2 vec2_normalize(vec2 v) {
 	float len = vec2_len(v);
-	m_debug_assert(len > 0, "");
+	m_debug_assert(len > 0);
 	return v / len;
 }
 
@@ -348,7 +349,7 @@ float vec3_len(vec3 v) {
 
 vec3 vec3_normalize(vec3 v) {
 	float len = vec3_len(v);
-	m_debug_assert(len > 0, "");
+	m_debug_assert(len > 0);
 	return v / len;
 }
 
@@ -361,7 +362,7 @@ vec3 vec3_cross(vec3 v1, vec3 v2) {
 }
 
 vec3 vec3_lerp(vec3 v1, vec3 v2, float t) {
-	m_debug_assert(t >= 0 && t <= 1, "");
+	m_debug_assert(t >= 0 && t <= 1);
 	return v1 + (v2 - v1) * t;
 }
 
@@ -371,7 +372,7 @@ float vec4_len(vec4 v) {
 
 vec4 vec4_normalize(vec4 v) {
 	float len = vec4_len(v);
-	m_debug_assert(len > 0, "");
+	m_debug_assert(len > 0);
 	return v / len;
 }
 
@@ -431,7 +432,7 @@ quat mat3_get_rotate(mat3 m) {
 	case 1: return quat{biggest_val, (m[0][1] + m[1][0]) * mult, (m[2][0] + m[0][2]) * mult, (m[1][2] - m[2][1]) * mult};
 	case 2: return quat{(m[0][1] + m[1][0]) * mult, biggest_val, (m[1][2] + m[2][1]) * mult, (m[2][0] - m[0][2]) * mult};
 	case 3: return quat{(m[2][0] + m[0][2]) * mult, (m[1][2] + m[2][1]) * mult, biggest_val, (m[0][1] - m[1][0]) * mult};
-	default: { m_debug_assert(false, ""); return quat{0, 0, 0, 1}; }
+	default: { m_debug_assert(false); return quat{0, 0, 0, 1}; }
 	}
 }
 
@@ -448,7 +449,7 @@ mat3 mat3_from_scale(float scale) {
 }
 
 mat3 mat3_from_axis_rotate(vec3 axis, float angle) {
-	m_debug_assert(fabsf(vec3_len(axis) - 1.0f) < 0.000001f, "");
+	m_debug_assert(fabsf(vec3_len(axis) - 1.0f) < 0.000001f);
 	float c = cosf(angle);
 	float c_1 = 1 - c;
 	float s = sinf(angle);
@@ -566,7 +567,7 @@ mat4 mat4_from_translate(vec3 translate) {
 }
 
 mat4 mat4_from_axis_rotate(vec3 axis, float angle) {
-	m_debug_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2), "");
+	m_debug_assert(fabsf(vec3_len(axis) - 1) < (FLT_EPSILON * 2));
 	float c = cosf(angle);
 	float c_1 = 1 - c;
 	float s = sinf(angle);
@@ -623,7 +624,7 @@ quat mat4_get_rotate(mat4 m) {
 	m3[2] /= scaling.z;
 	quat q = mat3_get_rotate(m3);
 	float q_len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-	m_debug_assert(q_len > 0, "");
+	m_debug_assert(q_len > 0);
 	return q / q_len;
 }
 
@@ -640,32 +641,9 @@ transform mat4_get_transform(mat4 m) {
 	return t;
 }
 
-mat4 mat4_orthographic_project(float left, float right, float bottom, float top, float near, float far) {
-	mat4 mat = {};
-	mat.c1.x = 2 / (right - left);
-	mat.c2.y = 2 / (top - bottom);
-	mat.c3.z = -2 / (far - near);
-	mat.c4.x = -(right + left) / (right - left);
-	mat.c4.y = -(top + bottom) / (top - bottom);
-	mat.c4.z = -(far + near) / (far - near);
-	mat.c4.w = 1;
-	return mat;
-}
-
-mat4 mat4_perspective_project(float fovy, float aspect, float znear, float zfar) {
-	float f = 1 / tanf(fovy / 2);
-	mat4 mat = {};
-	mat.c1.x = f / aspect;
-	mat.c2.y = f;
-	mat.c3.z = (zfar + znear) / (znear - zfar);
-	mat.c3.w = -1;
-	mat.c4.z = (2 * zfar * znear) / (znear - zfar);
-	return mat;
-}
-
-mat4 mat4_look_at(vec3 eye, vec3 center) {
-	vec3 up = {0, 1, 0};
-	vec3 f = vec3_normalize(center - eye);
+mat4 mat4_look_at(vec3 eye, vec3 at) {
+	vec3 up = { 0, 1, 0 };
+	vec3 f = vec3_normalize(at - eye);
 	if (f == up || f == -up) {
 		f.x -= 0.000001f;
 		f = vec3_normalize(f);
@@ -689,6 +667,39 @@ mat4 mat4_look_at(vec3 eye, vec3 center) {
 	return mat;
 }
 
+mat4 mat4_project(float fovy, float aspect, float znear, float zfar) {
+	float f = 1 / tanf(fovy / 2);
+	mat4 mat = {};
+	mat.c1.x = f / aspect;
+	mat.c2.y = f;
+	mat.c3.z = zfar / (znear - zfar);
+	mat.c3.w = -1;
+	mat.c4.z = znear * zfar / (znear - zfar);
+	return mat;
+}
+
+mat4 mat4_project_reverse_z(float fovy, float aspect, float znear) {
+	float f = 1 / tanf(fovy / 2);
+	mat4 mat = {};
+	mat.c1.x = f / aspect;
+	mat.c2.y = f;
+	mat.c3.w = -1;
+	mat.c4.z = znear;
+	return mat;
+}
+
+mat4 mat4_project_ortho(float left, float right, float bottom, float top, float near, float far) {
+	mat4 mat = {};
+	mat.c1.x = 2 / (right - left);
+	mat.c2.y = 2 / (top - bottom);
+	mat.c3.z = -2 / (far - near);
+	mat.c4.x = -(right + left) / (right - left);
+	mat.c4.y = -(top + bottom) / (top - bottom);
+	mat.c4.z = -(far + near) / (far - near);
+	mat.c4.w = 1;
+	return mat;
+}
+
 vec3 mat4_unproject(vec3 window_coord, mat4 view_mat, mat4 proj_mat, vec4 view_port) {
 	mat4 inverse_mat = mat4_inverse(proj_mat * view_mat);
 	vec4 tmp = vec4{window_coord.x, window_coord.y, window_coord.z, 1};
@@ -700,22 +711,13 @@ vec3 mat4_unproject(vec3 window_coord, mat4 view_mat, mat4 proj_mat, vec4 view_p
 	return vec3{obj.x, obj.y, obj.z};
 }
 
-mat4 mat4_vulkan_clip() {
-	return mat4{
-		vec4{1, 0, 0, 0},
-		vec4{0, -1, 0, 0,},
-		vec4{0, 0, 0.5f, 0},
-		vec4{0, 0, 0.5f, 1}
-	};
-}
-
 quat quat_identity() {
 	return quat{0, 0, 0, 1};
 }
 
 quat quat_normalize(quat q) {
 	float len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-	m_debug_assert(len > 0, "");
+	m_debug_assert(len > 0);
 	return q / len;
 }
 
@@ -794,7 +796,7 @@ quat quat_from_between(vec3 a, vec3 b) {
 }
 
 quat quat_slerp(quat q1, quat q2, float t) {
-	m_debug_assert(t >= 0 && t <= 1, "");
+	m_debug_assert(t >= 0 && t <= 1);
 	quat q3 = q2;
 	float cos_theta = q1.x * q2.x + q1.y * q2.y + q1.z * q2.z + q1.w * q2.w;
 	if (cos_theta < 0) {
@@ -815,7 +817,7 @@ transform transform_identity() {
 }
 
 mat4 camera_project_mat4(camera camera) {
-	return mat4_perspective_project(camera.fovy, camera.aspect, camera.znear, camera.zfar);
+	return mat4_project(camera.fovy, camera.aspect, camera.znear, camera.zfar);
 }
 
 mat4 camera_view_mat4(camera camera) {
@@ -879,7 +881,7 @@ mat4 camera_shadow_map_project_mat4(camera camera, vec3 directional_light) {
 	// return mat4_orthographic_project(bound_min.x, bound_max.x, bound_min.y, bound_max.y, -bound_max.z, -bound_min.z) * light_view_mat4;
 
 	mat4 light_view_mat4 = mat4_look_at(directional_light * 50, {0, 0, 0});
-	return mat4_orthographic_project(-50, 50, -50, 50, 0, 100) * light_view_mat4;
+	return mat4_project_ortho(-50, 50, -50, 50, 0, 100) * light_view_mat4;
 }
 
 float degree_to_radian(float degree) {
@@ -1149,3 +1151,25 @@ bool ray_hit_triangle(ray ray, vec3 a, vec3 b, vec3 c, float *hit = nullptr, vec
 	}
 	return true;
 }
+
+#include <directxmath.h>
+using namespace DirectX;
+
+mat4 mat4_from_xmmatrix(XMMATRIX xm) {
+	XMFLOAT4 r0;
+	XMFLOAT4 r1;
+	XMFLOAT4 r2;
+	XMFLOAT4 r3;
+	XMStoreFloat4(&r0, xm.r[0]);
+	XMStoreFloat4(&r1, xm.r[1]);
+	XMStoreFloat4(&r2, xm.r[2]);
+	XMStoreFloat4(&r3, xm.r[3]);
+	mat4 m;
+	m.c1 = { r0.x, r1.x, r2.x, r3.x };
+	m.c2 = { r0.y, r1.y, r2.y, r3.y };
+	m.c3 = { r0.z, r1.z, r2.z, r3.z };
+	m.c4 = { r0.w, r1.w, r2.w, r3.w };
+	return m;
+}
+
+#endif // __MATH_CPP__

@@ -28,75 +28,74 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 		window *window = window_message_channel.window;
 		d3d *d3d = window_message_channel.d3d;
 		switch (msg) {
-			default: {
-				result = DefWindowProcA(hwnd, msg, wparam, lparam);
-			} break;
-			case WM_CLOSE:
-			case WM_QUIT: {
-				window_message_channel.quit = true;
-			} break;
-			case WM_PAINT: {
-				ValidateRect(hwnd, nullptr);
-			} break;
-			case WM_SIZE: {
-				window->width = LOWORD(lparam);
-				window->height = HIWORD(lparam);
-				set_window_title(window, "%dx%d", window->width, window->height);
-				resize_d3d_swap_chain(d3d, window->width, window->height);
-			} break;
-			case WM_SHOWWINDOW : {
-			} break;
-			case WM_KEYDOWN:
-			case WM_SYSKEYDOWN: 
-			case WM_KEYUP:
-			case WM_SYSKEYUP: {
-				bool down = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
-				ImGui::GetIO().KeysDown[wparam] = down;
-				if (wparam == VK_SHIFT) {
-					ImGui::GetIO().KeyShift = down;
+		default: {
+			result = DefWindowProcA(hwnd, msg, wparam, lparam);
+		} break;
+		case WM_CLOSE:
+		case WM_QUIT: {
+			window_message_channel.quit = true;
+		} break;
+		case WM_PAINT: {
+			ValidateRect(hwnd, nullptr);
+		} break;
+		case WM_SIZE: {
+			int window_width = LOWORD(lparam);
+			int window_height = HIWORD(lparam);
+			window_set_title(window, "%dx%d", window_width, window_height);
+		} break;
+		case WM_SHOWWINDOW: {
+		} break;
+		case WM_KEYDOWN:
+		case WM_SYSKEYDOWN:
+		case WM_KEYUP:
+		case WM_SYSKEYUP: {
+			bool down = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+			ImGui::GetIO().KeysDown[wparam] = down;
+			if (wparam == VK_SHIFT) {
+				ImGui::GetIO().KeyShift = down;
+			}
+			else if (wparam == VK_CONTROL) {
+				ImGui::GetIO().KeyCtrl = down;
+			}
+			else if (wparam == VK_MENU) {
+				ImGui::GetIO().KeyAlt = down;
+			}
+		} break;
+		case WM_CHAR:
+		case WM_SYSCHAR: {
+			ImGui::GetIO().AddInputCharacter((ImWchar)wparam);
+		} break;
+		case WM_MOUSEMOVE: {
+			window->mouse_x = LOWORD(lparam);
+			window->mouse_y = HIWORD(lparam);
+		} break;
+		case WM_LBUTTONDOWN:
+		case WM_LBUTTONUP: {
+			ImGui::GetIO().MouseDown[0] = (msg == WM_LBUTTONDOWN);
+		} break;
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONUP: {
+			ImGui::GetIO().MouseDown[1] = (msg == WM_RBUTTONDOWN);
+		} break;
+		case WM_MBUTTONDOWN:
+		case WM_MBUTTONUP: {
+			ImGui::GetIO().MouseDown[2] = (msg == WM_MBUTTONDOWN);
+		} break;
+		case WM_MOUSEWHEEL: {
+			ImGui::GetIO().MouseWheel = (float)WHEEL_DELTA / (float)GET_WHEEL_DELTA_WPARAM(wparam);
+		} break;
+		case WM_INPUT: {
+			RAWINPUT raw_input;
+			uint32 raw_input_size = sizeof(raw_input);
+			GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &raw_input, &raw_input_size, sizeof(RAWINPUTHEADER));
+			if (raw_input.header.dwType == RIM_TYPEMOUSE) {
+				RAWMOUSE *raw_mouse = &raw_input.data.mouse;
+				if (raw_mouse->usFlags == MOUSE_MOVE_RELATIVE) {
+					window->raw_mouse_dx += raw_mouse->lLastX;
+					window->raw_mouse_dy += raw_mouse->lLastY;
 				}
-				else if (wparam == VK_CONTROL) {
-					ImGui::GetIO().KeyCtrl = down;
-				}
-				else if (wparam == VK_MENU) {
-					ImGui::GetIO().KeyAlt = down;
-				}
-			} break;
-			case WM_CHAR:
-			case WM_SYSCHAR: {
-				ImGui::GetIO().AddInputCharacter((ImWchar)wparam);
-			} break;
-			case WM_MOUSEMOVE: {
-				window->mouse_x = LOWORD(lparam);
-				window->mouse_y = HIWORD(lparam);
-			} break;
-			case WM_LBUTTONDOWN:
-			case WM_LBUTTONUP: {
-				ImGui::GetIO().MouseDown[0] = (msg == WM_LBUTTONDOWN);
-			} break;
-			case WM_RBUTTONDOWN:
-			case WM_RBUTTONUP: {
-				ImGui::GetIO().MouseDown[1] = (msg == WM_RBUTTONDOWN);
-			} break;
-			case WM_MBUTTONDOWN:
-			case WM_MBUTTONUP: {
-				ImGui::GetIO().MouseDown[2] = (msg == WM_MBUTTONDOWN);
-			} break;
-			case WM_MOUSEWHEEL: {
-				ImGui::GetIO().MouseWheel = (float)WHEEL_DELTA / (float)GET_WHEEL_DELTA_WPARAM(wparam);
-			} break;
-			case WM_INPUT: {
-				RAWINPUT raw_input;
-				uint32 raw_input_size = sizeof(raw_input);
-				GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &raw_input, &raw_input_size, sizeof(RAWINPUTHEADER));
-				if (raw_input.header.dwType == RIM_TYPEMOUSE) {
-					RAWMOUSE *raw_mouse = &raw_input.data.mouse;
-					if (raw_mouse->usFlags == MOUSE_MOVE_RELATIVE) {
-						window->raw_mouse_dx += raw_mouse->lLastX;
-						window->raw_mouse_dy += raw_mouse->lLastY;
-					}
-				}
-			} break;
+			}
+		} break;
 		}
 	}
 	return result;
@@ -118,15 +117,15 @@ struct game {
 	float camera_pitch;
 	float camera_yaw;
 	float camera_distance;
-	XMMATRIX camera_view_mat;
-	XMMATRIX camera_proj_mat;
-	XMMATRIX camera_view_proj_mat;
+	mat4 camera_view_mat;
+	mat4 camera_proj_mat;
+	mat4 camera_view_proj_mat;
 };
 
 void initialize_game(game *game, d3d *d3d) {
 	*game = {};
-	
-	initialize_timer(&game->timer);
+
+	timer_init(&game->timer);
 	{
 		game->imgui_context = ImGui::CreateContext();
 		ImGuiIO &imgui_io = ImGui::GetIO();
@@ -148,9 +147,9 @@ void initialize_game(game *game, d3d *d3d) {
 		imgui_io.KeyMap[ImGuiKey_X] = 'X';
 		imgui_io.KeyMap[ImGuiKey_Y] = 'Y';
 		imgui_io.KeyMap[ImGuiKey_Z] = 'Z';
-		imgui_io.DisplaySize = {(float)d3d->swap_chain_desc.Width, (float)d3d->swap_chain_desc.Height};
+		imgui_io.DisplaySize = { (float)d3d->swap_chain_desc.Width, (float)d3d->swap_chain_desc.Height };
 		imgui_io.IniFilename = nullptr;
-		imgui_io.MousePos = {-1, -1};
+		imgui_io.MousePos = { -1, -1 };
 
 		uint8* font_atlas_image = nullptr;
 		int32 font_atlas_image_width = 0;
@@ -159,10 +158,10 @@ void initialize_game(game *game, d3d *d3d) {
 		imgui_io.Fonts->ClearTexData();
 	}
 	{
-		game->camera_fovy = XMConvertToRadians(40);
+		game->camera_fovy = degree_to_radian(40);
 		game->camera_znear = 0.1f;
 		game->camera_zfar = 10000.0f;
-		game->camera_pitch = XMConvertToRadians(45);
+		game->camera_pitch = degree_to_radian(45);
 		game->camera_distance = 10;
 	}
 }
@@ -172,12 +171,12 @@ void common_hotkeys(game *game, world *world, window *window) {
 		static uint32 width = window->width;
 		static uint32 height = window->height;
 		if (window->width == window->screen_width && window->height == window->screen_height) {
-			set_window_size(window, width, height);
+			window_set_size(window, width, height);
 		}
 		else {
 			width = window->width;
 			height = window->height;
-			set_window_size(window, window->screen_width, window->screen_height);
+			window_set_size(window, window->screen_width, window->screen_height);
 		}
 	}
 	if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
@@ -221,26 +220,26 @@ void player_input(game *game, world *world, d3d *d3d, window *window) {
 	// 	move_vec = vec3_normalize(yaw * vec3{0, 0, 1});
 	// }
 	{
-		vec3 player_displacement = vec3{0, 0, 0};
+		vec3 player_displacement = vec3{ 0, 0, 0 };
 		float player_speed = 1.0f;
 		if (ImGui::GetIO().KeyShift) {
 			player_speed = 5.0f;
 		}
 		if (ImGui::IsKeyDown('W')) {
-			player_displacement += vec3{0, 0, 1} * player_speed;
+			player_displacement += vec3{ 0, 0, 1 } *player_speed;
 		}
-		else if  (ImGui::IsKeyDown('S')) {
-			player_displacement += vec3{0, 0, -1} * player_speed;
+		else if (ImGui::IsKeyDown('S')) {
+			player_displacement += vec3{ 0, 0, -1 } *player_speed;
 		}
-		else if  (ImGui::IsKeyDown('A')) {
-			player_displacement += vec3{1, 0, 0} * player_speed;
+		else if (ImGui::IsKeyDown('A')) {
+			player_displacement += vec3{ 1, 0, 0 } *player_speed;
 		}
-		else if  (ImGui::IsKeyDown('D')) {
-			player_displacement += vec3{-1, 0, 1} * player_speed;
+		else if (ImGui::IsKeyDown('D')) {
+			player_displacement += vec3{ -1, 0, 1 } *player_speed;
 		}
-		world->player.physx_controller->move(physx::PxVec3(m_unpack3(player_displacement)), 0, game->last_frame_time_secs, physx::PxControllerFilters());
+		world->player.physx_controller->move(physx::PxVec3(m_unpack3(player_displacement)), 0, (float)game->last_frame_time_secs, physx::PxControllerFilters());
 		physx::PxExtendedVec3 player_position = world->player.physx_controller->getPosition();
-		world->player.transform.translate = vec3{(float)player_position.x, (float)player_position.y, (float)player_position.z};
+		world->player.transform.translate = vec3{ (float)player_position.x, (float)player_position.y, (float)player_position.z };
 	}
 }
 
@@ -251,14 +250,14 @@ void simulate_physics(game *game, world *world) {
 	accumulate += game->last_frame_time_secs;
 	while (accumulate >= time_step) {
 		accumulate -= time_step;
-		world->px_scene->simulate(time_step);
+		world->px_scene->simulate((float)time_step);
 		bool simulate_result = world->px_scene->fetchResults(true);
-		m_assert(simulate_result, "");
+		m_assert(simulate_result);
 	}
 
-	world->player.physx_controller->move(physx::PxVec3(0.001f, 0, 0), 0, game->last_frame_time_secs, physx::PxControllerFilters());
+	world->player.physx_controller->move(physx::PxVec3(0.001f, 0, 0), 0, (float)game->last_frame_time_secs, physx::PxControllerFilters());
 	physx::PxExtendedVec3 player_position = world->player.physx_controller->getPosition();
-	world->player.transform.translate = vec3{(float)player_position.x, (float)player_position.y, (float)player_position.z};
+	world->player.transform.translate = vec3{ (float)player_position.x, (float)player_position.y, (float)player_position.z };
 }
 
 void update_camera(game *game, world *world, window *window) {
@@ -273,26 +272,26 @@ void update_camera(game *game, world *world, window *window) {
 		game->camera_yaw = wrap_angle(game->camera_yaw);
 		game->camera_distance = clamp(game->camera_distance - ImGui::GetIO().MouseWheel, 4.0f, 30.0f);
 
-		quat pitch_quat = quat_from_axis_rotate(vec3{1, 0, 0}, game->camera_pitch);
-		quat yaw_quat = quat_from_axis_rotate(vec3{0, 1, 0}, game->camera_yaw);
-		vec3 translate = yaw_quat * pitch_quat * vec3{0, 0, -game->camera_distance};
+		quat pitch_quat = quat_from_axis_rotate(vec3{ 1, 0, 0 }, game->camera_pitch);
+		quat yaw_quat = quat_from_axis_rotate(vec3{ 0, 1, 0 }, game->camera_yaw);
+		vec3 translate = yaw_quat * pitch_quat * vec3{ 0, 0, -game->camera_distance };
 		vec3 camera_position = world->player.transform.translate + translate;
 		vec3 camera_view = vec3_normalize(-translate);
 
-		XMVECTOR p = XMVectorSet(m_unpack3(camera_position), 0);
-		XMVECTOR v = XMVectorSet(m_unpack3(camera_view), 0);
-		game->camera_position = camera_position;
-		game->camera_view = camera_view;
-		game->camera_view_mat = XMMatrixLookAtRH(p, XMVectorAdd(p, v), XMVectorSet(0, 1, 0, 0));
-		game->camera_proj_mat = XMMatrixPerspectiveFovRH(game->camera_fovy, (float)window->width / (float)window->height, game->camera_zfar, game->camera_znear);
-		game->camera_view_proj_mat = XMMatrixMultiply(game->camera_view_mat, game->camera_proj_mat);
+		//XMVECTOR p = XMVectorSet(m_unpack3(camera_position), 0);
+		//XMVECTOR v = XMVectorSet(m_unpack3(camera_view), 0);
+		//game->camera_position = camera_position;
+		//game->camera_view = camera_view;
+		//game->camera_view_mat = XMMatrixLookAtRH(p, XMVectorAdd(p, v), XMVectorSet(0, 1, 0, 0));
+		//game->camera_proj_mat = XMMatrixPerspectiveFovRH(game->camera_fovy, (float)window->width / (float)window->height, game->camera_zfar, game->camera_znear);
+		//game->camera_view_proj_mat = XMMatrixMultiply(game->camera_view_mat, game->camera_proj_mat);
 	}
 	// if (world->camera_type == camera_type_player_first) {
 	// 	quat pitch_quat = quat_from_axis_rotate(vec3{1, 0, 0}, world->player_first_person_camera_pitch);
 	// 	quat yaw_quat = quat_from_axis_rotate(vec3{0, 1, 0}, world->player_first_person_camera_yaw);
 	// 	vec3 facing = vec3_normalize(yaw_quat * vec3{0, 0, 1});
 	// 	vec3 view = vec3_normalize(yaw_quat * pitch_quat * vec3{0, 0, 1});
-				
+
 	// 	world->player_first_person_camera.position = world->player.transform.translate + facing * 1.0f;
 	// 	world->player_first_person_camera.view = view;
 	// 	world->player_first_person_camera.aspect = (float)vulkan->framebuffers.color_framebuffer_width / (float)vulkan->framebuffers.color_framebuffer_height;
@@ -304,59 +303,53 @@ void update_camera(game *game, world *world, window *window) {
 
 int main(int argc, char **argv) {
 	set_current_dir_to_exe_dir();
-	
+
 	window *window = new struct window;
-	initialize_window(window, window_message_callback);
+	window_init(window, window_message_callback);
 	// set_window_fullscreen(window, true);
 
 	d3d *d3d = new struct d3d;
 	initialize_d3d(d3d, window);
 
+	d3d12 *d3d12 = new struct d3d12();
+	d3d12_init(d3d12, window);
+
 	game *game = new struct game;
 	initialize_game(game, d3d);
 
 	world *world = new struct world;
-	initialize_world(world, d3d);
+	world_init(world, d3d12);
 	if (argc > 1) {
 		const char *world_file = argv[1];
-		m_assert(load_world(world, d3d, world_file, nullptr), "");
+		m_assert(world_load_from_file(world, d3d12, world_file, nullptr));
 	}
-	
+
 	window_message_channel.window = window;
 	window_message_channel.d3d = d3d;
 	window_message_channel.initialized = true;
-	show_window(window);
-	pin_cursor(true);
-	show_cursor(false);
+	window_show(window);
+	cursor_pin(true);
+	cursor_show(false);
 
 	while (!game->quit) {
-		start_timer(&game->timer);
+		timer_start(&game->timer);
 
 		window->raw_mouse_dx = 0;
 		window->raw_mouse_dy = 0;
-		handle_window_messages(window);
+		window_handle_messages(window);
 
 		ImGui::NewFrame();
- 		common_hotkeys(game, world, window);
+		common_hotkeys(game, world, window);
 		player_input(game, world, d3d, window);
 		simulate_physics(game, world);
 		world->player.animation_time += game->last_frame_time_secs;
 		update_camera(game, world, window);
 		ImGui::EndFrame();
 
-		render_world_desc render_world_desc = {};
-		render_world_desc.camera_view_proj_mat = game->camera_view_proj_mat;
-		render_world_desc.camera_position = game->camera_position;
-		render_world_desc.camera_view = game->camera_view;
-		render_world_desc.render_models = true;
-		render_world_desc.render_terrain = true;
-		render_world_desc.render_skybox = true;
-		render_world(world, d3d, &render_world_desc);
-
 		world->frame_memory_arena.size = 0;
-		
-		stop_timer(&game->timer);
-		game->last_frame_time_secs = get_timer_duration_secs(game->timer);
+
+		timer_stop(&game->timer);
+		game->last_frame_time_secs = timer_get_duration(game->timer);
 	}
 
 	ImGui::DestroyContext(game->imgui_context);

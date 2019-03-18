@@ -1,7 +1,11 @@
-call "C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/vcvarsall.bat" x64
+@echo off
 
 mkdir "%~dp0/build" 2>nul
 pushd "%~dp0/build"
+
+if not defined DevEnvDir (
+	call "C:/Program Files (x86)/Microsoft Visual Studio/2017/Community/VC/Auxiliary/Build/vcvarsall.bat" x64
+)
 
 if "%~1"=="skip_prebuild" (
 	if "%~2"=="editor" (
@@ -46,9 +50,11 @@ if "%skip_prebuild%"=="true" goto :skip_prebuild
 
 echo compiling hlsl...
 mkdir hlsl 2>nul
-start /b forfiles /p ..\src\hlsl /m *.vps /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_0 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.fxc @PATH >nul" >nul
-start /b forfiles /p ..\src\hlsl /m *.vps /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_0 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.fxc @PATH >nul" >nul
-start /b forfiles /p ..\src\hlsl /m *.cs /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_0 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.cs.fxc @PATH >nul" >nul
+del /Q hlsl\*
+start /b forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_1 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.bytecode @PATH >nul" >nul
+start /b forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_1 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.bytecode @PATH >nul" >nul
+start /b forfiles /p ..\src\hlsl /m *.cs.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_1 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH >nul" >nul
+start /b forfiles /p ..\src\hlsl /m *.rt.hlsl /c "cmd /c dxc.exe /nologo /Od /Zi /T lib_6_3 /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH >nul" >nul
 
 echo compiling ispc...
 ..\vendor\bin\ispc.exe ..\src\ispc\simple.ispc -o simple.ispc.obj -h ..\src\ispc\simple.ispc.h --target=sse4-i32x4 >nul
@@ -59,7 +65,7 @@ echo compiling flatbuffers...
 copy /y ..\vendor\lib\vc15_x64\*.dll >nul
 
 :skip_prebuild
-if "%prebuild_only%"=="true" goto :end
+if "%prebuild_only%"=="true" goto :end_of_build
 
 rem set cc=cl
 set cc=clang-cl
@@ -140,5 +146,5 @@ if "%compile_test%"=="true" (
 	type compiler_output\test.txt
 )
 
-:end
+:end_of_build
 popd
