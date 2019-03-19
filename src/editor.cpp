@@ -1,6 +1,6 @@
-/***************************************************************************************************/
-/*					Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.					 */
-/***************************************************************************************************/
+/****************************************************************************************************/
+/*			Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.			*/
+/****************************************************************************************************/
 
 #include "common.cpp"
 #include "math.cpp"
@@ -460,13 +460,7 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&editor->imgui_descriptor_heap)));
 		editor->imgui_descriptor_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-		D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
-		srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srv_desc.Texture2D.MipLevels = 1;
-		srv_desc.Texture2D.MostDetailedMip = 0;
-		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		d3d12->device->CreateShaderResourceView(editor->imgui_font_texture, &srv_desc, editor->imgui_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
+		d3d12->device->CreateShaderResourceView(editor->imgui_font_texture, nullptr, editor->imgui_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
 		ImTextureID texture_id = (ImTextureID)editor->imgui_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
 		ImGui::GetIO().Fonts->SetTexID(texture_id);
 	}
@@ -720,6 +714,7 @@ bool editor_load_world(editor *editor, world *world, d3d12 *d3d12, const char *f
 	else {
 		editor->camera_position = editor->old_world_editor_settings.camera_position;
 		editor->camera_view = editor->old_world_editor_settings.camera_view;
+		snprintf(editor->world_save_file, sizeof(editor->world_save_file), "%s", file);
 		return true;
 	}
 }
@@ -733,9 +728,7 @@ bool editor_save_world(editor *editor, world *world, bool save_as) {
 	}
 	else {
 		if (!strcmp(editor->world_save_file, "")) {
-			if (!open_file_dialog(world_save_file, sizeof(world_save_file))) {
-				return false;
-			}
+			return false;
 		}
 		else {
 			array_copy(world_save_file, editor->world_save_file);
@@ -2029,7 +2022,6 @@ int main(int argc, char **argv) {
 	if (argc > 1) {
 		const char *world_file = argv[1];
 		m_assert(editor_load_world(editor, world, d3d12, world_file));
-		snprintf(editor->world_save_file, sizeof(editor->world_save_file), "%s", world_file);
 	}
 
 	if (d3d12->dxr_support && world->model_count > 0) {

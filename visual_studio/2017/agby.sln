@@ -15,7 +15,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ray_tracer", "ray_tracer\ra
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hlsl", "hlsl", "{E1246798-C815-40CF-8759-5F67D164A3D0}"
 	ProjectSection(SolutionItems) = preProject
-		..\..\src\hlsl\basic.rt.hlsl = ..\..\src\hlsl\basic.rt.hlsl
 		..\..\src\hlsl\blit_to_swap_chain.vps.hlsl = ..\..\src\hlsl\blit_to_swap_chain.vps.hlsl
 		..\..\build.bat = ..\..\build.bat
 		..\..\src\hlsl\collision_shape.vps.hlsl = ..\..\src\hlsl\collision_shape.vps.hlsl
@@ -29,6 +28,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hlsl", "hlsl", "{E1246798-C
 		..\..\src\hlsl\mesh_shadow.vps.hlsl = ..\..\src\hlsl\mesh_shadow.vps.hlsl
 		..\..\src\hlsl\pbr_mesh.vps.hlsl = ..\..\src\hlsl\pbr_mesh.vps.hlsl
 		..\..\src\hlsl\reference_grid.vps.hlsl = ..\..\src\hlsl\reference_grid.vps.hlsl
+		..\..\src\hlsl\shadow.rt.hlsl = ..\..\src\hlsl\shadow.rt.hlsl
 		..\..\src\hlsl\skybox.vps.hlsl = ..\..\src\hlsl\skybox.vps.hlsl
 		..\..\src\hlsl\terrain.vps.hlsl = ..\..\src\hlsl\terrain.vps.hlsl
 		..\..\src\hlsl\terrain_brush.vps.hlsl = ..\..\src\hlsl\terrain_brush.vps.hlsl

@@ -1,6 +1,6 @@
-/***************************************************************************************************/
-/*          Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.          */
-/***************************************************************************************************/
+/****************************************************************************************************/
+/*			Copyright (C) 2017-2018 By Yang Chen (yngccc@gmail.com). All Rights Reserved.			*/
+/****************************************************************************************************/
 
 #ifndef __WORLD_CPP__
 #define __WORLD_CPP__
@@ -319,11 +319,11 @@ struct world {
 	std::vector<ID3D12Resource *>dxr_bottom_acceleration_buffers;
 	ID3D12Resource *dxr_top_acceleration_buffer;
 	ID3D12RootSignature *dxr_global_root_sig;
-	ID3D12StateObject *dxr_pipeline_state;
-	ID3D12Resource *dxr_shader_table;
-	uint32 dxr_shader_table_entry_size;
-	ID3D12Resource *dxr_output_image;
-	ID3D12DescriptorHeap *dxr_descriptor_heap; // output image | top acceleration struct
+	ID3D12StateObject *dxr_shadow_pipeline_state;
+	ID3D12Resource *dxr_shadow_shader_table;
+	uint32 dxr_shadow_shader_table_entry_size;
+	ID3D12Resource *dxr_shadow_output_texture;
+	ID3D12DescriptorHeap *dxr_descriptor_heap; // shadow output texture | top acceleration buffer | gbuffer position texture | gbuffer normal texture
 
 	physx::PxFoundation *px_foundation;
 	physx::PxPvd *px_pvd;
@@ -1202,8 +1202,9 @@ bool world_save_to_file(world *world, const char *file, world_editor_settings *e
 }
 
 const wchar_t *dxr_ray_gen_str = L"ray_gen";
-const wchar_t *dxr_miss_str = L"miss";
+const wchar_t *dxr_any_hit_str = L"any_hit";
 const wchar_t *dxr_closest_hit_str = L"closest_hit";
+const wchar_t *dxr_miss_str = L"miss";
 const wchar_t *dxr_hit_group_str = L"hit_group";
 
 void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
@@ -1344,11 +1345,11 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 }
 
 void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
-	hlsl_bytecode_file bytecode_file("hlsl/basic.rt.bytecode");
+	hlsl_bytecode_file bytecode_file("hlsl/shadow.rt.bytecode");
 
 	D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
 	{
-		D3D12_EXPORT_DESC export_descs[3] = { {dxr_ray_gen_str}, {dxr_miss_str}, {dxr_closest_hit_str} };
+		D3D12_EXPORT_DESC export_descs[3] = { {dxr_ray_gen_str}, {dxr_miss_str}, {dxr_any_hit_str} };
 		D3D12_DXIL_LIBRARY_DESC dxil_lib_desc = {};
 		dxil_lib_desc.DXILLibrary.pShaderBytecode = bytecode_file.bytecode.pShaderBytecode;
 		dxil_lib_desc.DXILLibrary.BytecodeLength = bytecode_file.bytecode.BytecodeLength;
@@ -1361,7 +1362,7 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		D3D12_HIT_GROUP_DESC hit_group_desc = {};
 		hit_group_desc.HitGroupExport = dxr_hit_group_str;
 		hit_group_desc.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
-		hit_group_desc.ClosestHitShaderImport = dxr_closest_hit_str;
+		hit_group_desc.AnyHitShaderImport = dxr_any_hit_str;
 		state_subobjects[1].Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
 		state_subobjects[1].pDesc = &hit_group_desc;
 	}
@@ -1372,7 +1373,7 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
 		ranges[0].OffsetInDescriptorsFromTableStart = 0;
 		ranges[1].BaseShaderRegister = 0;
-		ranges[1].NumDescriptors = 1;
+		ranges[1].NumDescriptors = 3;
 		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		ranges[1].OffsetInDescriptorsFromTableStart = 1;
 
@@ -1414,7 +1415,7 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		state_subobjects[4].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
 		state_subobjects[4].pDesc = &root_sig_2;
 
-		const wchar_t *export_names[2] = { dxr_miss_str, dxr_closest_hit_str };
+		const wchar_t *export_names[2] = { dxr_miss_str, dxr_any_hit_str };
 		D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
 		association.NumExports = m_countof(export_names);
 		association.pExports = export_names;
@@ -1429,7 +1430,7 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		state_subobjects[6].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
 		state_subobjects[6].pDesc = &shader_config;
 
-		const wchar_t *export_names[3] = { dxr_miss_str, dxr_closest_hit_str, dxr_ray_gen_str };
+		const wchar_t *export_names[3] = { dxr_miss_str, dxr_any_hit_str, dxr_ray_gen_str };
 		D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
 		association.NumExports = m_countof(export_names);
 		association.pExports = export_names;
@@ -1463,7 +1464,7 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 	state_object_desc.NumSubobjects = m_countof(state_subobjects);
 	state_object_desc.pSubobjects = state_subobjects;
 
-	m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_pipeline_state)));
+	m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_shadow_pipeline_state)));
 }
 
 void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
@@ -1473,19 +1474,18 @@ void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
 	D3D12_RESOURCE_DESC resource_desc = {};
 	resource_desc.DepthOrArraySize = 1;
 	resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	resource_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	resource_desc.Format = DXGI_FORMAT_R8_UNORM;
 	resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 	resource_desc.Width = window->width;
 	resource_desc.Height = window->height;
-	resource_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resource_desc.MipLevels = 1;
 	resource_desc.SampleDesc.Count = 1;
-	m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr, IID_PPV_ARGS(&world->dxr_output_image)));
-	world->dxr_output_image->SetName(L"dxr_output_image");
+	m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr, IID_PPV_ARGS(&world->dxr_shadow_output_texture)));
+	world->dxr_shadow_output_texture->SetName(L"dxr_shadow_output_texture");
 
 	D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
 	descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	descriptor_heap_desc.NumDescriptors = 3;
+	descriptor_heap_desc.NumDescriptors = 4;
 	descriptor_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	m_d3d_assert(d3d12->device->CreateDescriptorHeap(&descriptor_heap_desc, IID_PPV_ARGS(&world->dxr_descriptor_heap)));
 
@@ -1494,26 +1494,29 @@ void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
 
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
 	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-	d3d12->device->CreateUnorderedAccessView(world->dxr_output_image, nullptr, &uav_desc, dxr_cpu_descriptor_handle);
+	d3d12->device->CreateUnorderedAccessView(world->dxr_shadow_output_texture, nullptr, &uav_desc, dxr_cpu_descriptor_handle);
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
 	srv_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
 	srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srv_desc.RaytracingAccelerationStructure.Location = world->dxr_top_acceleration_buffer->GetGPUVirtualAddress();
-	d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + dxr_cpu_descriptor_handle_size });
+	d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
+
+	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
+	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
 }
 
 void dxr_init_shader_table(world *world, d3d12 *d3d12) {
-	world->dxr_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	world->dxr_shader_table_entry_size += 8;
-	world->dxr_shader_table_entry_size = round_up(world->dxr_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+	world->dxr_shadow_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	world->dxr_shadow_shader_table_entry_size += 8;
+	world->dxr_shadow_shader_table_entry_size = round_up(world->dxr_shadow_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 
 	D3D12_HEAP_PROPERTIES heap_prop = {};
 	heap_prop.Type = D3D12_HEAP_TYPE_UPLOAD;
 
 	D3D12_RESOURCE_DESC resource_desc = {};
 	resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resource_desc.Width = world->dxr_shader_table_entry_size * 3;
+	resource_desc.Width = world->dxr_shadow_shader_table_entry_size * 3;
 	resource_desc.Height = 1;
 	resource_desc.DepthOrArraySize = 1;
 	resource_desc.MipLevels = 1;
@@ -1522,17 +1525,17 @@ void dxr_init_shader_table(world *world, d3d12 *d3d12) {
 	resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 	resource_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-	m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&world->dxr_shader_table)));
+	m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&world->dxr_shadow_shader_table)));
 
 	uint8 *shader_table_ptr = nullptr;
-	m_d3d_assert(world->dxr_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
+	m_d3d_assert(world->dxr_shadow_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
 	ID3D12StateObjectProperties *state_object_properties = nullptr;
-	world->dxr_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
+	world->dxr_shadow_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
 	memcpy(shader_table_ptr, state_object_properties->GetShaderIdentifier(dxr_ray_gen_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 	*(uint64 *)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
-	memcpy(shader_table_ptr + world->dxr_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	memcpy(shader_table_ptr + world->dxr_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	world->dxr_shader_table->Unmap(0, nullptr);
+	memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+	memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+	world->dxr_shadow_shader_table->Unmap(0, nullptr);
 }
 
 void world_render_commands(world *world, d3d12 *d3d12, world_render_params *params) {
@@ -1557,64 +1560,17 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		world->frame_constants_buffer_size += round_up(data_size, 256u);
 	};
 
-	if (world->dxr_initialized) {
-		D3D12_RESOURCE_BARRIER barrier = {};
-		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		barrier.Transition.pResource = world->dxr_output_image;
-		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		d3d12->command_list->ResourceBarrier(1, &barrier);
+	DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
+	d3d12->swap_chain->GetDesc(&swap_chain_desc);
+	D3D12_VIEWPORT viewport = { 0.0f, 0.0f, (float)swap_chain_desc.BufferDesc.Width , (float)swap_chain_desc.BufferDesc.Height, 0.0f, 1.0f };
+	RECT scissor = { 0, 0, (LONG)swap_chain_desc.BufferDesc.Width, (LONG)swap_chain_desc.BufferDesc.Height };
+	d3d12->command_list->RSSetViewports(1, &viewport);
+	d3d12->command_list->RSSetScissorRects(1, &scissor);
 
-		d3d12->command_list->SetPipelineState1(world->dxr_pipeline_state);
-		d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
-		d3d12->command_list->SetComputeRootSignature(world->dxr_global_root_sig);
+	d3d12->command_list->ClearDepthStencilView(world->depth_target_cpu_descriptor_handle, D3D12_CLEAR_FLAG_DEPTH, 0, 0, 0, nullptr);
 
-		struct {
-			XMMATRIX camera_to_world_mat;
-			float camera_fovy;
-		} constants = {
-			XMMatrixIdentity(),
-			params->camera_fovy
-		};
-		uint32 constants_offset = 0;
-		frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
-		d3d12->command_list->SetComputeRootConstantBufferView(0, world->frame_constants_buffer->GetGPUVirtualAddress() + constants_offset);
-
-		D3D12_DISPATCH_RAYS_DESC rays_desc = {};
-		DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
-		m_d3d_assert(d3d12->swap_chain->GetDesc(&swap_chain_desc));
-		rays_desc.Width = swap_chain_desc.BufferDesc.Width;
-		rays_desc.Height = swap_chain_desc.BufferDesc.Height;
-		rays_desc.Depth = 1;
-		rays_desc.RayGenerationShaderRecord.StartAddress = world->dxr_shader_table->GetGPUVirtualAddress();
-		rays_desc.RayGenerationShaderRecord.SizeInBytes = world->dxr_shader_table_entry_size;
-		rays_desc.MissShaderTable.StartAddress = world->dxr_shader_table->GetGPUVirtualAddress() + world->dxr_shader_table_entry_size;
-		rays_desc.MissShaderTable.StrideInBytes = world->dxr_shader_table_entry_size;
-		rays_desc.MissShaderTable.SizeInBytes = world->dxr_shader_table_entry_size;
-		rays_desc.HitGroupTable.StartAddress = world->dxr_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_shader_table_entry_size;
-		rays_desc.HitGroupTable.StrideInBytes = world->dxr_shader_table_entry_size;
-		rays_desc.HitGroupTable.SizeInBytes = world->dxr_shader_table_entry_size;
-
-		d3d12->command_list->DispatchRays(&rays_desc);
-
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		d3d12->command_list->ResourceBarrier(1, &barrier);
-	}
-	{
-		DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
-		d3d12->swap_chain->GetDesc(&swap_chain_desc);
-		D3D12_VIEWPORT viewport = { 0.0f, 0.0f, (float)swap_chain_desc.BufferDesc.Width , (float)swap_chain_desc.BufferDesc.Height, 0.0f, 1.0f };
-		RECT scissor = { 0, 0, (LONG)swap_chain_desc.BufferDesc.Width, (LONG)swap_chain_desc.BufferDesc.Height };
-		d3d12->command_list->RSSetViewports(1, &viewport);
-		d3d12->command_list->RSSetScissorRects(1, &scissor);
-
-		d3d12->command_list->ClearDepthStencilView(world->depth_target_cpu_descriptor_handle, D3D12_CLEAR_FLAG_DEPTH, 0, 0, 0, nullptr);
-
-		d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
-	}
+	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
 	{
 		D3D12_RESOURCE_BARRIER barriers[m_countof(world->gbuffer_render_targets)] = {};
 		for (uint32 i = 0; i < m_countof(barriers); i += 1) {
@@ -1756,6 +1712,7 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		d3d12->command_list->SetPipelineState(d3d12->gbuffer_direct_lit_pipeline_state);
 		d3d12->command_list->OMSetRenderTargets(1, &world->render_target_cpu_descriptor_handle, false, nullptr);
 		d3d12->command_list->SetGraphicsRootSignature(d3d12->gbuffer_direct_lit_root_signature);
+		d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
 
 		D3D12_CPU_DESCRIPTOR_HANDLE render_target_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
 		D3D12_GPU_DESCRIPTOR_HANDLE render_target_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
@@ -1780,6 +1737,45 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		d3d12->command_list->DrawInstanced(3, 1, 0, 0);
 
 		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		d3d12->command_list->ResourceBarrier(1, &barrier);
+	}
+	if (world->dxr_initialized) {
+		D3D12_RESOURCE_BARRIER barrier = {};
+		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		barrier.Transition.pResource = world->dxr_shadow_output_texture;
+		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		d3d12->command_list->ResourceBarrier(1, &barrier);
+
+		d3d12->command_list->SetPipelineState1(world->dxr_shadow_pipeline_state);
+		d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
+		d3d12->command_list->SetComputeRootSignature(world->dxr_global_root_sig);
+
+		struct { XMVECTOR sun_light_dir; } constants = { world->sun_light_dir };
+		uint32 constants_offset = 0;
+		frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
+		d3d12->command_list->SetComputeRootConstantBufferView(0, world->frame_constants_buffer->GetGPUVirtualAddress() + constants_offset);
+
+		D3D12_DISPATCH_RAYS_DESC rays_desc = {};
+		DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
+		m_d3d_assert(d3d12->swap_chain->GetDesc(&swap_chain_desc));
+		rays_desc.Width = swap_chain_desc.BufferDesc.Width;
+		rays_desc.Height = swap_chain_desc.BufferDesc.Height;
+		rays_desc.Depth = 1;
+		rays_desc.RayGenerationShaderRecord.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress();
+		rays_desc.RayGenerationShaderRecord.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+		rays_desc.MissShaderTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + world->dxr_shadow_shader_table_entry_size;
+		rays_desc.MissShaderTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
+		rays_desc.MissShaderTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+		rays_desc.HitGroupTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_shadow_shader_table_entry_size;
+		rays_desc.HitGroupTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
+		rays_desc.HitGroupTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+
+		d3d12->command_list->DispatchRays(&rays_desc);
+
+		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 	}

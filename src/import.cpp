@@ -49,13 +49,7 @@ void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
 	}
 }
 
-enum compress_image_type {
-	compress_image_type_color,
-	compress_image_type_grayscale,
-	compress_image_type_normal_map
-};
-
-void compress_image(compress_image_type image_type, uint8 *data, uint32 width, uint32 height, uint8 **compressed_data, uint32 *compressed_data_mipmap_count, uint32 *compressed_data_size) {
+void gen_mips_and_compress_image(uint8 *data, uint32 width, uint32 height, nvtt::Format compress_format, uint8 **compressed_data, uint32 *compressed_data_mipmap_count, uint32 *compressed_data_size) {
 	using namespace nvtt;
 
 	InputOptions input_options = {};
@@ -68,20 +62,14 @@ void compress_image(compress_image_type image_type, uint8 *data, uint32 width, u
 	input_options.setAlphaMode(AlphaMode_None);
 	input_options.setMipmapFilter(MipmapFilter_Kaiser);
 	input_options.setMipmapGeneration(true);
-	input_options.setNormalMap(image_type == compress_image_type_normal_map);
 	m_assert(input_options.setMipmapData(data, width, height));
-	if (image_type == compress_image_type_color) {
-		compression_options.setFormat(Format_BC1);
-	}
-	else if (image_type == compress_image_type_grayscale) {
+	compression_options.setFormat(compress_format);	// Format_RGBA, Format_BC1, Format_BC4, Format_BC5
+	if (compress_format == Format_BC4) {
 		input_options.setGamma(1.0f, 1.0f);
-		compression_options.setFormat(Format_BC4);
 	}
-	else if (image_type == compress_image_type_normal_map) {
-		compression_options.setFormat(Format_BC5);
-	}
-	else {
-		m_assert(false);
+	if (compress_format == Format_BC5) {
+		input_options.setGamma(1.0f, 1.0f);
+		input_options.setNormalMap(true);
 	}
 	compression_options.setQuality(Quality_Normal); // Quality_Production Quality_Highest
 
@@ -539,8 +527,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			if (remap.index == UINT32_MAX) {
 				continue;
 			}
-			m_assert(image.width >= 4 && image.width % 4 == 0);
-			m_assert(image.height >= 4 && image.height % 4 == 0);
+			m_assert(image.width >= 4);
+			m_assert(image.height >= 4);
 			if (remap.is_base_color) {
 				m_assert(image.component == 3 || image.component == 4);
 				std::vector<uint8> color_image;
@@ -561,9 +549,15 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 						color_image[i * 4 + 3] = image.image[i * 4 + 3];
 					}
 				}
+				nvtt::Format compress_format = nvtt::Format_RGBA;
+				uint32 dxgi_format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+				if (image.width % 4 == 0 && image.height % 4 == 0) {
+					compress_format = nvtt::Format_BC1;
+					dxgi_format = DXGI_FORMAT_BC1_UNORM_SRGB;
+				}
 				uint32 mipmap_count = 0;
 				uint32 size = 0;
-				compress_image(compress_image_type_color, &color_image[0], image.width, image.height, &remap.compressed_data, &mipmap_count, &size);
+				gen_mips_and_compress_image(&color_image[0], image.width, image.height, compress_format, &remap.compressed_data, &mipmap_count, &size);
 
 				auto &gpk_image = gpk_model_images[image_index++];
 				gpk_image.width = image.width;
@@ -571,11 +565,10 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				gpk_image.mips = mipmap_count;
 				gpk_image.layer_count = 1;
 				gpk_image.size = size;
-				gpk_image.format = DXGI_FORMAT_BC1_UNORM_SRGB;
-				gpk_image.format_block_dimension = 4;
-				gpk_image.format_block_size = 8;
+				gpk_image.format = dxgi_format;
 			}
 			else if (remap.is_metallic_roughness) {
+				m_assert(image.width % 4 == 0 && image.height % 4 == 0);
 				m_assert(image.component >= 2);
 				{
 					std::vector<uint8> metallic_image;
@@ -593,7 +586,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					}
 					uint32 mipmap_count = 0;
 					uint32 size = 0;
-					compress_image(compress_image_type_grayscale, &metallic_image[0], image.width, image.height, &remap.compressed_data, &mipmap_count, &size);
+					gen_mips_and_compress_image(&metallic_image[0], image.width, image.height, nvtt::Format_BC4, &remap.compressed_data, &mipmap_count, &size);
 
 					auto &gpk_metallic_image = gpk_model_images[image_index++];
 					gpk_metallic_image.width = image.width;
@@ -602,8 +595,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					gpk_metallic_image.layer_count = 1;
 					gpk_metallic_image.size = size;
 					gpk_metallic_image.format = DXGI_FORMAT_BC4_UNORM;
-					gpk_metallic_image.format_block_dimension = 4;
-					gpk_metallic_image.format_block_size = 8;
 				}
 				{
 					std::vector<uint8> roughness_image;
@@ -618,7 +609,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					}
 					uint32 mipmap_count = 0;
 					uint32 size = 0;
-					compress_image(compress_image_type_grayscale, &roughness_image[0], image.width, image.height, &remap.compressed_data_2, &mipmap_count, &size);
+					gen_mips_and_compress_image(&roughness_image[0], image.width, image.height, nvtt::Format_BC4, &remap.compressed_data_2, &mipmap_count, &size);
 
 					auto &gpk_roughness_image = gpk_model_images[image_index++];
 					gpk_roughness_image.width = image.width;
@@ -627,11 +618,10 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 					gpk_roughness_image.layer_count = 1;
 					gpk_roughness_image.size = size;
 					gpk_roughness_image.format = DXGI_FORMAT_BC4_UNORM;
-					gpk_roughness_image.format_block_dimension = 4;
-					gpk_roughness_image.format_block_size = 8;
 				}
 			}
 			else if (remap.is_normal) {
+				m_assert(image.width % 4 == 0 && image.height % 4 == 0);
 				m_assert(image.component == 3 || image.component == 4);
 				std::vector<uint8> normal_image;
 				normal_image.resize(image.width * image.height * 4);
@@ -653,7 +643,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				}
 				uint32 mipmap_count = 0;
 				uint32 size = 0;
-				compress_image(compress_image_type_normal_map, &normal_image[0], image.width, image.height, &remap.compressed_data, &mipmap_count, &size);
+				gen_mips_and_compress_image(&normal_image[0], image.width, image.height, nvtt::Format_BC5, &remap.compressed_data, &mipmap_count, &size);
 
 				auto &gpk_image = gpk_model_images[image_index++];
 				gpk_image.width = image.width;
@@ -662,8 +652,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				gpk_image.layer_count = 1;
 				gpk_image.size = size;
 				gpk_image.format = DXGI_FORMAT_BC5_UNORM;
-				gpk_image.format_block_dimension = 4;
-				gpk_image.format_block_size = 16;
 			}
 			else {
 				m_assert(false);

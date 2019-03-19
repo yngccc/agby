@@ -115,7 +115,7 @@ struct gpk_model_animation_key_frame {
 };
 
 struct gpk_model_material {
- 	char name[64];
+	char name[64];
 
 	uint32 diffuse_image_index;
 	uint32 diffuse_image_wrap_s;
@@ -141,9 +141,7 @@ struct gpk_model_image {
 	uint32 layer_count;
 	uint32 size;
 	uint32 format;
-	uint32 format_block_dimension;
-	uint32 format_block_size;
-  uint32 data_offset;
+	uint32 data_offset;
 };
 
 struct gpk_skybox {
