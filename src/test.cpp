@@ -209,7 +209,9 @@ int main(int argc, char **argv) {
 		uint32 block_size = sizeof(mat4);
 		uint32 block_alignment = alignof(mat4);
 		memory_arena_init(&memory_pool, block_count, block_size, block_alignment);
-		m_scope_exit(memory_pool_destroy(&memory_pool));
+		auto free_memory_pool = scope_exit([&] {
+			memory_pool_destroy(&memory_pool);
+		});
 		m_case(allocate_free_allocate_same_block) {
 			mat4 *block = memory_pool_alloc<mat4>(&memory_pool);
 			uintptr_t block_addr = (uintptr_t)block;

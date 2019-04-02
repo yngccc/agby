@@ -2,7 +2,9 @@ cbuffer constants : register(b0) {
 	uint window_width;
 	uint window_height;
 };
+
 Texture2D imgui_texture : register(t0);
+
 sampler texture_sampler : register(s0);
 
 struct vs_input {

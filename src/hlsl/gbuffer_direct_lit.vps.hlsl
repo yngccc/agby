@@ -1,14 +1,30 @@
+struct directional_light {
+	float4 dir;
+	float4 color;
+};
+
+struct sphere_light {
+	float4 position;
+	float4 color;
+};
+
 cbuffer world_constants : register(b0) {
 	float3 camera_position;
-	float3 sun_light_dir;
-	float3 sun_light_color;
-}
+	directional_light direct_light;
+	sphere_light sphere_lights[4];
+	uint sphere_light_count;
+};
 
 Texture2D<float3> diffuse_texture : register(t0);
 Texture2D<float3> position_texture : register(t1);
 Texture2D<float3> normal_texture : register(t2);
 Texture2D<float> roughness_metallic_texture : register(t3);
- 
+
+Texture2D<float> light_visibility_texture_0 : register(t4);
+Texture2D<float> light_visibility_texture_1 : register(t5);
+Texture2D<float> light_visibility_texture_2 : register(t6);
+Texture2D<float> light_visibility_texture_3 : register(t7);
+
 sampler texture_sampler : register(s0);
 
 struct vs_input {
@@ -76,10 +92,16 @@ ps_output pixel_shader(vs_output vs_output) {
 	float3 position = position_texture.Sample(texture_sampler, vs_output.texcoord);
 	float3 normal = normal_texture.Sample(texture_sampler, vs_output.texcoord);
 	float2 roughness_metallic = roughness_metallic_texture.Sample(texture_sampler, vs_output.texcoord);
+	float direct_light_visibility = light_visibility_texture_0.Sample(texture_sampler, vs_output.texcoord);
 
-	float3 wi = sun_light_dir;
+	float3 wi = direct_light.dir.xyz;
 	float3 wo = normalize(camera_position - position);
-	float3 lo = cook_torrance_brdf(wi, wo, normal, diffuse, roughness_metallic.x, roughness_metallic.y) * sun_light_color;
+	float3 lo = cook_torrance_brdf(wi, wo, normal, diffuse, roughness_metallic.x, roughness_metallic.y) * direct_light.color.rgb * direct_light_visibility;
+
+	for (uint i = 0; i < sphere_light_count; i += 1) {
+		float3 wi = normalize(sphere_lights[i].position.xyz - position);
+		lo += cook_torrance_brdf(wi, wo, normal, diffuse, roughness_metallic.x, roughness_metallic.y) * sphere_lights[i].color.xyz;
+	}
 
 	ps_output ps_output;
 	ps_output.color = float4(lo, 0);

@@ -156,7 +156,6 @@ struct scope_exit_func {
 };
 
 template <typename F> scope_exit_func<F> scope_exit(F f) { return scope_exit_func<F>(f); }
-#define m_scope_exit(code) auto m_concat_macros_2(scope_exit_, __LINE__) = scope_exit([&] { code; });
 
 template <typename T>
 struct range {
@@ -902,7 +901,9 @@ bool iterate_files_in_dir(const char *dir, T func) {
 bool open_file_dialog(char *file, uint32 file_buf_size) {
 	char cur_dir[512];
 	m_assert(get_current_dir(cur_dir, sizeof(cur_dir)));
-	m_scope_exit(set_current_dir(cur_dir));
+	auto restore_cur_dir = scope_exit([&] {
+		set_current_dir(cur_dir);
+	});
 
 	OPENFILENAME open_file_name = {};
 	open_file_name.lStructSize = sizeof(open_file_name);
@@ -915,7 +916,9 @@ bool open_file_dialog(char *file, uint32 file_buf_size) {
 bool save_file_dialog(char *file, uint32 file_buf_size) {
 	char cur_dir[512];
 	m_assert(get_current_dir(cur_dir, sizeof(cur_dir)));
-	m_scope_exit(set_current_dir(cur_dir));
+	auto restore_cur_dir = scope_exit([&] {
+		set_current_dir(cur_dir);
+	});
 
 	OPENFILENAME open_file_name = {};
 	open_file_name.lStructSize = sizeof(open_file_name);

@@ -251,6 +251,19 @@ struct world_render_data {
 	uint32 shadow_proj_box_constant_buffer_offset;
 };
 
+struct direct_light {
+	vec3 position;
+	vec3 dir;
+	vec3 color;
+};
+
+struct sphere_light {
+	vec3 position;
+	vec3 color;
+	float radius;
+	float falloff;
+};
+
 struct world {
 	memory_arena frame_memory_arena;
 
@@ -258,30 +271,20 @@ struct world {
 
 	player player;
 
-	static_object *static_objects;
-	uint32 static_object_count;
-	uint32 static_object_capacity;
+	std::vector<static_object> static_objects;
 
-	dynamic_object *dynamic_objects;
-	uint32 dynamic_object_count;
-	uint32 dynamic_object_capacity;
+	std::vector<dynamic_object> dynamic_objects;
 
-	model *models;
-	uint32 model_count;
-	uint32 model_capacity;
+	std::vector<model> models;
 
-	terrain *terrains;
-	uint32 terrain_count;
-	uint32 terrain_capacity;
+	std::vector<terrain> terrains;
 	uint32 terrain_index;
 
-	skybox *skyboxes;
-	uint32 skybox_count;
-	uint32 skybox_capacity;
+	std::vector<skybox> skyboxes;
 	uint32 skybox_index;
 
-	XMVECTOR sun_light_dir;
-	XMVECTOR sun_light_color;
+	std::vector<direct_light> direct_lights;
+	std::vector<sphere_light> sphere_lights;
 
 	ID3D11Buffer *box_vertex_buffer;
 	ID3D11Buffer *sphere_vertex_buffer;
@@ -315,7 +318,6 @@ struct world {
 	ID3D12DescriptorHeap *frame_descriptor_heap;
 	uint32 frame_descriptor_handle_count;
 
-	bool dxr_initialized;
 	std::vector<ID3D12Resource *>dxr_bottom_acceleration_buffers;
 	ID3D12Resource *dxr_top_acceleration_buffer;
 	ID3D12RootSignature *dxr_global_root_sig;
@@ -445,11 +447,11 @@ void world_init(world *world, d3d12 *d3d12) {
 		world->default_metallic_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 		world->default_height_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 
-		world->default_diffuse_texture->SetName(L"default_diffuse_texutre");
-		world->default_normal_texture->SetName(L"default_normal_texutre");
-		world->default_roughness_texture->SetName(L"default_roughness_texutre");
-		world->default_metallic_texture->SetName(L"default_metallic_texutre");
-		world->default_height_texture->SetName(L"default_height_texutre");
+		world->default_diffuse_texture->SetName(L"default_diffuse_texture");
+		world->default_normal_texture->SetName(L"default_normal_texture");
+		world->default_roughness_texture->SetName(L"default_roughness_texture");
+		world->default_metallic_texture->SetName(L"default_metallic_texture");
+		world->default_height_texture->SetName(L"default_height_texture");
 
 		uint8 default_diffuse_texture_data[] = { 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166 };
 		uint8 default_normal_texture_data[] = { 128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0 };
@@ -552,67 +554,38 @@ void world_init(world *world, d3d12 *d3d12) {
 }
 
 void world_reset(world *world) {
-	world->sun_light_dir = XMVector3Normalize(XMVectorSet(1, 1, 1, 0));
-	world->sun_light_color = XMVectorSet(1, 1, 1, 0);
-
 	world->player = {};
 	world->player.model_index = UINT32_MAX;
 	world->player.transform = transform_identity();
 	world->player.animation_index = UINT32_MAX;
 
-	world->static_object_count = 0;
-	world->static_object_capacity = 1024;
-	if (!world->static_objects) {
-		world->static_objects = new static_object[world->static_object_capacity]();
-	}
-
-	world->dynamic_object_count = 0;
-	world->dynamic_object_capacity = 1024;
-	if (!world->dynamic_objects) {
-		world->dynamic_objects = new dynamic_object[world->dynamic_object_capacity]();
-	}
-
-	world->model_count = 0;
-	world->model_capacity = 512;
-	if (!world->models) {
-		world->models = new model[world->model_capacity]();
-	}
-
-	world->terrain_count = 0;
-	world->terrain_capacity = 8;
-	if (!world->terrains) {
-		world->terrains = new terrain[world->terrain_capacity]();
-	}
-
-	world->skybox_count = 0;
-	world->skybox_capacity = 8;
-	if (!world->skyboxes) {
-		world->skyboxes = new skybox[world->skybox_capacity]();
-	}
+	world->direct_lights.push_back(direct_light{ {0, 0, 0}, vec3_normalize({1, 1, 1}), {1, 1, 1} });
 }
 
 bool world_add_model(world *world, d3d12 *d3d12, const char *model_file, transform transform, collision collision) {
+	const char *file_name = get_file_name(model_file);
+	for (auto &model : world->models) {
+		if (!strcmp(model.file, file_name)) {
+			return false;
+		}
+	}
+
 	file_mapping model_file_mapping = {};
 	if (!file_mapping_open(model_file, &model_file_mapping, true)) {
 		return false;
 	}
-	m_scope_exit(file_mapping_close(model_file_mapping));
+	auto close_model_file_mapping = scope_exit([&] {
+		file_mapping_close(model_file_mapping);
+	});
 
 	gpk_model *gpk_model = (struct gpk_model *)model_file_mapping.ptr;
 	if (strcmp(gpk_model->format_str, m_gpk_model_format_str)) {
 		return false;
 	}
 
-	if (world->model_count >= world->model_capacity) {
-		return false;
-	}
-	model *model = &world->models[world->model_count];
-	const char *file_name = get_file_name(model_file);
-	for (uint32 i = 0; i < world->model_count; i += 1) {
-		if (!strcmp(world->models[i].file, file_name)) {
-			return false;
-		}
-	}
+	world->models.push_back(model{});
+	model *model = &world->models.back();
+
 	snprintf(model->file, sizeof(model->file), "%s", file_name);
 	model->transform = transform;
 	model->collision = collision;
@@ -752,33 +725,33 @@ bool world_add_model(world *world, d3d12 *d3d12, const char *model_file, transfo
 			model->mesh_node_count += 1;
 		}
 	}
-	world->model_count += 1;
 	return true;
 }
 
 bool world_add_terrain(world *world, d3d *d3d, const char *terrain_file) {
+	const char *file_name = get_file_name(terrain_file);
+	for (auto &terrain : world->terrains) {
+		if (!strcmp(terrain.file, file_name)) {
+			return false;
+		}
+	}
+
 	file_mapping terrain_file_mapping = {};
 	if (!file_mapping_open(terrain_file, &terrain_file_mapping, true)) {
 		return false;
 	}
-	m_scope_exit(file_mapping_close(terrain_file_mapping));
+	auto close_terrain_file_mapping = scope_exit([&] {
+		file_mapping_close(terrain_file_mapping);
+	});
 
 	gpk_terrain *gpk_terrain = (struct gpk_terrain *)terrain_file_mapping.ptr;
 	if (strcmp(gpk_terrain->format_str, m_gpk_terrain_format_str)) {
 		return false;
 	}
 
-	if (world->terrain_count >= world->terrain_capacity) {
-		return false;
-	}
-	const char *file_name = get_file_name(terrain_file);
-	for (uint32 i = 0; i < world->terrain_count; i += 1) {
-		if (!strcmp(world->terrains[i].file, file_name)) {
-			return false;
-		}
-	}
+	world->terrains.push_back(terrain{});
+	terrain *terrain = &world->terrains.back();
 
-	terrain *terrain = &world->terrains[world->terrain_count];
 	snprintf(terrain->file, sizeof(terrain->file), "%s", file_name);
 	terrain->width = gpk_terrain->width;
 	terrain->height = gpk_terrain->height;
@@ -844,7 +817,9 @@ bool world_add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 		float duv_y = 1.0f / (vertex_y_count - 1);
 		{
 			terrain_vertex *vertices = new terrain_vertex[vertex_count]();
-			m_scope_exit(delete[]vertices);
+			auto delete_vertices = scope_exit([&] {
+				delete[]vertices;
+			});
 			for (uint32 i = 0; i < vertex_y_count; i += 1) {
 				for (uint32 j = 0; j < vertex_x_count; j += 1) {
 					vertices[vertex_x_count * i + j] = { position, uv };
@@ -865,7 +840,9 @@ bool world_add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 		}
 		{
 			uint32 *indices = new uint32[index_count]();
-			m_scope_exit(delete[]indices);
+			auto delete_indices = scope_exit([&] {
+				delete[]indices;
+			});
 			uint32 *index = indices;
 			for (uint32 i = 0; i < (vertex_y_count - 1); i += 1) {
 				uint32 n = vertex_x_count * i;
@@ -888,49 +865,32 @@ bool world_add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 			terrain->index_count = index_count;
 		}
 	}
-	world->terrain_count += 1;
 	return true;
 }
 
-bool world_remove_terrain(world *world, uint32 index) {
-	if (index < world->terrain_count) {
-		terrain *terrain = &world->terrains[index];
-		terrain->height_texture->Release();
-		terrain->height_texture_view->Release();
-		terrain->diffuse_texture->Release();
-		terrain->diffuse_texture_view->Release();
-		terrain->vertex_buffer->Release();
-		terrain->index_buffer->Release();
-		array_remove(world->terrains, &world->terrain_count, index);
-		return true;
-	}
-	else {
-		return false;
-	}
-}
-
 bool world_add_skybox(world *world, d3d *d3d, const char *skybox_file) {
+	const char *file_name = get_file_name(skybox_file);
+	for (auto &skybox : world->skyboxes) {
+		if (!strcmp(skybox.file, file_name)) {
+			return false;
+		}
+	}
+
 	file_mapping skybox_file_mapping = {};
 	if (!file_mapping_open(skybox_file, &skybox_file_mapping, true)) {
 		return false;
 	}
-	m_scope_exit(file_mapping_close(skybox_file_mapping));
+	auto close_skybyx_file_mapping = scope_exit([&] {
+		file_mapping_close(skybox_file_mapping);
+	});
 
 	gpk_skybox *gpk_skybox = (struct gpk_skybox *)skybox_file_mapping.ptr;
 	if (strcmp(gpk_skybox->format_str, m_gpk_skybox_format_str)) {
 		return false;
 	}
 
-	if (world->skybox_count >= world->skybox_capacity) {
-		return false;
-	}
-	skybox *skybox = &world->skyboxes[world->skybox_count];
-	const char *file_name = get_file_name(skybox_file);
-	for (uint32 i = 0; i < world->skybox_count; i += 1) {
-		if (!strcmp(world->skyboxes[i].file, file_name)) {
-			return false;
-		}
-	}
+	world->skyboxes.push_back(skybox{});
+	skybox *skybox = &world->skyboxes.back();
 	snprintf(skybox->file, sizeof(skybox->file), "%s", file_name);
 
 	D3D11_TEXTURE2D_DESC texture_desc = {};
@@ -953,7 +913,6 @@ bool world_add_skybox(world *world, d3d *d3d, const char *skybox_file) {
 	m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, subresource_data, &skybox->cube_texture));
 	m_d3d_assert(d3d->device->CreateShaderResourceView(skybox->cube_texture, nullptr, &skybox->cube_texture_view));
 
-	world->skybox_count += 1;
 	return true;
 }
 
@@ -962,7 +921,9 @@ bool world_load_from_file(world *world, d3d12 *d3d12, const char *file, world_ed
 	if (!file_mapping_open(file, &file_mapping, true)) {
 		return false;
 	}
-	m_scope_exit(file_mapping_close(file_mapping));
+	auto close_file_mapping = scope_exit([&] {
+		file_mapping_close(file_mapping);
+	});
 
 	using namespace flatbuffers;
 	auto *fb_world = GetWorld(file_mapping.ptr);
@@ -980,14 +941,18 @@ bool world_load_from_file(world *world, d3d12 *d3d12, const char *file, world_ed
 	}
 
 	const Vec3 *sun_light_dir = fb_world->sunLightDir();
-	world->sun_light_dir = XMVector3Normalize(XMVectorSet(sun_light_dir->x(), sun_light_dir->y(), sun_light_dir->z(), 0));
+	const Vec3 *sun_light_color = fb_world->sunLightColor();
 
-	const Vec3 *sun_light_color = fb_world->sunLightDir();
-	world->sun_light_color = XMVectorSet(sun_light_color->x(), sun_light_color->y(), sun_light_color->z(), 0);
+	direct_light direct_light = {
+		{0, 0, 0},
+		vec3_normalize(vec3{ sun_light_dir->x(), sun_light_dir->y(), sun_light_dir->z() }),
+		vec3{ sun_light_color->x(), sun_light_color->y(), sun_light_color->z()}
+	};
+	world->direct_lights.clear();
+	world->direct_lights.push_back(direct_light);
 
 	auto fb_models = fb_world->models();
 	if (fb_models) {
-		m_assert(fb_models->size() <= world->model_capacity);
 		for (uint32 i = 0; i < fb_models->size(); i += 1) {
 			auto fb_model = (*fb_models)[i];
 			transform transform = transform_identity();
@@ -1097,12 +1062,11 @@ bool world_save_to_file(world *world, const char *file, world_editor_settings *e
 
 	XMFLOAT3 editor_camera_position;
 	XMFLOAT3 editor_camera_view;
-	XMFLOAT3 sun_light_dir;
-	XMFLOAT3 sun_light_color;
 	XMStoreFloat3(&editor_camera_position, editor_settings->camera_position);
 	XMStoreFloat3(&editor_camera_view, editor_settings->camera_view);
-	XMStoreFloat3(&sun_light_dir, world->sun_light_dir);
-	XMStoreFloat3(&sun_light_color, world->sun_light_color);
+
+	vec3 sun_light_dir = world->direct_lights[0].dir;
+	vec3 sun_light_color = world->direct_lights[0].color;
 
 	Vec3 fb_camera_position(editor_camera_position.x, editor_camera_position.y, editor_camera_position.z);
 	Vec3 fb_camera_view(editor_camera_view.x, editor_camera_view.y, editor_camera_view.z);
@@ -1111,8 +1075,8 @@ bool world_save_to_file(world *world, const char *file, world_editor_settings *e
 
 	Offset<Vector<Offset<Model>>> fb_models = 0;
 	{
-		std::vector<Offset<Model>> models(world->model_count);
-		for (uint32 i = 0; i < world->model_count; i += 1) {
+		std::vector<Offset<Model>> models(world->models.size());
+		for (uint32 i = 0; i < world->models.size(); i += 1) {
 			auto model = &world->models[i];
 			auto file = fb_builder.CreateString(model->file);
 			Transform transform;
@@ -1211,7 +1175,7 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 	m_d3d_assert(d3d12->command_allocator->Reset());
 	m_d3d_assert(d3d12->command_list->Reset(d3d12->command_allocator, nullptr));
 
-	std::vector<std::vector<D3D12_RAYTRACING_GEOMETRY_DESC>> model_geom_descs(world->model_count);
+	std::vector<std::vector<D3D12_RAYTRACING_GEOMETRY_DESC>> model_geom_descs(world->models.size());
 
 	uint32 node_transform_mats_offset = 0;
 	uint32 node_transform_mats_capacity = m_megabytes(16);
@@ -1220,7 +1184,7 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 	uint8 *node_transform_mats_ptr = nullptr;
 	node_transform_mats->Map(0, nullptr, (void **)&node_transform_mats_ptr);
 
-	for (uint32 i = 0; i < world->model_count; i += 1) {
+	for (uint32 i = 0; i < world->models.size(); i += 1) {
 		model *model = &world->models[i];
 		auto *geom_descs = &model_geom_descs[i];
 		for (uint32 i = 0; i < model->scene_count; i += 1) {
@@ -1262,9 +1226,9 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 	}
 	node_transform_mats->Unmap(0, nullptr);
 
-	std::vector<ID3D12Resource *>bottom_acceleration_scratch_buffers(world->model_count);
-	std::vector<ID3D12Resource *>bottom_acceleration_buffers(world->model_count);
-	for (uint32 i = 0; i < world->model_count; i += 1) {
+	std::vector<ID3D12Resource *>bottom_acceleration_scratch_buffers(world->models.size());
+	std::vector<ID3D12Resource *>bottom_acceleration_buffers(world->models.size());
+	for (uint32 i = 0; i < world->models.size(); i += 1) {
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
 		inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 		inputs.NumDescs = (uint32)model_geom_descs[i].size();
@@ -1293,10 +1257,10 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 	ID3D12Resource *model_instance_descs_buffer = nullptr;
 	ID3D12Resource *top_acceleration_scratch_buffer = nullptr;
 	ID3D12Resource *top_acceleration_buffer = nullptr;
-	{
+	if (world->models.size() > 0) {
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
 		inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-		inputs.NumDescs = world->model_count;
+		inputs.NumDescs = (uint32)world->models.size();
 		inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
@@ -1304,12 +1268,12 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 
 		top_acceleration_scratch_buffer = d3d12_create_buffer(d3d12, info.ScratchDataSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		top_acceleration_buffer = d3d12_create_buffer(d3d12, info.ResultDataMaxSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
-		model_instance_descs_buffer = d3d12_create_buffer(d3d12, world->model_count * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		model_instance_descs_buffer = d3d12_create_buffer(d3d12, world->models.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		D3D12_RAYTRACING_INSTANCE_DESC *model_instance_descs = nullptr;
 		model_instance_descs_buffer->Map(0, nullptr, (void**)&model_instance_descs);
 		mat4 model_mat = mat4_identity();
-		for (uint32 i = 0; i < world->model_count; i += 1) {
+		for (uint32 i = 0; i < world->models.size(); i += 1) {
 			memcpy(model_instance_descs[i].Transform, &model_mat, sizeof(float[3][4]));
 			model_instance_descs[i].InstanceID = i;
 			model_instance_descs[i].InstanceMask = 0xff;
@@ -1336,9 +1300,9 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 	d3d12_wait_command_list(d3d12);
 
 	for (auto b : bottom_acceleration_scratch_buffers) b->Release();
-	top_acceleration_scratch_buffer->Release();
-	model_instance_descs_buffer->Release();
-	node_transform_mats->Release();
+	if (top_acceleration_scratch_buffer) top_acceleration_scratch_buffer->Release();
+	if (model_instance_descs_buffer) model_instance_descs_buffer->Release();
+	if (node_transform_mats) node_transform_mats->Release();
 
 	world->dxr_bottom_acceleration_buffers = bottom_acceleration_buffers;
 	world->dxr_top_acceleration_buffer = top_acceleration_buffer;
@@ -1468,20 +1432,11 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 }
 
 void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
-	D3D12_HEAP_PROPERTIES heap_prop = {};
-	heap_prop.Type = D3D12_HEAP_TYPE_DEFAULT;
-
-	D3D12_RESOURCE_DESC resource_desc = {};
-	resource_desc.DepthOrArraySize = 1;
-	resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	resource_desc.Format = DXGI_FORMAT_R8_UNORM;
-	resource_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-	resource_desc.Width = window->width;
-	resource_desc.Height = window->height;
-	resource_desc.MipLevels = 1;
-	resource_desc.SampleDesc.Count = 1;
-	m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr, IID_PPV_ARGS(&world->dxr_shadow_output_texture)));
-	world->dxr_shadow_output_texture->SetName(L"dxr_shadow_output_texture");
+	world->dxr_shadow_output_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+	std::vector<uint8> shadow_output_texture_src;
+	shadow_output_texture_src.assign(window->width * window->height, 255);
+	d3d12_copy_texture_2d(d3d12, world->dxr_shadow_output_texture, shadow_output_texture_src.data(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	world->dxr_shadow_output_texture->SetName(L"dxr_shadow_output_texture_0");
 
 	D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
 	descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -1496,11 +1451,13 @@ void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
 	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 	d3d12->device->CreateUnorderedAccessView(world->dxr_shadow_output_texture, nullptr, &uav_desc, dxr_cpu_descriptor_handle);
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
-	srv_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-	srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srv_desc.RaytracingAccelerationStructure.Location = world->dxr_top_acceleration_buffer->GetGPUVirtualAddress();
-	d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
+	if (world->dxr_top_acceleration_buffer) {
+		D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srv_desc.RaytracingAccelerationStructure.Location = world->dxr_top_acceleration_buffer->GetGPUVirtualAddress();
+		d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
+	}
 
 	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
 	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
@@ -1613,7 +1570,7 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		d3d12->device->CreateShaderResourceView(world->default_metallic_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 3 });
 		world->frame_descriptor_handle_count += 4;
 
-		for (uint32 i = 0; i < world->model_count; i += 1) {
+		for (uint32 i = 0; i < world->models.size(); i += 1) {
 			model *model = &world->models[i];
 			mat4 model_mat = mat4_identity();
 			uint32 model_mat_offset = 0;
@@ -1701,6 +1658,61 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		d3d12->command_list->ResourceBarrier(m_countof(barriers), barriers);
 	}
 	{
+		if (world->dxr_top_acceleration_buffer) {
+			D3D12_RESOURCE_BARRIER barrier = {};
+			barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			barrier.Transition.pResource = world->dxr_shadow_output_texture;
+			barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+			d3d12->command_list->ResourceBarrier(1, &barrier);
+
+			d3d12->command_list->SetPipelineState1(world->dxr_shadow_pipeline_state);
+			d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
+			d3d12->command_list->SetComputeRootSignature(world->dxr_global_root_sig);
+
+			struct sphere_light {
+				vec3 position;
+				float radius;
+			};
+			struct {
+				vec4 sun_light_dir;
+				sphere_light sphere_lights[4];
+				uint32 sphere_light_count;
+			} constants = {};
+			constants.sun_light_dir = { m_unpack3(world->direct_lights[0].dir), 0 };
+			constants.sphere_light_count = (uint32)min(world->sphere_lights.size(), m_countof(constants.sphere_lights));
+			for (uint32 i = 0; i < constants.sphere_light_count; i += 1) {
+				constants.sphere_lights[i].position = world->sphere_lights[i].position;
+				constants.sphere_lights[i].radius = world->sphere_lights[i].radius;
+			}
+			uint32 constants_offset = 0;
+			frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
+			d3d12->command_list->SetComputeRootConstantBufferView(0, frame_constants_buffer_gpu_address + constants_offset);
+
+			D3D12_DISPATCH_RAYS_DESC rays_desc = {};
+			DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
+			m_d3d_assert(d3d12->swap_chain->GetDesc(&swap_chain_desc));
+			rays_desc.Width = swap_chain_desc.BufferDesc.Width;
+			rays_desc.Height = swap_chain_desc.BufferDesc.Height;
+			rays_desc.Depth = 1;
+			rays_desc.RayGenerationShaderRecord.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress();
+			rays_desc.RayGenerationShaderRecord.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+			rays_desc.MissShaderTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + world->dxr_shadow_shader_table_entry_size;
+			rays_desc.MissShaderTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
+			rays_desc.MissShaderTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+			rays_desc.HitGroupTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_shadow_shader_table_entry_size;
+			rays_desc.HitGroupTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
+			rays_desc.HitGroupTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+
+			d3d12->command_list->DispatchRays(&rays_desc);
+
+			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+			d3d12->command_list->ResourceBarrier(1, &barrier);
+		}
+	}
+	{
 		D3D12_RESOURCE_BARRIER barrier = {};
 		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -1720,15 +1732,31 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 			d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[i], nullptr, { render_target_cpu_descriptor_handle.ptr + i * frame_descriptor_handle_size });
 			world->frame_descriptor_handle_count += 1;
 		}
+		d3d12->device->CreateShaderResourceView(world->dxr_shadow_output_texture, nullptr, { render_target_cpu_descriptor_handle.ptr + m_countof(world->gbuffer_render_targets) * frame_descriptor_handle_size });
+		world->frame_descriptor_handle_count += 1;
+
+		struct direct_light {
+			vec4 dir;
+			vec4 color;
+		};
+		struct sphere_light {
+			vec4 position;
+			vec4 color;
+		};
 		struct constants {
 			XMVECTOR camera_position;
-			XMVECTOR sun_light_dir;
-			XMVECTOR sun_light_color;
+			direct_light direct_light;
+			sphere_light sphere_lights[4];
+			uint32 sphere_light_count;
 		} constants = {
 			params->camera_position,
-			world->sun_light_dir,
-			world->sun_light_color
+			direct_light{{m_unpack3(world->direct_lights[0].dir), 0}, {m_unpack3(world->direct_lights[0].color), 0}}
 		};
+		constants.sphere_light_count = (uint32)min(world->sphere_lights.size(), m_countof(constants.sphere_lights));
+		for (uint32 i = 0; i < constants.sphere_light_count; i += 1) {
+			constants.sphere_lights[i].position = { m_unpack3(world->sphere_lights[i].position), 0 };
+			constants.sphere_lights[i].color = { m_unpack3(world->sphere_lights[i].color), 0 };
+		}
 		uint32 constants_offset = 0;
 		frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
 		d3d12->command_list->SetGraphicsRootConstantBufferView(0, frame_constants_buffer_gpu_address + constants_offset);
@@ -1737,45 +1765,6 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		d3d12->command_list->DrawInstanced(3, 1, 0, 0);
 
 		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		d3d12->command_list->ResourceBarrier(1, &barrier);
-	}
-	if (world->dxr_initialized) {
-		D3D12_RESOURCE_BARRIER barrier = {};
-		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		barrier.Transition.pResource = world->dxr_shadow_output_texture;
-		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		d3d12->command_list->ResourceBarrier(1, &barrier);
-
-		d3d12->command_list->SetPipelineState1(world->dxr_shadow_pipeline_state);
-		d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
-		d3d12->command_list->SetComputeRootSignature(world->dxr_global_root_sig);
-
-		struct { XMVECTOR sun_light_dir; } constants = { world->sun_light_dir };
-		uint32 constants_offset = 0;
-		frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
-		d3d12->command_list->SetComputeRootConstantBufferView(0, world->frame_constants_buffer->GetGPUVirtualAddress() + constants_offset);
-
-		D3D12_DISPATCH_RAYS_DESC rays_desc = {};
-		DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
-		m_d3d_assert(d3d12->swap_chain->GetDesc(&swap_chain_desc));
-		rays_desc.Width = swap_chain_desc.BufferDesc.Width;
-		rays_desc.Height = swap_chain_desc.BufferDesc.Height;
-		rays_desc.Depth = 1;
-		rays_desc.RayGenerationShaderRecord.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress();
-		rays_desc.RayGenerationShaderRecord.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.MissShaderTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + world->dxr_shadow_shader_table_entry_size;
-		rays_desc.MissShaderTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.MissShaderTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.HitGroupTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_shadow_shader_table_entry_size;
-		rays_desc.HitGroupTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.HitGroupTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
-
-		d3d12->command_list->DispatchRays(&rays_desc);
-
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 	}
