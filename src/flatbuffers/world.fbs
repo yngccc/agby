@@ -75,12 +75,26 @@ table Model {
 	collisionShape: CollisionShape;
 }
 
+table DirectLight {
+	position: Vec3;
+	dir: Vec3;
+	color: Vec3;
+}
+
+table SphereLight {
+	position: Vec3;
+	color: Vec3;
+	radius: float;
+	falloff: float;
+}
+
 table World {
 	cameraPosition: Vec3;
 	cameraView: Vec3;
-	sunLightDir : Vec3;
-	sunLightColor : Vec3;
+	directLight: DirectLight;
+	sphereLights: [SphereLight];
 	models: [Model];
+
 	// player: Player;
 	// staticObjects: [StaticObject];
 	// dynamicObjects: [DynamicObject];

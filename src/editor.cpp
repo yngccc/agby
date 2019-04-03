@@ -1561,7 +1561,8 @@ void editor_direct_light_properties(editor *editor, direct_light *direct_light) 
 	float extra = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x * 2 + ImGui::CalcTextSize("direct color").x;
 	ImGui::PushItemWidth(ImGui::GetItemRectSize().x - extra);
 	ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-	ImGui::DragFloat3("direct light dir", &direct_light->dir.x);
+	ImGui::DragFloat3("direct light direction", &direct_light->dir.x);
+	ImGui::DragFloat3("direct light position", &direct_light->position.x);
 	ImGui::PopItemFlag();
 	ImGui::PopItemWidth();
 }
@@ -1834,162 +1835,194 @@ void editor_update_camera(editor *editor, window *window) {
 }
 
 void editor_tool_gizmo(editor *editor, world *world, window *window) {
-	auto transform_gizmo = [&](transformable_type type) {
-		for (auto tool_type : { tool_type_translate, tool_type_rotate, tool_type_scale }) {
-			if (editor->tool_type == tool_type) {
-				mat4 camera_view_mat = mat4_from_xmmatrix(editor->camera_view_mat);
-				mat4 camera_proj_mat = mat4_from_xmmatrix(editor->camera_proj_mat);
-				transform *transform = nullptr;
-				switch (type) {
-				case transformable_type_player: transform = &world->player.transform; break;
-				case transformable_type_static_object: transform = &world->static_objects[editor->static_object_index].transform; break;
-				case transformable_type_dynamic_object: transform = &world->dynamic_objects[editor->dynamic_object_index].transform; break;
-				case transformable_type_model: transform = &world->models[editor->model_index].transform; break;
-				}
-				mat4 transform_mat = mat4_from_transform(*transform);
-				mat4 old_transform_mat = transform_mat;
-				ImGuizmo::OPERATION operations[] = { ImGuizmo::TRANSLATE, ImGuizmo::ROTATE, ImGuizmo::SCALE };
-				ImGuizmo::MODE modes[] = { ImGuizmo::WORLD, ImGuizmo::LOCAL, ImGuizmo::LOCAL };
-				ImGuizmo::BeginFrame();
-				ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, operations[editor->tool_type], modes[editor->tool_type], (float *)transform_mat);
-				*transform = mat4_get_transform(transform_mat);
-				static bool transforming = false;
-				static struct transform original_transform = transform_identity();
-				if (ImGuizmo::IsUsing()) {
-					if (!transforming && (transform_mat != old_transform_mat)) {
-						transforming = true;
-						original_transform = mat4_get_transform(old_transform_mat);
-					}
-				}
-				else {
-					if (transforming) {
-						transforming = false;
-						edit_operation operation = { edit_operation_object_transform };
-						operation.transform_operation.original_transform = original_transform;
-						switch (type) {
-						case transformable_type_player: {
-							operation.transform_operation.transformable_type = transformable_type_player;
-						} break;
-						case transformable_type_static_object: {
-							operation.transform_operation.transformable_type = transformable_type_static_object;
-							strcpy(operation.transform_operation.id, world->static_objects[editor->static_object_index].id.ptr);
-						} break;
-						case transformable_type_dynamic_object: {
-							operation.transform_operation.transformable_type = transformable_type_dynamic_object;
-							strcpy(operation.transform_operation.id, world->dynamic_objects[editor->dynamic_object_index].id.ptr);
-						} break;
-						case transformable_type_model: {
-							operation.transform_operation.transformable_type = transformable_type_model;
-							strcpy(operation.transform_operation.id, world->models[editor->model_index].file);
-						} break;
-						}
-						editor_add_undo(editor, operation);
-					}
-				}
-				break;
-			}
-		}
-	};
-	if (editor->edit_window_tab == edit_window_tab_player) {
-		transform_gizmo(transformable_type_player);
-	}
-	else if (editor->edit_window_tab == edit_window_tab_static_object && editor->static_object_index < world->static_objects.size()) {
-		transform_gizmo(transformable_type_static_object);
-	}
-	else if (editor->edit_window_tab == edit_window_tab_dynamic_object && editor->dynamic_object_index < world->dynamic_objects.size()) {
-		transform_gizmo(transformable_type_dynamic_object);
-	}
-	else if (editor->edit_window_tab == edit_window_tab_model && editor->model_index < world->models.size()) {
-		transform_gizmo(transformable_type_model);
-	}
-	else if (editor->edit_window_tab == edit_window_tab_terrain && world->terrain_index < world->terrains.size()) {
-		terrain *terrain = &world->terrains[world->terrain_index];
-		float half_width = terrain->width * 0.5f;
-		float half_height = terrain->height * 0.5f;
-		bool tool_selected = editor->tool_type > tool_type_terrain_begin && editor->tool_type < tool_type_terrain_end;
-		if (tool_selected) {
-			ImGui::PushID("terrain_brush_properties_window");
-			ImGui::SetNextWindowPos(editor->objects_window_pos + ImVec2(editor->objects_window_size.x, 0), ImGuiCond_Once);
-			ImGui::SetNextWindowSize(ImVec2(editor->objects_window_size.x, 0), ImGuiCond_Once);
-			if (ImGui::Begin("Terrain Brush")) {
-				ImGui::SliderFloat("Radius", &editor->terrain_brush_tool_radius, 1, 10);
-				ImGui::SliderFloat("Speed", &editor->terrain_brush_tool_speed, 1, 10);
-			}
-			ImGui::End();
-			ImGui::PopID();
-			if (editor->tool_type == tool_type_terrain_paint) {
-				ImGui::PushID("terrain_texture_window");
-				ImGui::SetNextWindowPos(editor->objects_window_pos + ImVec2(editor->objects_window_size.x * 2, 0), ImGuiCond_Once);
-				ImGui::SetNextWindowSize(ImVec2(editor->objects_window_size.x, 0), ImGuiCond_Once);
-				if (ImGui::Begin("Terrain Textures")) {
-					for (uint32 i = 0; i < editor->terrain_paint_texture_count; i += 1) {
-						ImGui::SameLine();
-						if (ImGui::ImageButton((ImTextureID)editor->terrain_paint_texture_views[i], ImVec2(32, 32))) {
-							editor->terrain_paint_texture_index = i;
-						}
-					}
-				}
-				ImGui::End();
-				ImGui::PopID();
-			}
-		}
-		if (tool_selected && window_cursor_inside(window)) {
-			float t;
-			if (ray_hit_plane(editor->camera_to_mouse_ray, plane{ {0, 1, 0}, 0 }, &t)) {
-				vec3 p = editor->camera_to_mouse_ray.origin + editor->camera_to_mouse_ray.dir * t;
-				if (p.x >= -half_width && p.x <= half_width && p.z >= -half_height && p.z <= half_height) {
-					editor->terrain_brush_tool_active = true;
-					editor->terrain_brush_tool_position = { p.x, 0, p.z };
-				}
-			}
-		}
-		if (editor->terrain_brush_tool_active && ImGui::IsMouseDown(0) && !ImGui::GetIO().WantCaptureMouse) {
-			static double accumulate_frame_time = 0;
-			accumulate_frame_time += editor->last_frame_time;
-			if (accumulate_frame_time >= 1.0 / 15.0) {
-				accumulate_frame_time = 0;
+	float aspect = (float)window->width / (float)window->height;
+	float znear = min(editor->camera_znear, editor->camera_zfar);
+	float zfar = max(editor->camera_znear, editor->camera_zfar);
+	mat4 camera_view_mat = mat4_look_at(vec3_from_xmvector(editor->camera_position), vec3_from_xmvector(editor->camera_position + editor->camera_view));
+	mat4 camera_proj_mat = mat4_project(editor->camera_fovy, aspect, znear, zfar);
 
-				if (editor->tool_type == tool_type_terrain_bump) {
-					uint32 height_texture_width = terrain->width * terrain->sample_per_meter;
-					uint32 height_texture_height = terrain->height * terrain->sample_per_meter;
-
-					vec2 center = editor->terrain_brush_tool_position.xz() + vec2{ half_width, half_height };
-					vec2 begin = center - vec2{ editor->terrain_brush_tool_radius, editor->terrain_brush_tool_radius };
-					vec2 end = center + vec2{ editor->terrain_brush_tool_radius, editor->terrain_brush_tool_radius };
-					vec2 center_uv = center / vec2{ (float)terrain->width, (float)terrain->height };
-					vec2 begin_uv = begin / vec2{ (float)terrain->width, (float)terrain->height };
-					vec2 end_uv = end / vec2{ (float)terrain->width, (float)terrain->height };
-					int32 center_texel[2] = { (int32)(height_texture_width * center_uv.x), (int32)(height_texture_height * center_uv.y) };
-					int32 begin_texel[2] = { (int32)(height_texture_width * begin_uv.x), (int32)(height_texture_height * begin_uv.y) };
-					int32 end_texel[2] = { (int32)(height_texture_width * end_uv.x), (int32)(height_texture_height * end_uv.y) };
-					double radius = (double)abs(begin_texel[0] - center_texel[0]);
-					double bump_step = 128.0 * editor->terrain_brush_tool_speed;
-
-					for (int32 y = begin_texel[1]; y <= end_texel[1]; y += 1) {
-						for (int32 x = begin_texel[0]; x <= end_texel[0]; x += 1) {
-							double dx = (double)abs(x - center_texel[0]);
-							double dy = (double)abs(y - center_texel[1]);
-							double distance = sqrt(dx * dx + dy * dy);
-							if (distance < radius) {
-								double p = distance / radius;
-								double bump_p = exp(-1.0 / (1.0 - p * p));
-								int16 *pixel = &terrain->height_texture_data[height_texture_width * y + x];
-								int16 bump = (int16)(bump_step * bump_p);
-								if (*pixel > 0 && bump > (INT16_MAX - *pixel)) {
-									*pixel = INT16_MAX;
-								}
-								else {
-									*pixel += bump;
-								}
-							}
-						}
-					}
-					//D3D11_BOX box = { 0, 0, 0, terrain->width * terrain->sample_per_meter, terrain->height * terrain->sample_per_meter, 1 };
-					//d3d->context->UpdateSubresource(terrain->height_texture, 0, &box, terrain->height_texture_data, terrain->width * terrain->sample_per_meter * sizeof(int16), 0);
-				}
-			}
+	if (editor->selected_object_type == selectable_object_direct_light) {
+		direct_light *direct_light = &world->direct_lights[editor->selected_object_index];
+		if (editor->tool_type == tool_type_translate) {
+			mat4 transform_mat = mat4_from_translate(direct_light->position);
+			ImGuizmo::BeginFrame();
+			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
+			direct_light->position = mat4_get_translate(transform_mat);
+		}
+		else if (editor->tool_type == tool_type_rotate) {
+			vec3 default_dir = { 0, 1, 0 };
+			mat4 transform_mat = mat4_from_translate(direct_light->position) * mat4_from_rotate(quat_from_between(default_dir, direct_light->dir));
+			ImGuizmo::BeginFrame();
+			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float *)transform_mat);
+			direct_light->dir = vec3_normalize(mat4_get_rotate(transform_mat) * default_dir);
 		}
 	}
+	else if (editor->selected_object_type == selectable_object_sphere_light) {
+		sphere_light *sphere_light = &world->sphere_lights[editor->selected_object_index];
+		if (editor->tool_type == tool_type_translate) {
+			mat4 transform_mat = mat4_from_translate(sphere_light->position);
+			ImGuizmo::BeginFrame();
+			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
+			sphere_light->position = mat4_get_translate(transform_mat);
+		}
+	}
+
+	//auto transform_gizmo = [&](transformable_type type) {
+	//	for (auto tool_type : { tool_type_translate, tool_type_rotate, tool_type_scale }) {
+	//		if (editor->tool_type == tool_type) {
+	//			mat4 camera_view_mat = mat4_from_xmmatrix(editor->camera_view_mat);
+	//			mat4 camera_proj_mat = mat4_from_xmmatrix(editor->camera_proj_mat);
+	//			transform *transform = nullptr;
+	//			switch (type) {
+	//			case transformable_type_player: transform = &world->player.transform; break;
+	//			case transformable_type_static_object: transform = &world->static_objects[editor->static_object_index].transform; break;
+	//			case transformable_type_dynamic_object: transform = &world->dynamic_objects[editor->dynamic_object_index].transform; break;
+	//			case transformable_type_model: transform = &world->models[editor->model_index].transform; break;
+	//			}
+	//			mat4 transform_mat = mat4_from_transform(*transform);
+	//			mat4 old_transform_mat = transform_mat;
+	//			ImGuizmo::OPERATION operations[] = { ImGuizmo::TRANSLATE, ImGuizmo::ROTATE, ImGuizmo::SCALE };
+	//			ImGuizmo::MODE modes[] = { ImGuizmo::WORLD, ImGuizmo::LOCAL, ImGuizmo::LOCAL };
+	//			ImGuizmo::BeginFrame();
+	//			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, operations[editor->tool_type], modes[editor->tool_type], (float *)transform_mat);
+	//			*transform = mat4_get_transform(transform_mat);
+	//			static bool transforming = false;
+	//			static struct transform original_transform = transform_identity();
+	//			if (ImGuizmo::IsUsing()) {
+	//				if (!transforming && (transform_mat != old_transform_mat)) {
+	//					transforming = true;
+	//					original_transform = mat4_get_transform(old_transform_mat);
+	//				}
+	//			}
+	//			else {
+	//				if (transforming) {
+	//					transforming = false;
+	//					edit_operation operation = { edit_operation_object_transform };
+	//					operation.transform_operation.original_transform = original_transform;
+	//					switch (type) {
+	//					case transformable_type_player: {
+	//						operation.transform_operation.transformable_type = transformable_type_player;
+	//					} break;
+	//					case transformable_type_static_object: {
+	//						operation.transform_operation.transformable_type = transformable_type_static_object;
+	//						strcpy(operation.transform_operation.id, world->static_objects[editor->static_object_index].id.ptr);
+	//					} break;
+	//					case transformable_type_dynamic_object: {
+	//						operation.transform_operation.transformable_type = transformable_type_dynamic_object;
+	//						strcpy(operation.transform_operation.id, world->dynamic_objects[editor->dynamic_object_index].id.ptr);
+	//					} break;
+	//					case transformable_type_model: {
+	//						operation.transform_operation.transformable_type = transformable_type_model;
+	//						strcpy(operation.transform_operation.id, world->models[editor->model_index].file);
+	//					} break;
+	//					}
+	//					editor_add_undo(editor, operation);
+	//				}
+	//			}
+	//			break;
+	//		}
+	//	}
+	//};
+	//if (editor->edit_window_tab == edit_window_tab_player) {
+	//	transform_gizmo(transformable_type_player);
+	//}
+	//else if (editor->edit_window_tab == edit_window_tab_static_object && editor->static_object_index < world->static_objects.size()) {
+	//	transform_gizmo(transformable_type_static_object);
+	//}
+	//else if (editor->edit_window_tab == edit_window_tab_dynamic_object && editor->dynamic_object_index < world->dynamic_objects.size()) {
+	//	transform_gizmo(transformable_type_dynamic_object);
+	//}
+	//else if (editor->edit_window_tab == edit_window_tab_model && editor->model_index < world->models.size()) {
+	//	transform_gizmo(transformable_type_model);
+	//}
+	//else if (editor->edit_window_tab == edit_window_tab_terrain && world->terrain_index < world->terrains.size()) {
+	//	terrain *terrain = &world->terrains[world->terrain_index];
+	//	float half_width = terrain->width * 0.5f;
+	//	float half_height = terrain->height * 0.5f;
+	//	bool tool_selected = editor->tool_type > tool_type_terrain_begin && editor->tool_type < tool_type_terrain_end;
+	//	if (tool_selected) {
+	//		ImGui::PushID("terrain_brush_properties_window");
+	//		ImGui::SetNextWindowPos(editor->objects_window_pos + ImVec2(editor->objects_window_size.x, 0), ImGuiCond_Once);
+	//		ImGui::SetNextWindowSize(ImVec2(editor->objects_window_size.x, 0), ImGuiCond_Once);
+	//		if (ImGui::Begin("Terrain Brush")) {
+	//			ImGui::SliderFloat("Radius", &editor->terrain_brush_tool_radius, 1, 10);
+	//			ImGui::SliderFloat("Speed", &editor->terrain_brush_tool_speed, 1, 10);
+	//		}
+	//		ImGui::End();
+	//		ImGui::PopID();
+	//		if (editor->tool_type == tool_type_terrain_paint) {
+	//			ImGui::PushID("terrain_texture_window");
+	//			ImGui::SetNextWindowPos(editor->objects_window_pos + ImVec2(editor->objects_window_size.x * 2, 0), ImGuiCond_Once);
+	//			ImGui::SetNextWindowSize(ImVec2(editor->objects_window_size.x, 0), ImGuiCond_Once);
+	//			if (ImGui::Begin("Terrain Textures")) {
+	//				for (uint32 i = 0; i < editor->terrain_paint_texture_count; i += 1) {
+	//					ImGui::SameLine();
+	//					if (ImGui::ImageButton((ImTextureID)editor->terrain_paint_texture_views[i], ImVec2(32, 32))) {
+	//						editor->terrain_paint_texture_index = i;
+	//					}
+	//				}
+	//			}
+	//			ImGui::End();
+	//			ImGui::PopID();
+	//		}
+	//	}
+	//	if (tool_selected && window_cursor_inside(window)) {
+	//		float t;
+	//		if (ray_hit_plane(editor->camera_to_mouse_ray, plane{ {0, 1, 0}, 0 }, &t)) {
+	//			vec3 p = editor->camera_to_mouse_ray.origin + editor->camera_to_mouse_ray.dir * t;
+	//			if (p.x >= -half_width && p.x <= half_width && p.z >= -half_height && p.z <= half_height) {
+	//				editor->terrain_brush_tool_active = true;
+	//				editor->terrain_brush_tool_position = { p.x, 0, p.z };
+	//			}
+	//		}
+	//	}
+	//	if (editor->terrain_brush_tool_active && ImGui::IsMouseDown(0) && !ImGui::GetIO().WantCaptureMouse) {
+	//		static double accumulate_frame_time = 0;
+	//		accumulate_frame_time += editor->last_frame_time;
+	//		if (accumulate_frame_time >= 1.0 / 15.0) {
+	//			accumulate_frame_time = 0;
+
+	//			if (editor->tool_type == tool_type_terrain_bump) {
+	//				uint32 height_texture_width = terrain->width * terrain->sample_per_meter;
+	//				uint32 height_texture_height = terrain->height * terrain->sample_per_meter;
+
+	//				vec2 center = editor->terrain_brush_tool_position.xz() + vec2{ half_width, half_height };
+	//				vec2 begin = center - vec2{ editor->terrain_brush_tool_radius, editor->terrain_brush_tool_radius };
+	//				vec2 end = center + vec2{ editor->terrain_brush_tool_radius, editor->terrain_brush_tool_radius };
+	//				vec2 center_uv = center / vec2{ (float)terrain->width, (float)terrain->height };
+	//				vec2 begin_uv = begin / vec2{ (float)terrain->width, (float)terrain->height };
+	//				vec2 end_uv = end / vec2{ (float)terrain->width, (float)terrain->height };
+	//				int32 center_texel[2] = { (int32)(height_texture_width * center_uv.x), (int32)(height_texture_height * center_uv.y) };
+	//				int32 begin_texel[2] = { (int32)(height_texture_width * begin_uv.x), (int32)(height_texture_height * begin_uv.y) };
+	//				int32 end_texel[2] = { (int32)(height_texture_width * end_uv.x), (int32)(height_texture_height * end_uv.y) };
+	//				double radius = (double)abs(begin_texel[0] - center_texel[0]);
+	//				double bump_step = 128.0 * editor->terrain_brush_tool_speed;
+
+	//				for (int32 y = begin_texel[1]; y <= end_texel[1]; y += 1) {
+	//					for (int32 x = begin_texel[0]; x <= end_texel[0]; x += 1) {
+	//						double dx = (double)abs(x - center_texel[0]);
+	//						double dy = (double)abs(y - center_texel[1]);
+	//						double distance = sqrt(dx * dx + dy * dy);
+	//						if (distance < radius) {
+	//							double p = distance / radius;
+	//							double bump_p = exp(-1.0 / (1.0 - p * p));
+	//							int16 *pixel = &terrain->height_texture_data[height_texture_width * y + x];
+	//							int16 bump = (int16)(bump_step * bump_p);
+	//							if (*pixel > 0 && bump > (INT16_MAX - *pixel)) {
+	//								*pixel = INT16_MAX;
+	//							}
+	//							else {
+	//								*pixel += bump;
+	//							}
+	//						}
+	//					}
+	//				}
+	//				//D3D11_BOX box = { 0, 0, 0, terrain->width * terrain->sample_per_meter, terrain->height * terrain->sample_per_meter, 1 };
+	//				//d3d->context->UpdateSubresource(terrain->height_texture, 0, &box, terrain->height_texture_data, terrain->width * terrain->sample_per_meter * sizeof(int16), 0);
+	//			}
+	//		}
+	//	}
+	//}
 }
 
 void editor_check_undo(editor *editor, world *world) {

@@ -1155,6 +1155,12 @@ bool ray_hit_triangle(ray ray, vec3 a, vec3 b, vec3 c, float *hit = nullptr, vec
 #include <directxmath.h>
 using namespace DirectX;
 
+vec3 vec3_from_xmvector(XMVECTOR v) {
+	XMFLOAT3 dst;
+	XMStoreFloat3(&dst, v);
+	return vec3{ dst.x, dst.y, dst.z };
+}
+
 mat4 mat4_from_xmmatrix(XMMATRIX xm) {
 	XMFLOAT4 r0;
 	XMFLOAT4 r1;

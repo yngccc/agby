@@ -926,6 +926,7 @@ bool world_load_from_file(world *world, d3d12 *d3d12, const char *file, world_ed
 	});
 
 	using namespace flatbuffers;
+
 	auto *fb_world = GetWorld(file_mapping.ptr);
 	if (!fb_world) {
 		return false;
@@ -940,16 +941,26 @@ bool world_load_from_file(world *world, d3d12 *d3d12, const char *file, world_ed
 		editor_settings->camera_view = XMVector3Normalize(XMVectorSet(camera_view->x(), camera_view->y(), camera_view->z(), 0));
 	}
 
-	const Vec3 *sun_light_dir = fb_world->sunLightDir();
-	const Vec3 *sun_light_color = fb_world->sunLightColor();
+	const Vec3 *direct_light_position = fb_world->directLight()->position();
+	const Vec3 *direct_light_dir = fb_world->directLight()->dir();
+	const Vec3 *direct_light_color = fb_world->directLight()->color();
 
 	direct_light direct_light = {
-		{0, 0, 0},
-		vec3_normalize(vec3{ sun_light_dir->x(), sun_light_dir->y(), sun_light_dir->z() }),
-		vec3{ sun_light_color->x(), sun_light_color->y(), sun_light_color->z()}
+		vec3{ direct_light_position->x(), direct_light_position->y(), direct_light_position->z() },
+		vec3_normalize(vec3{ direct_light_dir->x(), direct_light_dir->y(), direct_light_dir->z() }),
+		vec3{ direct_light_color->x(), direct_light_color->y(), direct_light_color->z()}
 	};
 	world->direct_lights.clear();
 	world->direct_lights.push_back(direct_light);
+
+	world->sphere_lights.resize(fb_world->sphereLights()->Length());
+	for (uint32 i = 0; i < fb_world->sphereLights()->Length(); i += 1) {
+		const SphereLight *fb_sphere_light = fb_world->sphereLights()->Get(i);
+		world->sphere_lights[i].position = { fb_sphere_light->position()->x(), fb_sphere_light->position()->y(), fb_sphere_light->position()->z() };
+		world->sphere_lights[i].color = { fb_sphere_light->color()->x(), fb_sphere_light->color()->y(), fb_sphere_light->color()->z() };
+		world->sphere_lights[i].radius = 0;
+		world->sphere_lights[i].falloff = 0;
+	}
 
 	auto fb_models = fb_world->models();
 	if (fb_models) {
@@ -1065,13 +1076,24 @@ bool world_save_to_file(world *world, const char *file, world_editor_settings *e
 	XMStoreFloat3(&editor_camera_position, editor_settings->camera_position);
 	XMStoreFloat3(&editor_camera_view, editor_settings->camera_view);
 
-	vec3 sun_light_dir = world->direct_lights[0].dir;
-	vec3 sun_light_color = world->direct_lights[0].color;
-
 	Vec3 fb_camera_position(editor_camera_position.x, editor_camera_position.y, editor_camera_position.z);
 	Vec3 fb_camera_view(editor_camera_view.x, editor_camera_view.y, editor_camera_view.z);
-	Vec3 fb_sun_light_dir(sun_light_dir.x, sun_light_dir.y, sun_light_dir.z);
-	Vec3 fb_sun_light_color(sun_light_color.x, sun_light_color.y, sun_light_color.z);
+
+	Vec3 fb_direct_light_position(m_unpack3(world->direct_lights[0].position));
+	Vec3 fb_direct_light_dir(m_unpack3(world->direct_lights[0].dir));
+	Vec3 fb_direct_light_color(m_unpack3(world->direct_lights[0].color));
+	Offset<DirectLight> fb_direct_light = CreateDirectLight(fb_builder, &fb_direct_light_position, &fb_direct_light_dir, &fb_direct_light_color);
+
+	Offset<Vector<Offset<SphereLight>>> fb_sphere_lights = 0;
+	{
+		std::vector<Offset<SphereLight>> sphere_lights(world->sphere_lights.size());
+		for (uint32 i = 0; i < world->sphere_lights.size(); i += 1) {
+			Vec3 position(m_unpack3(world->sphere_lights[i].position));
+			Vec3 color(m_unpack3(world->sphere_lights[i].color));
+			sphere_lights[i] = CreateSphereLight(fb_builder, &position, &color, 0, 0);
+		}
+		fb_sphere_lights = fb_builder.CreateVector<Offset<SphereLight>>(sphere_lights);
+	}
 
 	Offset<Vector<Offset<Model>>> fb_models = 0;
 	{
@@ -1151,7 +1173,7 @@ bool world_save_to_file(world *world, const char *file, world_editor_settings *e
 	//	fb_skyboxes = fb_builder.CreateVector<Offset<Skybox>>(skyboxes);
 	//}
 
-	auto fb_world = CreateWorld(fb_builder, &fb_camera_position, &fb_camera_view, &fb_sun_light_dir, &fb_sun_light_color, fb_models);
+	auto fb_world = CreateWorld(fb_builder, &fb_camera_position, &fb_camera_view, fb_direct_light, fb_sphere_lights, fb_models);
 	FinishWorldBuffer(fb_builder, fb_world);
 
 	file_mapping save_file_mapping;
