@@ -324,8 +324,8 @@ struct world {
 	ID3D12StateObject *dxr_shadow_pipeline_state;
 	ID3D12Resource *dxr_shadow_shader_table;
 	uint32 dxr_shadow_shader_table_entry_size;
-	ID3D12Resource *dxr_shadow_output_texture;
-	ID3D12DescriptorHeap *dxr_descriptor_heap; // shadow output texture | top acceleration buffer | gbuffer position texture | gbuffer normal texture
+	ID3D12Resource *dxr_shadow_output_texture_array;
+	ID3D12DescriptorHeap *dxr_descriptor_heap; // shadow output textures | top acceleration buffer | gbuffer position texture | gbuffer normal texture
 
 	physx::PxFoundation *px_foundation;
 	physx::PxPvd *px_pvd;
@@ -441,11 +441,11 @@ void world_init(world *world, d3d12 *d3d12) {
 	}
 #endif
 	{
-		world->default_diffuse_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_normal_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_roughness_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_metallic_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_height_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_diffuse_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_normal_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_roughness_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_metallic_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_height_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 
 		world->default_diffuse_texture->SetName(L"default_diffuse_texture");
 		world->default_normal_texture->SetName(L"default_normal_texture");
@@ -470,16 +470,16 @@ void world_init(world *world, d3d12 *d3d12) {
 		uint32 width = swap_chain_desc.BufferDesc.Width;
 		uint32 height = swap_chain_desc.BufferDesc.Height;
 
-		world->render_target = d3d12_create_texture_2d(d3d12, width, height, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->depth_target = d3d12_create_texture_2d(d3d12, width, height, 1, DXGI_FORMAT_D32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		world->render_target = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		world->depth_target = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_D32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
 		world->render_target->SetName(L"render_target");
 		world->depth_target->SetName(L"depth_target");
 
-		world->gbuffer_render_targets[0] = d3d12_create_texture_2d(d3d12, width, height, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->gbuffer_render_targets[1] = d3d12_create_texture_2d(d3d12, width, height, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->gbuffer_render_targets[2] = d3d12_create_texture_2d(d3d12, width, height, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->gbuffer_render_targets[3] = d3d12_create_texture_2d(d3d12, width, height, 1, DXGI_FORMAT_R8G8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		world->gbuffer_render_targets[0] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		world->gbuffer_render_targets[1] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		world->gbuffer_render_targets[2] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		world->gbuffer_render_targets[3] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R8G8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
 		world->gbuffer_render_targets[0]->SetName(L"gbuffer_diffuse_render_target");
 		world->gbuffer_render_targets[1]->SetName(L"gbuffer_position_render_target");
@@ -705,7 +705,7 @@ bool world_add_model(world *world, d3d12 *d3d12, const char *model_file, transfo
 	}
 	for (uint32 i = 0; i < model->texture_count; i += 1) {
 		gpk_model_image *gpk_model_image = ((struct gpk_model_image*)(model_file_mapping.ptr + gpk_model->image_offset)) + i;
-		model->textures[i].texture = d3d12_create_texture_2d(d3d12, gpk_model_image->width, gpk_model_image->height, gpk_model_image->mips, (DXGI_FORMAT)gpk_model_image->format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		model->textures[i].texture = d3d12_create_texture_2d(d3d12, gpk_model_image->width, gpk_model_image->height, 1, gpk_model_image->mips, (DXGI_FORMAT)gpk_model_image->format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 		d3d12_copy_texture_2d(d3d12, model->textures[i].texture, model_file_mapping.ptr + gpk_model_image->data_offset, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	}
 	for (uint32 i = 0; i < model->material_count; i += 1) {
@@ -1454,15 +1454,15 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 }
 
 void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
-	world->dxr_shadow_output_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
 	std::vector<uint8> shadow_output_texture_src;
 	shadow_output_texture_src.assign(window->width * window->height, 255);
-	d3d12_copy_texture_2d(d3d12, world->dxr_shadow_output_texture, shadow_output_texture_src.data(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	world->dxr_shadow_output_texture->SetName(L"dxr_shadow_output_texture_0");
+
+	world->dxr_shadow_output_texture_array = d3d12_create_texture_2d(d3d12, window->width, window->height, 4, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	world->dxr_shadow_output_texture_array->SetName(L"dxr_shadow_output_texture_array");
 
 	D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
 	descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	descriptor_heap_desc.NumDescriptors = 4;
+	descriptor_heap_desc.NumDescriptors = 8;
 	descriptor_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	m_d3d_assert(d3d12->device->CreateDescriptorHeap(&descriptor_heap_desc, IID_PPV_ARGS(&world->dxr_descriptor_heap)));
 
@@ -1470,48 +1470,40 @@ void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
 	uint32 dxr_cpu_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
-	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-	d3d12->device->CreateUnorderedAccessView(world->dxr_shadow_output_texture, nullptr, &uav_desc, dxr_cpu_descriptor_handle);
+	uav_desc.Format = DXGI_FORMAT_R8_UNORM;
+	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+	uav_desc.Texture2DArray.ArraySize = 4;
+	d3d12->device->CreateUnorderedAccessView(world->dxr_shadow_output_texture_array, nullptr, &uav_desc, dxr_cpu_descriptor_handle);
+	dxr_cpu_descriptor_handle.ptr += dxr_cpu_descriptor_handle_size;
 
 	if (world->dxr_top_acceleration_buffer) {
 		D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
 		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
 		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srv_desc.RaytracingAccelerationStructure.Location = world->dxr_top_acceleration_buffer->GetGPUVirtualAddress();
-		d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
+		d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, dxr_cpu_descriptor_handle);
+		dxr_cpu_descriptor_handle.ptr += dxr_cpu_descriptor_handle_size;
 	}
 
-	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
-	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
+	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[1], nullptr, dxr_cpu_descriptor_handle);
+	dxr_cpu_descriptor_handle.ptr += dxr_cpu_descriptor_handle_size;
+	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[2], nullptr, dxr_cpu_descriptor_handle);
+	dxr_cpu_descriptor_handle.ptr += dxr_cpu_descriptor_handle_size;
 }
 
 void dxr_init_shader_table(world *world, d3d12 *d3d12) {
-	world->dxr_shadow_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	world->dxr_shadow_shader_table_entry_size += 8;
+	world->dxr_shadow_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
 	world->dxr_shadow_shader_table_entry_size = round_up(world->dxr_shadow_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 
-	D3D12_HEAP_PROPERTIES heap_prop = {};
-	heap_prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-
-	D3D12_RESOURCE_DESC resource_desc = {};
-	resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resource_desc.Width = world->dxr_shadow_shader_table_entry_size * 3;
-	resource_desc.Height = 1;
-	resource_desc.DepthOrArraySize = 1;
-	resource_desc.MipLevels = 1;
-	resource_desc.Format = DXGI_FORMAT_UNKNOWN;
-	resource_desc.SampleDesc.Count = 1;
-	resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	resource_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-	m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&world->dxr_shadow_shader_table)));
+	world->dxr_shadow_shader_table = d3d12_create_buffer(d3d12, world->dxr_shadow_shader_table_entry_size * 3, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	uint8 *shader_table_ptr = nullptr;
 	m_d3d_assert(world->dxr_shadow_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
 	ID3D12StateObjectProperties *state_object_properties = nullptr;
 	world->dxr_shadow_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
 	memcpy(shader_table_ptr, state_object_properties->GetShaderIdentifier(dxr_ray_gen_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	*(uint64 *)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
+	uint64 gpu_descriptor_handle = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
+	*(uint64 *)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = gpu_descriptor_handle;
 	memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 	memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 	world->dxr_shadow_shader_table->Unmap(0, nullptr);
@@ -1679,11 +1671,39 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		}
 		d3d12->command_list->ResourceBarrier(m_countof(barriers), barriers);
 	}
+	const uint32 direct_light_type = 0;
+	const uint32 sphere_light_type = 1;
+	struct light {
+		uint32 type;
+		float radius;
+		float falloff;
+		float padding;
+		vec4 color;
+		vec4 position;
+		vec4 dir;
+	};
+	struct lights_info {
+		light lights[4];
+		uint32 light_count;
+	} lights_info = {};
+	lights_info.lights[0].type = direct_light_type;
+	lights_info.lights[0].color = { 1, 1, 1, 0 };
+	lights_info.lights[0].dir = { m_unpack3(world->direct_lights[0].dir), 0 };
+	lights_info.light_count = 1;
+	for (auto &light : world->sphere_lights) {
+		lights_info.lights[lights_info.light_count].type = sphere_light_type;
+		lights_info.lights[lights_info.light_count].color = { 1, 1, 1, 0 };
+		lights_info.lights[lights_info.light_count].position = { m_unpack3(light.position), 0 };
+		lights_info.light_count += 1;
+		if (lights_info.light_count == m_countof(lights_info.lights)) {
+			break;
+		}
+	} 
 	{
 		if (world->dxr_top_acceleration_buffer) {
 			D3D12_RESOURCE_BARRIER barrier = {};
 			barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-			barrier.Transition.pResource = world->dxr_shadow_output_texture;
+			barrier.Transition.pResource = world->dxr_shadow_output_texture_array;
 			barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -1693,23 +1713,8 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 			d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
 			d3d12->command_list->SetComputeRootSignature(world->dxr_global_root_sig);
 
-			struct sphere_light {
-				vec3 position;
-				float radius;
-			};
-			struct {
-				vec4 sun_light_dir;
-				sphere_light sphere_lights[4];
-				uint32 sphere_light_count;
-			} constants = {};
-			constants.sun_light_dir = { m_unpack3(world->direct_lights[0].dir), 0 };
-			constants.sphere_light_count = (uint32)min(world->sphere_lights.size(), m_countof(constants.sphere_lights));
-			for (uint32 i = 0; i < constants.sphere_light_count; i += 1) {
-				constants.sphere_lights[i].position = world->sphere_lights[i].position;
-				constants.sphere_lights[i].radius = world->sphere_lights[i].radius;
-			}
 			uint32 constants_offset = 0;
-			frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
+			frame_constants_buffer_append(&lights_info, sizeof(lights_info), &constants_offset);
 			d3d12->command_list->SetComputeRootConstantBufferView(0, frame_constants_buffer_gpu_address + constants_offset);
 
 			D3D12_DISPATCH_RAYS_DESC rays_desc = {};
@@ -1754,31 +1759,16 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 			d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[i], nullptr, { render_target_cpu_descriptor_handle.ptr + i * frame_descriptor_handle_size });
 			world->frame_descriptor_handle_count += 1;
 		}
-		d3d12->device->CreateShaderResourceView(world->dxr_shadow_output_texture, nullptr, { render_target_cpu_descriptor_handle.ptr + m_countof(world->gbuffer_render_targets) * frame_descriptor_handle_size });
+		d3d12->device->CreateShaderResourceView(world->dxr_shadow_output_texture_array, nullptr, { render_target_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * m_countof(world->gbuffer_render_targets) });
 		world->frame_descriptor_handle_count += 1;
 
-		struct direct_light {
-			vec4 dir;
-			vec4 color;
-		};
-		struct sphere_light {
-			vec4 position;
-			vec4 color;
-		};
 		struct constants {
 			XMVECTOR camera_position;
-			direct_light direct_light;
-			sphere_light sphere_lights[4];
-			uint32 sphere_light_count;
+			struct lights_info lights_info;
 		} constants = {
 			params->camera_position,
-			direct_light{{m_unpack3(world->direct_lights[0].dir), 0}, {m_unpack3(world->direct_lights[0].color), 0}}
+			lights_info
 		};
-		constants.sphere_light_count = (uint32)min(world->sphere_lights.size(), m_countof(constants.sphere_lights));
-		for (uint32 i = 0; i < constants.sphere_light_count; i += 1) {
-			constants.sphere_lights[i].position = { m_unpack3(world->sphere_lights[i].position), 0 };
-			constants.sphere_lights[i].color = { m_unpack3(world->sphere_lights[i].color), 0 };
-		}
 		uint32 constants_offset = 0;
 		frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
 		d3d12->command_list->SetGraphicsRootConstantBufferView(0, frame_constants_buffer_gpu_address + constants_offset);

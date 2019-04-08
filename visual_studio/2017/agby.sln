@@ -17,22 +17,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hlsl", "hlsl", "{E1246798-C
 	ProjectSection(SolutionItems) = preProject
 		..\..\src\hlsl\blit_to_swap_chain.vps.hlsl = ..\..\src\hlsl\blit_to_swap_chain.vps.hlsl
 		..\..\build.bat = ..\..\build.bat
-		..\..\src\hlsl\collision_shape.vps.hlsl = ..\..\src\hlsl\collision_shape.vps.hlsl
 		..\..\src\hlsl\common.h = ..\..\src\hlsl\common.h
-		..\..\src\hlsl\gaussian_blur_x.vps.hlsl = ..\..\src\hlsl\gaussian_blur_x.vps.hlsl
-		..\..\src\hlsl\gaussian_blur_y.vps.hlsl = ..\..\src\hlsl\gaussian_blur_y.vps.hlsl
 		..\..\src\hlsl\gbuffer.vps.hlsl = ..\..\src\hlsl\gbuffer.vps.hlsl
 		..\..\src\hlsl\gbuffer_direct_lit.vps.hlsl = ..\..\src\hlsl\gbuffer_direct_lit.vps.hlsl
 		..\..\src\hlsl\imgui.vps.hlsl = ..\..\src\hlsl\imgui.vps.hlsl
-		..\..\src\hlsl\mesh.vps.hlsl = ..\..\src\hlsl\mesh.vps.hlsl
-		..\..\src\hlsl\mesh_shadow.vps.hlsl = ..\..\src\hlsl\mesh_shadow.vps.hlsl
-		..\..\src\hlsl\pbr_mesh.vps.hlsl = ..\..\src\hlsl\pbr_mesh.vps.hlsl
-		..\..\src\hlsl\reference_grid.vps.hlsl = ..\..\src\hlsl\reference_grid.vps.hlsl
 		..\..\src\hlsl\shadow.rt.hlsl = ..\..\src\hlsl\shadow.rt.hlsl
-		..\..\src\hlsl\skybox.vps.hlsl = ..\..\src\hlsl\skybox.vps.hlsl
-		..\..\src\hlsl\terrain.vps.hlsl = ..\..\src\hlsl\terrain.vps.hlsl
-		..\..\src\hlsl\terrain_brush.vps.hlsl = ..\..\src\hlsl\terrain_brush.vps.hlsl
-		..\..\src\hlsl\terrain_shadow.vps.hlsl = ..\..\src\hlsl\terrain_shadow.vps.hlsl
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "miscs", "miscs", "{CCCD23EF-6FBB-4993-A0A2-D11D6F0E742B}"

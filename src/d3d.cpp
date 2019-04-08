@@ -150,8 +150,6 @@ struct d3d12 {
 
 	ID3D12RootSignature *blit_to_swap_chain_root_signature;
 	ID3D12PipelineState *blit_to_swap_chain_pipeline_state;
-	ID3D12RootSignature *pbr_mesh_root_signature;
-	ID3D12PipelineState *pbr_mesh_pipeline_state;
 	ID3D12RootSignature *gbuffer_root_signature;
 	ID3D12PipelineState *gbuffer_pipeline_state;
 	ID3D12RootSignature *gbuffer_direct_lit_root_signature;
@@ -277,9 +275,9 @@ void d3d12_init_common_resources(d3d12 *d3d12) {
 		15, 47,  7, 39, 13, 45,  5, 37,
 		63, 31, 55, 23, 61, 29, 53, 21
 	};
-	ID3D12Resource *d3d12_create_texture_2d(struct d3d12 *, uint32, uint32, uint32, DXGI_FORMAT, D3D12_HEAP_TYPE, D3D12_RESOURCE_FLAGS, D3D12_RESOURCE_STATES);
+	ID3D12Resource *d3d12_create_texture_2d(struct d3d12 *, uint32, uint32, uint32, uint32, DXGI_FORMAT, D3D12_HEAP_TYPE, D3D12_RESOURCE_FLAGS, D3D12_RESOURCE_STATES);
 	void d3d12_copy_texture_2d(struct d3d12 *, ID3D12Resource *, uint8 *, D3D12_RESOURCE_STATES);
-	d3d12->dither_texture = d3d12_create_texture_2d(d3d12, 8, 8, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+	d3d12->dither_texture = d3d12_create_texture_2d(d3d12, 8, 8, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 	d3d12_copy_texture_2d(d3d12, d3d12->dither_texture, dither_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
@@ -341,78 +339,6 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 		pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 		pso_desc.SampleDesc.Count = 1;
 		m_d3d_assert(d3d12->device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&d3d12->blit_to_swap_chain_pipeline_state)));
-	}
-	{
-		D3D12_ROOT_PARAMETER params[5] = {};
-		for (uint32 i = 0; i < 4; i += 1) {
-			params[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-			params[i].Descriptor.ShaderRegister = i;
-			params[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-		}
-		params[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-		D3D12_DESCRIPTOR_RANGE range = {};
-		range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		range.NumDescriptors = 4;
-		range.BaseShaderRegister = 0;
-		range.OffsetInDescriptorsFromTableStart = 0;
-		params[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		params[4].DescriptorTable.NumDescriptorRanges = 1;
-		params[4].DescriptorTable.pDescriptorRanges = &range;
-		params[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		D3D12_STATIC_SAMPLER_DESC sampler = {};
-		sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-		sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-		sampler.ShaderRegister = 0;
-		sampler.RegisterSpace = 0;
-		sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-		D3D12_ROOT_SIGNATURE_DESC sig_desc = {};
-		sig_desc.NumParameters = m_countof(params);
-		sig_desc.pParameters = params;
-		sig_desc.NumStaticSamplers = 1;
-		sig_desc.pStaticSamplers = &sampler;
-		sig_desc.Flags =
-			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-			D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-			D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-			D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
-
-		ID3DBlob *sig_blob = nullptr;
-		m_d3d_assert(D3D12SerializeRootSignature(&sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, nullptr));
-		d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&d3d12->pbr_mesh_root_signature));
-		sig_blob->Release();
-
-		D3D12_INPUT_ELEMENT_DESC input_element_descs[] = {
-			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TANGENT", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
-		};
-
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {};
-		pso_desc.pRootSignature = d3d12->pbr_mesh_root_signature;
-		hlsl_bytecode_file vs_file("hlsl/pbr_mesh.vps.vs.bytecode");
-		hlsl_bytecode_file ps_file("hlsl/pbr_mesh.vps.ps.bytecode");
-		pso_desc.VS = vs_file.bytecode;
-		pso_desc.PS = ps_file.bytecode;
-		pso_desc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-		pso_desc.SampleMask = UINT_MAX;
-		pso_desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-		pso_desc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-		pso_desc.RasterizerState.FrontCounterClockwise = true;
-		pso_desc.DepthStencilState.DepthEnable = true;
-		pso_desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-		pso_desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_GREATER;
-		pso_desc.InputLayout = { input_element_descs, m_countof(input_element_descs) };
-		pso_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		pso_desc.NumRenderTargets = 1;
-		pso_desc.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
-		pso_desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-		pso_desc.SampleDesc.Count = 1;
-		m_d3d_assert(d3d12->device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&d3d12->pbr_mesh_pipeline_state)));
 	}
 	{
 		D3D12_ROOT_PARAMETER params[5] = {};
@@ -623,7 +549,7 @@ void d3d12_copy_buffer(d3d12 *d3d12, ID3D12Resource *dst_buffer, uint8 *src_buff
 	d3d12_wait_command_list(d3d12);
 }
 
-ID3D12Resource *d3d12_create_texture_2d(d3d12 *d3d12, uint32 width, uint32 height, uint32 mips, DXGI_FORMAT format, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS resource_flags, D3D12_RESOURCE_STATES resource_state) {
+ID3D12Resource *d3d12_create_texture_2d(d3d12 *d3d12, uint32 width, uint32 height, uint32 array_size, uint32 mips, DXGI_FORMAT format, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS resource_flags, D3D12_RESOURCE_STATES resource_state) {
 	D3D12_HEAP_PROPERTIES heap_props = {};
 	heap_props.Type = heap_type;
 
@@ -632,7 +558,7 @@ ID3D12Resource *d3d12_create_texture_2d(d3d12 *d3d12, uint32 width, uint32 heigh
 	resource_desc.Alignment = 0;
 	resource_desc.Width = width;
 	resource_desc.Height = height;
-	resource_desc.DepthOrArraySize = 1;
+	resource_desc.DepthOrArraySize = array_size;
 	resource_desc.MipLevels = mips;
 	resource_desc.Format = format;
 	resource_desc.SampleDesc.Count = 1;

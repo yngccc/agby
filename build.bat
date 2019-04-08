@@ -51,13 +51,13 @@ if "%skip_prebuild%"=="true" goto :skip_prebuild
 echo compiling hlsl...
 mkdir hlsl 2>nul
 del /Q hlsl\*
-start /b forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_1 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.bytecode @PATH >nul" >nul
-start /b forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_1 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.bytecode @PATH >nul" >nul
-start /b forfiles /p ..\src\hlsl /m *.cs.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_1 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH >nul" >nul
-start /b forfiles /p ..\src\hlsl /m *.rt.hlsl /c "cmd /c dxc.exe /nologo /Od /Zi /T lib_6_3 /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH >nul" >nul
+forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_1 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.bytecode @PATH" >nul
+forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_1 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.bytecode @PATH" >nul
+forfiles /p ..\src\hlsl /m *.cs.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_1 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH" >nul
+forfiles /p ..\src\hlsl /m *.rt.hlsl /c "cmd /c dxc.exe /nologo /Od /Zi /T lib_6_3 /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH" >nul
 
 echo compiling ispc...
-..\vendor\bin\ispc.exe ..\src\ispc\simple.ispc -o simple.ispc.obj -h ..\src\ispc\simple.ispc.h --target=sse4-i32x4 >nul
+..\vendor\bin\ispc.exe ..\src\ispc\simple.ispc -o simple.ispc.obj -h ..\src\ispc\simple.ispc.h --target=sse4-i32x4
 
 echo compiling flatbuffers...
 ..\vendor\bin\flatc.exe -c -o ..\src\flatbuffers ..\src\flatbuffers\world.fbs

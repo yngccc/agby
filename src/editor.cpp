@@ -475,7 +475,7 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 			auto clear_font_tex_data = scope_exit([] {
 				ImGui::GetIO().Fonts->ClearTexData();
 			});
-			editor->imgui_font_texture = d3d12_create_texture_2d(d3d12, texture_width, texture_height, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+			editor->imgui_font_texture = d3d12_create_texture_2d(d3d12, texture_width, texture_height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 			d3d12_copy_texture_2d(d3d12, editor->imgui_font_texture, texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 			d3d12->device->CreateShaderResourceView(editor->imgui_font_texture, nullptr, descriptor_cpu_heap_handle);
 			ImGui::GetIO().Fonts->SetTexID((ImTextureID)descriptor_gpu_heap_handle.ptr);
@@ -487,7 +487,7 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 			uint8 *texture_data = stbi_load(file, &width, &height, &channel, 4);
 			m_assert(texture_data);
 
-			*texture = d3d12_create_texture_2d(d3d12, width, height, 1, fmt, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+			*texture = d3d12_create_texture_2d(d3d12, width, height, 1, 1, fmt, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 			d3d12_copy_texture_2d(d3d12, *texture, texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 			d3d12->device->CreateShaderResourceView(*texture, nullptr, descriptor_cpu_heap_handle);
 			*texture_gpu_descriptor_handle = descriptor_gpu_heap_handle;
@@ -1557,14 +1557,18 @@ void editor_edit_window_model_tab(editor *editor, world *world, d3d12 *d3d12) {
 
 void editor_direct_light_properties(editor *editor, direct_light *direct_light) {
 	ImGui::Text("Properties:");
-	ImGui::ColorEdit3("direct light color", &direct_light->color.x);
+	ImGui::ColorEdit3("color", &direct_light->color.x);
 	float extra = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x * 2 + ImGui::CalcTextSize("direct color").x;
 	ImGui::PushItemWidth(ImGui::GetItemRectSize().x - extra);
 	ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-	ImGui::DragFloat3("direct light direction", &direct_light->dir.x);
-	ImGui::DragFloat3("direct light position", &direct_light->position.x);
+	ImGui::DragFloat3("position", &direct_light->position.x);
+	ImGui::DragFloat3("direction", &direct_light->dir.x);
 	ImGui::PopItemFlag();
 	ImGui::PopItemWidth();
+	ImGui::SameLine();
+	if (ImGui::Button("reset")) {
+		direct_light->dir = { 0, 1, 0 };
+	}
 }
 
 void editor_sphere_light_properties(editor *editor, sphere_light *sphere_light) {
@@ -1667,6 +1671,8 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 					if (ImGui::Selectable("New")) {
 						sphere_light sphere_light = { {0, 0, 0}, {1, 1, 1}, 1, 10 };
 						world->sphere_lights.push_back(sphere_light);
+						editor->selected_object_type = selectable_object_sphere_light;
+						editor->selected_object_index = (uint32)world->sphere_lights.size() - 1;
 					}
 					ImGui::EndPopup();
 				}
@@ -1677,6 +1683,16 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 					if (ImGui::Selectable(index_str, selected)) {
 						editor->selected_object_type = selectable_object_sphere_light;
 						editor->selected_object_index = i;
+					}
+					char popup_id_str[32] = {};
+					snprintf(popup_id_str, sizeof(popup_id_str), "sphere light popup %u", i);
+					ImGui::OpenPopupOnItemClick(popup_id_str);
+					if (ImGui::BeginPopup(popup_id_str)) {
+						if (ImGui::Selectable("Delete")) {
+							world->sphere_lights.erase(world->sphere_lights.begin() + i);
+							editor->selected_object_type = selectable_object_none;
+						}
+						ImGui::EndPopup();
 					}
 				}
 				ImGui::TreePop();
@@ -1841,6 +1857,36 @@ void editor_tool_gizmo(editor *editor, world *world, window *window) {
 	mat4 camera_view_mat = mat4_look_at(vec3_from_xmvector(editor->camera_position), vec3_from_xmvector(editor->camera_position + editor->camera_view));
 	mat4 camera_proj_mat = mat4_project(editor->camera_fovy, aspect, znear, zfar);
 
+	auto render_direct_light = [&](direct_light *dir_light) {
+		vec3 line_verts[2] = { {0, 0, 0}, {0, 0.1f, 0} };
+		vec3 tri_verts[3] = { {-0.02f, 0.1f, 0}, {0.02f, 0.1f, 0}, {0, 0.11f, 0} };
+		vec3 translation = dir_light->position;
+		quat rotation = quat_from_between({ 0, 1, 0 }, dir_light->dir);
+		mat4 transform_mat = mat4_from_translate(translation) * mat4_from_rotate(rotation);
+		mat4 camera_mat = camera_proj_mat * camera_view_mat;
+		auto transform_to_screen_space = [&](vec3 v) {
+			vec4 v2 = camera_mat * transform_mat * vec4{ v.x, v.y, v.z, 1 };
+			v2 /= v2.w;
+			float x = (v2.x + 1) * 0.5f;
+			float y = (-v2.y + 1) * 0.5f;
+			ImVec2 vec;
+			vec.x = ImGui::GetIO().DisplaySize.x * x;
+			vec.y = ImGui::GetIO().DisplaySize.y * y;
+			return vec;
+		};
+		ImVec2 line_screen_space_verts[2] = {};
+		ImVec2 tri_screen_space_verts[3] = {};
+		for (uint32 i = 0; i < m_countof(line_verts); i += 1) {
+			line_screen_space_verts[i] = transform_to_screen_space(line_verts[i]);
+		}
+		for (uint32 i = 0; i < m_countof(tri_verts); i += 1) {
+			tri_screen_space_verts[i] = transform_to_screen_space(tri_verts[i]);
+		}
+		ImDrawList *draw_list = ImGuizmo::gContext.mDrawList;
+		draw_list->AddLine(line_screen_space_verts[0], line_screen_space_verts[1], 0xffffffff);
+		draw_list->AddTriangleFilled(tri_screen_space_verts[0], tri_screen_space_verts[1], tri_screen_space_verts[2], 0xffffffff);
+	};
+
 	if (editor->selected_object_type == selectable_object_direct_light) {
 		direct_light *direct_light = &world->direct_lights[editor->selected_object_index];
 		if (editor->tool_type == tool_type_translate) {
@@ -1848,6 +1894,7 @@ void editor_tool_gizmo(editor *editor, world *world, window *window) {
 			ImGuizmo::BeginFrame();
 			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
 			direct_light->position = mat4_get_translate(transform_mat);
+			// render_direct_light(direct_light);
 		}
 		else if (editor->tool_type == tool_type_rotate) {
 			vec3 default_dir = { 0, 1, 0 };
@@ -1855,6 +1902,7 @@ void editor_tool_gizmo(editor *editor, world *world, window *window) {
 			ImGuizmo::BeginFrame();
 			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float *)transform_mat);
 			direct_light->dir = vec3_normalize(mat4_get_rotate(transform_mat) * default_dir);
+			// render_direct_light(direct_light);
 		}
 	}
 	else if (editor->selected_object_type == selectable_object_sphere_light) {
