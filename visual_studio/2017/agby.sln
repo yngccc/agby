@@ -27,6 +27,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "miscs", "miscs", "{CCCD23EF-6FBB-4993-A0A2-D11D6F0E742B}"
 	ProjectSection(SolutionItems) = preProject
 		..\..\build.bat = ..\..\build.bat
+		..\..\README.md = ..\..\README.md
 		..\..\src\ispc\simple.ispc = ..\..\src\ispc\simple.ispc
 		..\..\src\flatbuffers\world.fbs = ..\..\src\flatbuffers\world.fbs
 	EndProjectSection

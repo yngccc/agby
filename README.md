@@ -1,6 +1,6 @@
 ## What is this?
 
-This is D3D12/DXR renderer with limited support for scene editing
+This is hybrid ray traced renderer using DXR with limited support for scene editing
 
 ## How to run?
 

@@ -453,7 +453,7 @@ void world_init(world *world, d3d12 *d3d12) {
 		world->default_metallic_texture->SetName(L"default_metallic_texture");
 		world->default_height_texture->SetName(L"default_height_texture");
 
-		uint8 default_diffuse_texture_data[] = { 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166, 166 };
+		uint8 default_diffuse_texture_data[] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
 		uint8 default_normal_texture_data[] = { 128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0, 128, 128, 255, 0 };
 		uint8 default_roughness_texture_data[] = { 200, 200, 200, 200 };
 		uint8 default_metallic_texture_data[] = { 64, 64, 64, 64 };
@@ -652,10 +652,14 @@ bool world_add_model(world *world, d3d12 *d3d12, const char *model_file, transfo
 			primitive->index_count = gpk_primitive->index_count;
 			primitive->material_index = gpk_primitive->material_index;
 
-			primitive->vertex_buffer = d3d12_create_buffer(d3d12, gpk_primitive->vertex_count * sizeof(struct gpk_model_vertex), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-			primitive->index_buffer = d3d12_create_buffer(d3d12, gpk_primitive->index_count * sizeof(uint16), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+			m_assert(primitive->vertex_count > 0);
+			primitive->vertex_buffer = d3d12_create_buffer(d3d12, primitive->vertex_count * sizeof(struct gpk_model_vertex), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 			d3d12_copy_buffer(d3d12, primitive->vertex_buffer, model_file_mapping.ptr + gpk_primitive->vertices_offset, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-			d3d12_copy_buffer(d3d12, primitive->index_buffer, model_file_mapping.ptr + gpk_primitive->indices_offset, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+			if (primitive->index_count > 0) {
+				primitive->index_buffer = d3d12_create_buffer(d3d12, primitive->index_count * sizeof(uint16), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+				d3d12_copy_buffer(d3d12, primitive->index_buffer, model_file_mapping.ptr + gpk_primitive->indices_offset, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+			}
 		}
 	}
 
@@ -1226,12 +1230,19 @@ void dxr_init_acceleration_buffers(world *world, d3d12 *d3d12) {
 							geom_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
 							geom_desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 							geom_desc.Triangles.Transform3x4 = node_transform_mats_gpu_virtual_adress + node_transform_mats_offset;
-							geom_desc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
 							geom_desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-							geom_desc.Triangles.IndexCount = primitive->index_count;
 							geom_desc.Triangles.VertexCount = primitive->vertex_count;
-							geom_desc.Triangles.IndexBuffer = primitive->index_buffer->GetGPUVirtualAddress();
 							geom_desc.Triangles.VertexBuffer = { primitive->vertex_buffer->GetGPUVirtualAddress(), sizeof(gpk_model_vertex) };
+							if (primitive->index_count > 0) {
+								geom_desc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
+								geom_desc.Triangles.IndexCount = primitive->index_count;
+								geom_desc.Triangles.IndexBuffer = primitive->index_buffer->GetGPUVirtualAddress();
+							}
+							else {
+								geom_desc.Triangles.IndexFormat = DXGI_FORMAT_UNKNOWN;
+								geom_desc.Triangles.IndexCount = 0;
+								geom_desc.Triangles.IndexBuffer = 0;
+							}
 							geom_descs->push_back(geom_desc);
 						}
 						node_transform_mats_offset += sizeof(float[3][4]);
@@ -1647,13 +1658,19 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 								vertex_buffer_view.BufferLocation = primitive->vertex_buffer->GetGPUVirtualAddress();
 								vertex_buffer_view.SizeInBytes = primitive->vertex_count * sizeof(gpk_model_vertex);
 								vertex_buffer_view.StrideInBytes = sizeof(gpk_model_vertex);
-								D3D12_INDEX_BUFFER_VIEW index_buffer_view = {};
-								index_buffer_view.BufferLocation = primitive->index_buffer->GetGPUVirtualAddress();
-								index_buffer_view.SizeInBytes = primitive->index_count * sizeof(uint16);
-								index_buffer_view.Format = DXGI_FORMAT_R16_UINT;
 								d3d12->command_list->IASetVertexBuffers(0, 1, &vertex_buffer_view);
-								d3d12->command_list->IASetIndexBuffer(&index_buffer_view);
-								d3d12->command_list->DrawIndexedInstanced(primitive->index_count, 1, 0, 0, 0);
+	
+								if (primitive->index_count == 0) {
+									d3d12->command_list->DrawInstanced(primitive->vertex_count, 1, 0, 0);
+								}
+								else {
+									D3D12_INDEX_BUFFER_VIEW index_buffer_view = {};
+									index_buffer_view.BufferLocation = primitive->index_buffer->GetGPUVirtualAddress();
+									index_buffer_view.SizeInBytes = primitive->index_count * sizeof(uint16);
+									index_buffer_view.Format = DXGI_FORMAT_R16_UINT;
+									d3d12->command_list->IASetIndexBuffer(&index_buffer_view);
+									d3d12->command_list->DrawIndexedInstanced(primitive->index_count, 1, 0, 0, 0);
+								}
 							}
 						}
 					}

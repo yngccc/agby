@@ -186,10 +186,10 @@ void d3d12_init(d3d12 *d3d12, window *window) {
 
 	ID3D12Debug1 *debug_controller;
 	m_d3d_assert(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)));
-	//debug_controller->EnableDebugLayer();
-	//debug_controller->SetEnableGPUBasedValidation(true);
-	//debug_controller->SetEnableSynchronizedCommandQueueValidation(true);
-	//dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
+	debug_controller->EnableDebugLayer();
+	debug_controller->SetEnableGPUBasedValidation(true);
+	debug_controller->SetEnableSynchronizedCommandQueueValidation(true);
+	dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
 	debug_controller->Release();
 
 	m_d3d_assert(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&d3d12->dxgi_debug)));
@@ -385,9 +385,10 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 
 		D3D12_INPUT_ELEMENT_DESC input_element_descs[] = {
 			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TANGENT", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+			{"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"TANGENT", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
 		};
 
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {};

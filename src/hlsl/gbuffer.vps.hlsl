@@ -25,6 +25,7 @@ sampler texture_sampler : register(s0);
 
 struct vs_input {
 	float3 position : POSITION;
+	float3 color : COLOR;
 	float2 texcoord : TEXCOORD;
 	float3 normal : NORMAL;
 	float3 tangent : TANGENT;
@@ -33,6 +34,7 @@ struct vs_input {
 struct vs_output {
 	float4 sv_position : SV_POSITION;
 	float3 position : POSITIONT;
+	float3 color : COLOR;
 	float2 texcoord : TEXCOORD;
 	float3 normal : NORMAL;
 	float3x3 tbn_mat : OUTPUT0;
@@ -45,6 +47,7 @@ vs_output vertex_shader(vs_input vs_input) {
 	vs_output vs_output;
 	vs_output.position = mul(transform_mat, float4(vs_input.position, 1)).xyz;
 	vs_output.sv_position = mul(camera_view_proj_mat, float4(vs_output.position, 1));
+	vs_output.color = vs_input.color;
 	vs_output.texcoord = vs_input.texcoord;
 	vs_output.normal = normalize(mul(normal_mat, vs_input.normal));
 	float3 tangent = normalize(mul(normal_mat, vs_input.tangent));

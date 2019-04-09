@@ -27,6 +27,7 @@
 #include <d3d11.h>
 
 #include <stack>
+#include <unordered_map>
 
 uint32 tinygltf_wrap_to_d3d_wrap(int32 wrap) {
 	if (wrap == TINYGLTF_TEXTURE_WRAP_REPEAT) {
@@ -886,6 +887,8 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 
 				vertex->position = *(vec3 *)(position_data + position_stride * i);
 
+				vertex->color = { 255, 255, 255, 0 };
+
 				if (uv_data) {
 					vertex->uv = *(vec2 *)(uv_data + uv_stride * i);
 				}
@@ -1138,6 +1141,212 @@ void gltf_to_vertices(std::string gltf_file, std::string text_file) {
 	printf("done importing gltf: \"%s\" \n", gltf_file.c_str());
 }
 
+void obj_to_gpk(std::string obj_file, std::string gpk_file) {
+	printf("begin importing obj: \"%s\" \n", obj_file.c_str());
+
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string warn;
+	std::string err;
+	char obj_path_drive[32];
+	char obj_path_dir[256];
+	_splitpath(obj_file.c_str(), obj_path_drive, obj_path_dir, nullptr, nullptr);
+	std::string obj_dir = std::string(obj_path_drive) + obj_path_dir;
+	bool load_obj_success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, obj_file.c_str(), obj_dir.c_str());
+	if (!err.empty()) {
+		printf("%s\n", err.c_str());
+	}
+	m_assert(load_obj_success);
+
+	uint32 file_offset = 0;
+	gpk_model gpk_model = { m_gpk_model_format_str };
+	file_offset = round_up(file_offset + (uint32)sizeof(gpk_model), 16u);
+
+	gpk_model_scene gpk_model_scene = { "scene" };
+	gpk_model_scene.node_index_count = 1;
+	gpk_model.scene_offset = file_offset;
+	gpk_model.scene_count = 1;
+	file_offset = round_up(file_offset + (uint32)sizeof(gpk_model_scene), 16u);
+
+	gpk_model_node gpk_model_node = {};
+	gpk_model_node.mesh_index = 0;
+	gpk_model_node.local_transform = transform_identity();
+	gpk_model_node.local_transform_mat = mat4_identity();
+	gpk_model_node.global_transform_mat = mat4_identity();
+	gpk_model.node_offset = file_offset;
+	gpk_model.node_count = 1;
+	file_offset = round_up(file_offset + (uint32)sizeof(gpk_model_node), 16u);
+
+	gpk_model_mesh gpk_model_mesh = { "mesh" };
+	gpk_model.mesh_offset = file_offset;
+	gpk_model.mesh_count = 1;
+	file_offset = round_up(file_offset + (uint32)sizeof(gpk_model_mesh), 16u);
+	gpk_model_mesh.primitive_offset = file_offset;
+
+	struct primitive {
+		gpk_model_mesh_primitive gpk_model_mesh_primitive;
+		std::vector<gpk_model_vertex> vertices;
+	};
+	std::vector<primitive> primitives;
+	for (auto &shape : shapes) {
+		m_assert(shape.path.indices.size() == 0);
+		m_assert(shape.mesh.num_face_vertices.size() > 0);
+		for (auto n : shape.mesh.num_face_vertices) {
+			m_assert(n == 3);
+		}
+		m_assert(shape.mesh.num_face_vertices.size() == shape.mesh.material_ids.size());
+		m_assert(shape.mesh.material_ids.size() * 3 <= shape.mesh.indices.size());
+		std::unordered_map<int, int> material_primitive_map;
+		for (size_t face_idx = 0; face_idx < shape.mesh.material_ids.size(); face_idx += 1) {
+			int material_id = shape.mesh.material_ids[face_idx];
+			int primitive_index = 0;
+			if (material_primitive_map.find(material_id) != material_primitive_map.end()) {
+				primitive_index = material_primitive_map[material_id];
+			}
+			else {
+				primitive p = {};
+				p.gpk_model_mesh_primitive.material_index = material_id;
+				primitives.push_back(p);
+				primitive_index = (int)primitives.size() - 1;
+				material_primitive_map.insert({ material_id, primitive_index });
+			}
+
+			primitive *primitive = &primitives[primitive_index];
+
+			tinyobj::index_t *idx = &shape.mesh.indices[face_idx * 3];
+			for (uint32 i = 0; i < 3; i += 1) {
+				tinyobj::real_t vx = attrib.vertices[3 * idx->vertex_index + 0];
+				tinyobj::real_t vy = attrib.vertices[3 * idx->vertex_index + 1];
+				tinyobj::real_t vz = attrib.vertices[3 * idx->vertex_index + 2];
+				tinyobj::real_t nx = attrib.normals[3 * idx->normal_index + 0];
+				tinyobj::real_t ny = attrib.normals[3 * idx->normal_index + 1];
+				tinyobj::real_t nz = attrib.normals[3 * idx->normal_index + 2];
+				tinyobj::real_t tx = attrib.texcoords[2 * idx->texcoord_index + 0];
+				tinyobj::real_t ty = attrib.texcoords[2 * idx->texcoord_index + 1];
+				tinyobj::real_t r = attrib.colors[3 * idx->vertex_index + 0];
+				tinyobj::real_t g = attrib.colors[3 * idx->vertex_index + 1];
+				tinyobj::real_t b = attrib.colors[3 * idx->vertex_index + 2];
+
+				gpk_model_vertex vert = {};
+				vert.position = { vx, vy, vz };
+				vert.color = { (uint8)roundf(r * 255.0f), (uint8)roundf(g * 255.0f), (uint8)roundf(b * 255.0f) };
+				vert.uv = { tx, ty };
+				vert.normal = { (int16)roundf(nx * 32767.0f), (int16)roundf(ny * 32767.0f), (int16)roundf(nz * 32767.0f), 0 };
+
+				primitive->vertices.push_back(vert);
+				idx += 1;
+			}
+		}
+	}
+
+	gpk_model_mesh.primitive_count = (uint32)primitives.size();
+
+	file_offset = round_up(file_offset + (uint32)primitives.size() * (uint32)sizeof(gpk_model_mesh_primitive), 16u);
+	for (size_t i = 0; i < primitives.size(); i += 1) {
+		primitive *primitive = &primitives[i];
+		primitive->gpk_model_mesh_primitive.vertex_count = (uint32)primitive->vertices.size();
+		primitive->gpk_model_mesh_primitive.vertices_offset = file_offset;
+		file_offset = round_up(file_offset + (uint32)primitive->vertices.size() * (uint32)sizeof(gpk_model_vertex), 16u);
+	}
+
+	std::unordered_map<std::string, int> texture_index_map;
+	std::vector<gpk_model_image> gpk_model_images;
+	std::vector<uint8 *> gpk_model_images_data;
+	for (auto &material : materials) {
+		if (!material.diffuse_texname.empty()) {
+			if (texture_index_map.find(material.diffuse_texname) == texture_index_map.end()) {
+				texture_index_map.insert({ material.diffuse_texname, (int)gpk_model_images.size()});
+
+				std::string file_name = obj_dir + material.diffuse_texname;
+				int width, height, comp;
+				stbi_uc *image_raw_data = stbi_load(file_name.c_str(), &width, &height, &comp, 4);
+				m_assert(image_raw_data);
+				uint8 *image_compressed_data = nullptr;
+				uint32 image_compressed_mipmap_count = 0;
+				uint32 image_compressed_size = 0;
+				nvtt::Format format = nvtt::Format_DXT1;
+				uint32 dxgi_format = DXGI_FORMAT_BC1_UNORM_SRGB;
+				if (width % 4 != 0 || height % 4 != 0) {
+					format = nvtt::Format_RGBA;
+					dxgi_format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+				}
+				else {
+					convert_rgba_image_to_bgra(image_raw_data, width, height);
+				}
+				gen_mips_and_compress_image(
+					image_raw_data, width, height, format,
+					&image_compressed_data, &image_compressed_mipmap_count, &image_compressed_size
+				);
+				gpk_model_image gpk_model_image = {};
+				gpk_model_image.width = width;
+				gpk_model_image.height = height;
+				gpk_model_image.mips = image_compressed_mipmap_count;
+				gpk_model_image.layer_count = 1;
+				gpk_model_image.size = image_compressed_size;
+				gpk_model_image.format = dxgi_format;
+				gpk_model_images.push_back(gpk_model_image);
+				gpk_model_images_data.push_back(image_compressed_data);
+			}
+		}
+	}
+	std::vector<gpk_model_material> gpk_model_materials(materials.size());
+	for (size_t i = 0; i < gpk_model_materials.size(); i += 1) {
+		tinyobj::material_t *material = &materials[i];
+		gpk_model_material *gpk_model_material = &gpk_model_materials[i];
+		if (!material->diffuse_texname.empty()) {
+			gpk_model_material->diffuse_image_index = texture_index_map[material->diffuse_texname];
+			gpk_model_material->diffuse_factor = { 1, 1, 1, 1 };
+		}
+		else {
+			gpk_model_material->diffuse_image_index = UINT32_MAX;
+			gpk_model_material->diffuse_factor = { material->diffuse[0], material->diffuse[1], material->diffuse[2], 1 };
+		}
+		gpk_model_material->roughness_image_index = UINT32_MAX;
+		gpk_model_material->roughness_factor = 1;
+		gpk_model_material->metallic_image_index = UINT32_MAX;
+		gpk_model_material->metallic_factor = 1;
+		gpk_model_material->normal_image_index = UINT32_MAX;
+	}
+	
+	gpk_model.material_count = (uint32)gpk_model_materials.size();
+	gpk_model.material_offset = file_offset;
+	file_offset = round_up(file_offset + (uint32)gpk_model_materials.size() * (uint32)sizeof(gpk_model_material), 16u);
+
+	gpk_model.image_count = (uint32)gpk_model_images.size();
+	gpk_model.image_offset = file_offset;
+	file_offset = round_up(file_offset + (uint32)gpk_model_images.size() * (uint32)sizeof(gpk_model_image), 16u);
+
+	for (size_t i = 0; i < gpk_model_images.size(); i += 1) {
+		gpk_model_images[i].data_offset = file_offset;
+		file_offset = round_up(file_offset + gpk_model_images[i].size, 16u);
+	}
+
+	file_mapping file_mapping = {};
+	m_assert(file_mapping_create(gpk_file.c_str(), file_offset, &file_mapping));
+	memcpy(file_mapping.ptr, &gpk_model, sizeof(gpk_model));
+	memcpy(file_mapping.ptr + gpk_model.scene_offset, &gpk_model_scene, sizeof(gpk_model_scene));
+	memcpy(file_mapping.ptr + gpk_model.node_offset, &gpk_model_node, sizeof(gpk_model_node));
+	memcpy(file_mapping.ptr + gpk_model.mesh_offset, &gpk_model_mesh, sizeof(gpk_model_mesh));
+	for (size_t i = 0; i < primitives.size(); i += 1) {
+		memcpy(file_mapping.ptr + gpk_model_mesh.primitive_offset + i * sizeof(gpk_model_mesh_primitive), &(primitives[i].gpk_model_mesh_primitive), sizeof(gpk_model_mesh_primitive));
+	}
+	for (size_t i = 0; i < primitives.size(); i += 1) {
+		memcpy(file_mapping.ptr + primitives[i].gpk_model_mesh_primitive.vertices_offset, primitives[i].vertices.data(), primitives[i].vertices.size() * sizeof(gpk_model_vertex));
+	}
+	memcpy(file_mapping.ptr + gpk_model.material_offset, gpk_model_materials.data(), gpk_model_materials.size() * sizeof(gpk_model_material));
+	memcpy(file_mapping.ptr + gpk_model.image_offset, gpk_model_images.data(), gpk_model_images.size() * sizeof(gpk_model_image));
+	for (size_t i = 0; i < gpk_model_images.size(); i += 1) {
+		gpk_model_image *image = &gpk_model_images[i];
+		uint8 *image_data = gpk_model_images_data[i];
+		memcpy(file_mapping.ptr + image->data_offset, image_data, image->size);
+	}
+
+	file_mapping_flush(file_mapping);
+	file_mapping_close(file_mapping);
+	printf("done importing obj: \"%s\" \n", obj_file.c_str());
+}
+
 struct import_json_schema {
 	bool force_import_all;
 	bool force_import_models;
@@ -1213,14 +1422,14 @@ void import_json(std::string json_file) {
 	std::string json_dir = std::string(json_drive_buf) + json_dir_buf;
 	for (auto &model : import.models) {
 		if (model.import || import.force_import_all || import.force_import_models) {
-			std::string cmdl_str = std::string("import.exe -gltf-to-gpk ") + json_dir + model.gltf_file + " " + json_dir + model.gpk_file;
+			std::string cmdl_str = std::string("import.exe -gltf ") + json_dir + model.gltf_file + " " + json_dir + model.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}
 	}
 	for (auto &skybox : import.skyboxes) {
 		if (skybox.import || import.force_import_all || import.force_import_skyboxes) {
-			std::string cmdl_str = std::string("import.exe -skybox-to-gpk ") + json_dir + skybox.dir + " " + json_dir + skybox.gpk_file;
+			std::string cmdl_str = std::string("import.exe -skybox ") + json_dir + skybox.dir + " " + json_dir + skybox.gpk_file;
 			create_import_process(cmdl_str);
 			job_count += 1;
 		}
@@ -1246,12 +1455,12 @@ int main(int argc, char **argv) {
 	}
 	else {
 		const char *mode_str = argv[1];
-		if (!strcmp(mode_str, "-gltf-to-gpk")) {
+		if (!strcmp(mode_str, "-gltf")) {
 			if (argc == 4) {
 				gltf_to_gpk(argv[2], argv[3]);
 			}
 			else {
-				printf("error: expect -gltf-to-gpk gltf_file gpk_file");
+				printf("error: expect -gltf gltf_file gpk_file");
 			}
 		}
 		else if (!strcmp(mode_str, "-gltf-to-vertices")) {
@@ -1262,12 +1471,20 @@ int main(int argc, char **argv) {
 				printf("error: expect -gltf-to-vertices gpk_file text_file");
 			}
 		}
-		else if (!strcmp(mode_str, "-skybox-to-gpk")) {
+		else if (!strcmp(mode_str, "-obj")) {
+			if (argc == 4) {
+				obj_to_gpk(argv[2], argv[3]);
+			}
+			else {
+				printf("error: expect -obj obj_file gpk_file");
+			}
+		}
+		else if (!strcmp(mode_str, "-skybox")) {
 			if (argc == 4) {
 				skybox_to_gpk(argv[2], argv[3]);
 			}
 			else {
-				printf("error: expect -skybox-to-gpk skybox_dir gpk_file");
+				printf("error: expect -skybox skybox_dir gpk_file");
 			}
 		}
 		else if (!strcmp(mode_str, "-import-json")) {

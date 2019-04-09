@@ -43,6 +43,13 @@ struct gpk_model_node {
 	uint32 child_count;
 };
 
+struct gpk_model_mesh {
+	char name[64];
+	uint32 skin_index;
+	uint32 primitive_offset;
+	uint32 primitive_count;
+};
+
 struct gpk_model_mesh_primitive {
 	uint32 material_index;
 	uint32 indices_offset;
@@ -51,22 +58,16 @@ struct gpk_model_mesh_primitive {
 	uint32 vertex_count;
 };
 
-struct gpk_model_mesh {
-	char name[64];
-	uint32 skin_index;
-	uint32 primitive_offset;
-	uint32 primitive_count;
-};
-
 struct gpk_model_vertex {
 	vec3 position;
+	u8vec4 color;
 	vec2 uv;
 	i16vec4 normal;
 	i16vec4 tangent;
 	u8vec4 joints;
 	u16vec4 weights;
 };
-static_assert(sizeof(gpk_model_vertex) == 12 + 8 + 8 + 8 + 4 + 8, "");
+static_assert(sizeof(gpk_model_vertex) == 12 + 4 + 8 + 8 + 8 + 4 + 8, "");
 
 struct gpk_model_skin {
 	char name[64];
