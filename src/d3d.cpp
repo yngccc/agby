@@ -186,10 +186,10 @@ void d3d12_init(d3d12 *d3d12, window *window) {
 
 	ID3D12Debug1 *debug_controller;
 	m_d3d_assert(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)));
-	debug_controller->EnableDebugLayer();
-	debug_controller->SetEnableGPUBasedValidation(true);
-	debug_controller->SetEnableSynchronizedCommandQueueValidation(true);
-	dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
+	//debug_controller->EnableDebugLayer();
+	//debug_controller->SetEnableGPUBasedValidation(true);
+	//debug_controller->SetEnableSynchronizedCommandQueueValidation(true);
+	//dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
 	debug_controller->Release();
 
 	m_d3d_assert(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&d3d12->dxgi_debug)));

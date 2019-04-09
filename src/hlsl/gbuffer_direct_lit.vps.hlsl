@@ -56,7 +56,11 @@ ps_output pixel_shader(vs_output vs_output) {
 				wi = normalize(l.position.xyz - position);
 			}
 			float visibility = light_visibility_textures.Sample(texture_sampler, float3(vs_output.texcoord, i));
+#if 0
 			lo += cook_torrance_brdf(wi, wo, normal, diffuse, roughness_metallic.x, roughness_metallic.y) * l.color.rgb * visibility;
+#else
+			lo += cook_torrance_brdf(wi, wo, normal, float3(0.8, 0.8, 0.8), 1, 0) * l.color.rgb * visibility; 
+#endif
 		}
 	}
 

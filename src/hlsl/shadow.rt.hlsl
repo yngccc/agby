@@ -20,8 +20,8 @@ float trace_direct_light(light l, float3 position, float3 normal) {
 		RayDesc ray;
 		ray.Origin = position;
 		ray.Direction = l.dir.xyz;
-		ray.TMin = 0.0001;
-		ray.TMax = 10000;
+		ray.TMin = 0.001;
+		ray.TMax = 1000;
 
 		ray_pay_load payload;
 		payload.visibility = 0;
@@ -39,7 +39,7 @@ float trace_sphere_light(light l, float3 position) {
 	RayDesc ray;
 	ray.Origin = position;
 	ray.Direction = normalize(l.position.xyz - position);
-	ray.TMin = 0.0001;
+	ray.TMin = 0.001;
 	ray.TMax = length(l.position.xyz - position);
 
 	ray_pay_load payload;

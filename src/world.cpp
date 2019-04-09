@@ -549,17 +549,14 @@ void world_init(world *world, d3d12 *d3d12) {
 		world->px_controller_manager = PxCreateControllerManager(*world->px_scene);
 		m_assert(world->px_controller_manager);
 	}
-	void world_reset(struct world*);
-	world_reset(world);
-}
+	{
+		world->player = {};
+		world->player.model_index = UINT32_MAX;
+		world->player.transform = transform_identity();
+		world->player.animation_index = UINT32_MAX;
 
-void world_reset(world *world) {
-	world->player = {};
-	world->player.model_index = UINT32_MAX;
-	world->player.transform = transform_identity();
-	world->player.animation_index = UINT32_MAX;
-
-	world->direct_lights.push_back(direct_light{ {0, 0, 0}, vec3_normalize({1, 1, 1}), {1, 1, 1} });
+		world->direct_lights.push_back(direct_light{ {0, 0, 0}, vec3_normalize({1, 1, 1}), {1, 1, 1} });
+	}
 }
 
 bool world_add_model(world *world, d3d12 *d3d12, const char *model_file, transform transform, collision collision) {
@@ -931,8 +928,6 @@ bool world_load_from_file(world *world, d3d12 *d3d12, const char *file, world_ed
 	if (!fb_world) {
 		return false;
 	}
-
-	world_reset(world);
 
 	if (editor_settings) {
 		const Vec3 *camera_position = fb_world->cameraPosition();
@@ -1557,10 +1552,11 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		d3d12->command_list->OMSetRenderTargets(m_countof(world->gbuffer_render_targets), world->gbuffer_render_target_cpu_descriptor_handles, false, &world->depth_target_cpu_descriptor_handle);
 		d3d12->command_list->SetGraphicsRootSignature(d3d12->gbuffer_root_signature);
 
-		float diffuse_clear_color[4] = { 0, 0, 0, 0 };
-		float roughness_metallic_clear_color[4] = { 0, 0, 0, 0 };
-		d3d12->command_list->ClearRenderTargetView(world->gbuffer_render_target_cpu_descriptor_handles[0], diffuse_clear_color, 0, nullptr);
-		d3d12->command_list->ClearRenderTargetView(world->gbuffer_render_target_cpu_descriptor_handles[3], roughness_metallic_clear_color, 0, nullptr);
+		float clear_color[4] = { 0, 0, 0, 0 };
+		d3d12->command_list->ClearRenderTargetView(world->gbuffer_render_target_cpu_descriptor_handles[0], clear_color, 0, nullptr);
+		d3d12->command_list->ClearRenderTargetView(world->gbuffer_render_target_cpu_descriptor_handles[1], clear_color, 0, nullptr);
+		d3d12->command_list->ClearRenderTargetView(world->gbuffer_render_target_cpu_descriptor_handles[2], clear_color, 0, nullptr);
+		d3d12->command_list->ClearRenderTargetView(world->gbuffer_render_target_cpu_descriptor_handles[3], clear_color, 0, nullptr);
 
 		struct world_constants {
 			XMMATRIX camera_view_proj_mat;

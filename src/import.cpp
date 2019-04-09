@@ -18,6 +18,9 @@
 #include <stb/stb_image.h>
 #include <stb/stb_image_write.h>
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tinyobj/tiny_obj_loader.h>
+
 #define TINYGLTF_IMPLEMENTATION
 #include <tinygltf/tiny_gltf.h>
 
