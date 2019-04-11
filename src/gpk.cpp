@@ -117,22 +117,17 @@ struct gpk_model_animation_key_frame {
 
 struct gpk_model_material {
 	char name[64];
-
 	uint32 diffuse_image_index;
-	uint32 diffuse_image_wrap_s;
-	uint32 diffuse_image_wrap_t;
 	vec4 diffuse_factor;
-
-	uint32 metallic_image_index;
-	uint32 roughness_image_index;
-	uint32 metallic_roughness_image_wrap_s;
-	uint32 metallic_roughness_image_wrap_t;
-	float metallic_factor;
-	float roughness_factor;
-
 	uint32 normal_image_index;
-	uint32 normal_image_wrap_s;
-	uint32 normal_image_wrap_t;
+	uint32 roughness_image_index;
+	float roughness_factor;
+	uint32 metallic_image_index;
+	float metallic_factor;
+	uint32 emissive_image_index;
+	vec3 emissive_factor;
+	float transparency;
+	float index_of_refraction;
 };
 
 struct gpk_model_image {

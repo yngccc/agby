@@ -29,22 +29,6 @@
 #include <stack>
 #include <unordered_map>
 
-uint32 tinygltf_wrap_to_d3d_wrap(int32 wrap) {
-	if (wrap == TINYGLTF_TEXTURE_WRAP_REPEAT) {
-		return D3D11_TEXTURE_ADDRESS_WRAP;
-	}
-	else if (wrap == TINYGLTF_TEXTURE_WRAP_MIRRORED_REPEAT) {
-		return D3D11_TEXTURE_ADDRESS_MIRROR;
-	}
-	else if (wrap == TINYGLTF_TEXTURE_WRAP_CLAMP_TO_EDGE) {
-		return D3D11_TEXTURE_ADDRESS_CLAMP;
-	}
-	else {
-		m_debug_assert(false);
-		return UINT32_MAX;
-	}
-};
-
 void rgba_to_bgra(uint8 *image_data, uint32 image_width, uint32 image_height) {
 	for (uint32 i = 0; i < image_width * image_height; i += 1) {
 		uint8 r = image_data[i * 4];
@@ -455,14 +439,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				m_assert(texture.source >= 0 && texture.source < gltf_model.images.size());
 				m_assert(image_remaps[texture.source].is_base_color);
 				gpk_material.diffuse_image_index = image_remaps[texture.source].index;
-				if (texture.sampler >= 0 && texture.sampler < gltf_model.samplers.size()) {
-					gpk_material.diffuse_image_wrap_s = tinygltf_wrap_to_d3d_wrap(gltf_model.samplers[texture.sampler].wrapS);
-					gpk_material.diffuse_image_wrap_t = tinygltf_wrap_to_d3d_wrap(gltf_model.samplers[texture.sampler].wrapT);
-				}
-				else {
-					gpk_material.diffuse_image_wrap_s = D3D11_TEXTURE_ADDRESS_WRAP;
-					gpk_material.diffuse_image_wrap_t = D3D11_TEXTURE_ADDRESS_WRAP;
-				}
 			}
 			else if (base_color_factor != material.values.end()) {
 				auto &color = base_color_factor->second.number_array;
@@ -477,14 +453,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				m_assert(image_remaps[texture.source].is_metallic_roughness);
 				gpk_material.metallic_image_index = image_remaps[texture.source].index;
 				gpk_material.roughness_image_index = image_remaps[texture.source].index + 1;
-				if (texture.sampler >= 0 && texture.sampler < gltf_model.samplers.size()) {
-					gpk_material.metallic_roughness_image_wrap_s = tinygltf_wrap_to_d3d_wrap(gltf_model.samplers[texture.sampler].wrapS);
-					gpk_material.metallic_roughness_image_wrap_t = tinygltf_wrap_to_d3d_wrap(gltf_model.samplers[texture.sampler].wrapT);
-				}
-				else {
-					gpk_material.metallic_roughness_image_wrap_s = D3D11_TEXTURE_ADDRESS_WRAP;
-					gpk_material.metallic_roughness_image_wrap_t = D3D11_TEXTURE_ADDRESS_WRAP;
-				}
 			}
 			else {
 				if (metallic_factor != material.values.end()) {
@@ -507,14 +475,6 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 				m_assert(texture.source >= 0 && texture.source < gltf_model.images.size());
 				m_assert(image_remaps[texture.source].is_normal);
 				gpk_material.normal_image_index = image_remaps[texture.source].index;
-				if (texture.sampler >= 0 && texture.sampler < gltf_model.samplers.size()) {
-					gpk_material.normal_image_wrap_s = tinygltf_wrap_to_d3d_wrap(gltf_model.samplers[texture.sampler].wrapS);
-					gpk_material.normal_image_wrap_t = tinygltf_wrap_to_d3d_wrap(gltf_model.samplers[texture.sampler].wrapT);
-				}
-				else {
-					gpk_material.normal_image_wrap_s = D3D11_TEXTURE_ADDRESS_WRAP;
-					gpk_material.normal_image_wrap_t = D3D11_TEXTURE_ADDRESS_WRAP;
-				}
 			}
 		}
 		current_offset = round_up(current_offset + gpk_model.material_count * (uint32)sizeof(struct gpk_model_material), 16u);
@@ -1198,7 +1158,7 @@ void obj_to_gpk(std::string obj_file, std::string gpk_file) {
 		m_assert(shape.mesh.num_face_vertices.size() == shape.mesh.material_ids.size());
 		m_assert(shape.mesh.material_ids.size() * 3 <= shape.mesh.indices.size());
 		std::unordered_map<int, int> material_primitive_map;
-		for (size_t face_idx = 0; face_idx < shape.mesh.material_ids.size(); face_idx += 1) {
+		for (size_t face_idx = 0; face_idx < shape.mesh.num_face_vertices.size(); face_idx += 1) {
 			int material_id = shape.mesh.material_ids[face_idx];
 			int primitive_index = 0;
 			if (material_primitive_map.find(material_id) != material_primitive_map.end()) {
@@ -1256,7 +1216,7 @@ void obj_to_gpk(std::string obj_file, std::string gpk_file) {
 	for (auto &material : materials) {
 		if (!material.diffuse_texname.empty()) {
 			if (texture_index_map.find(material.diffuse_texname) == texture_index_map.end()) {
-				texture_index_map.insert({ material.diffuse_texname, (int)gpk_model_images.size()});
+				texture_index_map.insert({ material.diffuse_texname, (int)gpk_model_images.size() });
 
 				std::string file_name = obj_dir + material.diffuse_texname;
 				int width, height, comp;
@@ -1272,7 +1232,7 @@ void obj_to_gpk(std::string obj_file, std::string gpk_file) {
 					dxgi_format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 				}
 				else {
-					convert_rgba_image_to_bgra(image_raw_data, width, height);
+					rgba_to_bgra(image_raw_data, width, height);
 				}
 				gen_mips_and_compress_image(
 					image_raw_data, width, height, format,
@@ -1302,13 +1262,30 @@ void obj_to_gpk(std::string obj_file, std::string gpk_file) {
 			gpk_model_material->diffuse_image_index = UINT32_MAX;
 			gpk_model_material->diffuse_factor = { material->diffuse[0], material->diffuse[1], material->diffuse[2], 1 };
 		}
-		gpk_model_material->roughness_image_index = UINT32_MAX;
-		gpk_model_material->roughness_factor = 1;
-		gpk_model_material->metallic_image_index = UINT32_MAX;
-		gpk_model_material->metallic_factor = 1;
 		gpk_model_material->normal_image_index = UINT32_MAX;
+		if (!material->roughness_texname.empty()) {
+			gpk_model_material->roughness_image_index = UINT32_MAX;
+			gpk_model_material->roughness_factor = 1;
+		}
+		else {
+			gpk_model_material->roughness_image_index = UINT32_MAX;
+			gpk_model_material->roughness_factor = material->roughness;
+		}
+		if (!material->metallic_texname.empty()) {
+			gpk_model_material->metallic_image_index = UINT32_MAX;
+			gpk_model_material->metallic_factor = 1;
+		}
+		else {
+			gpk_model_material->metallic_image_index = UINT32_MAX;
+			gpk_model_material->metallic_factor = material->metallic;
+		}
+		gpk_model_material->emissive_image_index = UINT32_MAX;
+		gpk_model_material->emissive_factor = { m_unpack3(material->emission) };
+		gpk_model_material->transparency = 1.0f - material->dissolve;
+		gpk_model_material->index_of_refraction = material->ior;
+		// printf("%s %f %f %f %f %f %f %f\n", material->diffuse_texname.c_str(), material->dissolve, m_unpack3(material->transmittance), m_unpack3(material->emission));
 	}
-	
+
 	gpk_model.material_count = (uint32)gpk_model_materials.size();
 	gpk_model.material_offset = file_offset;
 	file_offset = round_up(file_offset + (uint32)gpk_model_materials.size() * (uint32)sizeof(gpk_model_material), 16u);

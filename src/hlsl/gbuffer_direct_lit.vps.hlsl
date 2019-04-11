@@ -10,7 +10,8 @@ Texture2D<float3> diffuse_texture : register(t0);
 Texture2D<float3> position_texture : register(t1);
 Texture2D<float3> normal_texture : register(t2);
 Texture2D<float> roughness_metallic_texture : register(t3);
-Texture2DArray<float> light_visibility_textures : register(t4);
+Texture2D<float3> emissive_texture : register(t4);
+Texture2DArray<float> light_visibility_textures : register(t5);
 
 sampler texture_sampler : register(s0);
 
@@ -42,8 +43,9 @@ ps_output pixel_shader(vs_output vs_output) {
 	float3 position = position_texture.Sample(texture_sampler, vs_output.texcoord);
 	float3 normal = normal_texture.Sample(texture_sampler, vs_output.texcoord);
 	float2 roughness_metallic = roughness_metallic_texture.Sample(texture_sampler, vs_output.texcoord);
+	float3 emissive = emissive_texture.Sample(texture_sampler, vs_output.texcoord);
 
-	float3 lo = { 0, 0, 0 };
+	float3 lo = emissive;
 	for (uint i = 0; i < 4; i += 1) {
 		if (i < light_count) {
 			light l = lights[i];

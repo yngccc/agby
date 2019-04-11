@@ -350,7 +350,7 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 		params[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 		D3D12_DESCRIPTOR_RANGE range = {};
 		range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		range.NumDescriptors = 4;
+		range.NumDescriptors = 5;
 		range.BaseShaderRegister = 0;
 		range.OffsetInDescriptorsFromTableStart = 0;
 		params[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -407,11 +407,12 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 		pso_desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_GREATER;
 		pso_desc.InputLayout = { input_element_descs, m_countof(input_element_descs) };
 		pso_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		pso_desc.NumRenderTargets = 4;
+		pso_desc.NumRenderTargets = 5;
 		pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 		pso_desc.RTVFormats[1] = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		pso_desc.RTVFormats[2] = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		pso_desc.RTVFormats[3] = DXGI_FORMAT_R8G8_UNORM;
+		pso_desc.RTVFormats[4] = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		pso_desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 		pso_desc.SampleDesc.Count = 1;
 		m_d3d_assert(d3d12->device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&d3d12->gbuffer_pipeline_state)));
@@ -419,7 +420,7 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 	{
 		D3D12_DESCRIPTOR_RANGE desc_ranges[1] = {};
 		desc_ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		desc_ranges[0].NumDescriptors = 5;
+		desc_ranges[0].NumDescriptors = 6;
 		desc_ranges[0].BaseShaderRegister = 0;
 
 		D3D12_ROOT_PARAMETER params[2] = {};

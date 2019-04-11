@@ -1705,6 +1705,7 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 						if (open_file_dialog(file, sizeof(file))) {
 							if (world_add_model(world, d3d12, file, transform_identity(), collision{ collision_type_none })) {
 								editor->model_index = (uint32)world->models.size() - 1;
+								dxr_build_acceleration_buffers(world, d3d12);
 							}
 							else {
 								snprintf(editor->error_msg, sizeof(editor->error_msg), "Import model failed\nFile: %s", file);
@@ -2144,10 +2145,10 @@ int main(int argc, char **argv) {
 		m_assert(editor_load_world(editor, world, d3d12, world_file));
 	}
 
-	dxr_init_acceleration_buffers(world, d3d12);
 	dxr_init_pipeline_state(world, d3d12);
 	dxr_init_shader_resources(world, d3d12, window);
 	dxr_init_shader_table(world, d3d12);
+	dxr_build_acceleration_buffers(world, d3d12);
 
 	window_message_channel.window = window;
 	window_message_channel.d3d12 = d3d12;

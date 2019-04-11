@@ -11,7 +11,8 @@ cbuffer mesh_constants : register(b2) {
 };
 
 cbuffer primitive_constants : register(b3) {
-	float3 diffuse_factor;
+	float4 diffuse_factor;
+	float4 emissive_factor;
 	float metallic_factor;
 	float roughness_factor;
 };
@@ -20,6 +21,7 @@ Texture2D<float3> diffuse_texture : register(t0);
 Texture2D<float2> normal_texture : register(t1);
 Texture2D<float> roughness_texture : register(t2);
 Texture2D<float> metallic_texture : register(t3);
+Texture2D<float3> emissive_texture : register(t4);
 
 sampler texture_sampler : register(s0);
 
@@ -62,13 +64,15 @@ struct ps_output {
 	float4 position : SV_TARGET1;
 	float4 normal : SV_TARGET2;
 	float2 roughness_metallic : SV_TARGET3;
+	float4 emissive : SV_TARGET4;
 };
 
 ps_output pixel_shader(vs_output vs_output) {
-	float3 diffuse = diffuse_texture.Sample(texture_sampler, vs_output.texcoord) * diffuse_factor;
+	float3 diffuse = diffuse_texture.Sample(texture_sampler, vs_output.texcoord) * diffuse_factor.rgb;
 	float2 tnormal = normal_texture.Sample(texture_sampler, vs_output.texcoord) * 2 - 1;
 	float roughness = roughness_texture.Sample(texture_sampler, vs_output.texcoord) * roughness_factor;
 	float metallic = metallic_texture.Sample(texture_sampler, vs_output.texcoord) * metallic_factor;
+	float3 emissive = emissive_texture.Sample(texture_sampler, vs_output.texcoord) * emissive_factor.rgb;
 
 	// float3 normal = mul(vs_output.tbn_mat, float3(tnormal, sqrt(1 - tnormal.x * tnormal.x - tnormal.y * tnormal.y)));
 	float3 normal = normalize(vs_output.normal);
@@ -78,5 +82,6 @@ ps_output pixel_shader(vs_output vs_output) {
 	ps_output.position = float4(vs_output.position, 0);
 	ps_output.normal = float4(normal, 0);
 	ps_output.roughness_metallic = float2(roughness, metallic);
+	ps_output.emissive = float4(emissive, 0);
 	return ps_output;
 }
