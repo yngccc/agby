@@ -2144,6 +2144,12 @@ int main(int argc, char **argv) {
 		const char *world_file = argv[1];
 		m_assert(editor_load_world(editor, world, d3d12, world_file));
 	}
+	else {
+		const char *world_file = "assets\\worlds\\example.gpk";
+		if (file_exists(world_file)) {
+			m_assert(editor_load_world(editor, world, d3d12, world_file));
+		}
+	}
 
 	dxr_init_pipeline_state(world, d3d12);
 	dxr_init_shader_resources(world, d3d12, window);

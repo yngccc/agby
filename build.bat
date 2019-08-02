@@ -53,7 +53,7 @@ mkdir hlsl 2>nul
 del /Q hlsl\*
 forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T vs_5_1 /E vertex_shader /Fo ..\\..\\build\\hlsl\\@FNAME.vs.bytecode @PATH" >nul
 forfiles /p ..\src\hlsl /m *.vps.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T ps_5_1 /E pixel_shader /Fo ..\\..\\build\\hlsl\\@FNAME.ps.bytecode @PATH" >nul
-forfiles /p ..\src\hlsl /m *.cs.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_1 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH" >nul
+rem forfiles /p ..\src\hlsl /m *.cs.hlsl /c "cmd /c fxc.exe /nologo /Od /Zi /T cs_5_1 /E compute_shader /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH" >nul
 forfiles /p ..\src\hlsl /m *.rt.hlsl /c "cmd /c dxc.exe /nologo /Od /Zi /T lib_6_3 /Fo ..\\..\\build\\hlsl\\@FNAME.bytecode @PATH" >nul
 
 echo compiling ispc...
