@@ -62,7 +62,7 @@ echo compiling ispc...
 echo compiling flatbuffers...
 ..\vendor\bin\flatc.exe -c -o ..\src\flatbuffers ..\src\flatbuffers\world.fbs
 
-copy /y ..\vendor\lib\vc15_x64\*.dll >nul
+copy /y ..\vendor\lib\vs_2017_x64\*.dll >nul
 
 :skip_prebuild
 if "%prebuild_only%"=="true" goto :end_of_build

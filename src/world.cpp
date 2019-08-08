@@ -326,10 +326,16 @@ struct world {
 	std::vector<ID3D12Resource *>dxr_bottom_acceleration_buffers;
 	ID3D12Resource *dxr_top_acceleration_buffer;
 	ID3D12RootSignature *dxr_global_root_sig;
+
 	ID3D12StateObject *dxr_shadow_pipeline_state;
 	ID3D12Resource *dxr_shadow_shader_table;
 	uint32 dxr_shadow_shader_table_entry_size;
 	ID3D12Resource *dxr_shadow_output_texture_array;
+
+	ID3D12StateObject *dxr_ao_pipeline_state;
+	ID3D12Resource *dxr_ao_shader_table;
+	uint32 dxr_ao_shader_table_entry_size;
+
 	ID3D12DescriptorHeap *dxr_descriptor_heap; // shadow output textures | top acceleration buffer | gbuffer position texture | gbuffer normal texture
 
 	physx::PxFoundation *px_foundation;
@@ -584,7 +590,7 @@ bool world_add_model(world *world, d3d12 *d3d12, const char *model_file, transfo
 	}
 	auto close_model_file_mapping = scope_exit([&] {
 		file_mapping_close(model_file_mapping);
-	});
+		});
 
 	gpk_model *gpk_model = (struct gpk_model *)model_file_mapping.ptr;
 	if (strcmp(gpk_model->format_str, m_gpk_model_format_str)) {
@@ -758,7 +764,7 @@ bool world_add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 	}
 	auto close_terrain_file_mapping = scope_exit([&] {
 		file_mapping_close(terrain_file_mapping);
-	});
+		});
 
 	gpk_terrain *gpk_terrain = (struct gpk_terrain *)terrain_file_mapping.ptr;
 	if (strcmp(gpk_terrain->format_str, m_gpk_terrain_format_str)) {
@@ -835,7 +841,7 @@ bool world_add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 			terrain_vertex *vertices = new terrain_vertex[vertex_count]();
 			auto delete_vertices = scope_exit([&] {
 				delete[]vertices;
-			});
+				});
 			for (uint32 i = 0; i < vertex_y_count; i += 1) {
 				for (uint32 j = 0; j < vertex_x_count; j += 1) {
 					vertices[vertex_x_count * i + j] = { position, uv };
@@ -858,7 +864,7 @@ bool world_add_terrain(world *world, d3d *d3d, const char *terrain_file) {
 			uint32 *indices = new uint32[index_count]();
 			auto delete_indices = scope_exit([&] {
 				delete[]indices;
-			});
+				});
 			uint32 *index = indices;
 			for (uint32 i = 0; i < (vertex_y_count - 1); i += 1) {
 				uint32 n = vertex_x_count * i;
@@ -898,7 +904,7 @@ bool world_add_skybox(world *world, d3d *d3d, const char *skybox_file) {
 	}
 	auto close_skybyx_file_mapping = scope_exit([&] {
 		file_mapping_close(skybox_file_mapping);
-	});
+		});
 
 	gpk_skybox *gpk_skybox = (struct gpk_skybox *)skybox_file_mapping.ptr;
 	if (strcmp(gpk_skybox->format_str, m_gpk_skybox_format_str)) {
@@ -939,7 +945,7 @@ bool world_load_from_file(world *world, d3d12 *d3d12, const char *file, world_ed
 	}
 	auto close_file_mapping = scope_exit([&] {
 		file_mapping_close(file_mapping);
-	});
+		});
 
 	using namespace flatbuffers;
 
@@ -1208,126 +1214,136 @@ const wchar_t *dxr_miss_str = L"miss";
 const wchar_t *dxr_hit_group_str = L"hit_group";
 
 void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
-	hlsl_bytecode_file bytecode_file("hlsl/shadow.rt.bytecode");
-
-	D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
 	{
-		D3D12_EXPORT_DESC export_descs[3] = { {dxr_ray_gen_str}, {dxr_miss_str}, {dxr_any_hit_str} };
-		D3D12_DXIL_LIBRARY_DESC dxil_lib_desc = {};
-		dxil_lib_desc.DXILLibrary.pShaderBytecode = bytecode_file.bytecode.pShaderBytecode;
-		dxil_lib_desc.DXILLibrary.BytecodeLength = bytecode_file.bytecode.BytecodeLength;
-		dxil_lib_desc.NumExports = m_countof(export_descs);
-		dxil_lib_desc.pExports = export_descs;
-		state_subobjects[0].Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
-		state_subobjects[0].pDesc = &dxil_lib_desc;
+		hlsl_bytecode_file bytecode_file("hlsl/shadow.rt.bytecode");
+		D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
+		{
+			D3D12_EXPORT_DESC export_descs[3] = { {dxr_ray_gen_str}, {dxr_miss_str}, {dxr_any_hit_str} };
+			D3D12_DXIL_LIBRARY_DESC dxil_lib_desc = {};
+			dxil_lib_desc.DXILLibrary.pShaderBytecode = bytecode_file.bytecode.pShaderBytecode;
+			dxil_lib_desc.DXILLibrary.BytecodeLength = bytecode_file.bytecode.BytecodeLength;
+			dxil_lib_desc.NumExports = m_countof(export_descs);
+			dxil_lib_desc.pExports = export_descs;
+			state_subobjects[0].Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
+			state_subobjects[0].pDesc = &dxil_lib_desc;
+		}
+		{
+			D3D12_HIT_GROUP_DESC hit_group_desc = {};
+			hit_group_desc.HitGroupExport = dxr_hit_group_str;
+			hit_group_desc.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
+			hit_group_desc.AnyHitShaderImport = dxr_any_hit_str;
+			state_subobjects[1].Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
+			state_subobjects[1].pDesc = &hit_group_desc;
+		}
+		{
+			D3D12_DESCRIPTOR_RANGE ranges[2] = {};
+			ranges[0].BaseShaderRegister = 0;
+			ranges[0].NumDescriptors = 1;
+			ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+			ranges[0].OffsetInDescriptorsFromTableStart = 0;
+			ranges[1].BaseShaderRegister = 0;
+			ranges[1].NumDescriptors = 3;
+			ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+			ranges[1].OffsetInDescriptorsFromTableStart = 1;
+
+			D3D12_ROOT_PARAMETER root_params[1] = {};
+			root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			root_params[0].DescriptorTable.NumDescriptorRanges = m_countof(ranges);
+			root_params[0].DescriptorTable.pDescriptorRanges = ranges;
+
+			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
+			root_sig_desc.NumParameters = m_countof(root_params);
+			root_sig_desc.pParameters = root_params;
+			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+			ID3D12RootSignature *root_sig = nullptr;
+			ID3DBlob *sig_blob = nullptr;
+			ID3DBlob *error_blob = nullptr;
+			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
+			sig_blob->Release();
+			state_subobjects[2].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+			state_subobjects[2].pDesc = &root_sig;
+
+			const wchar_t *export_names[1] = { dxr_ray_gen_str };
+			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+			association.NumExports = m_countof(export_names);
+			association.pExports = export_names;
+			association.pSubobjectToAssociate = &state_subobjects[2];
+			state_subobjects[3].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+			state_subobjects[3].pDesc = &association;
+		}
+		{
+			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
+			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+			ID3D12RootSignature *root_sig_2 = nullptr;
+			ID3DBlob *sig_blob = nullptr;
+			ID3DBlob *error_blob = nullptr;
+			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig_2)));
+			sig_blob->Release();
+			state_subobjects[4].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+			state_subobjects[4].pDesc = &root_sig_2;
+
+			const wchar_t *export_names[2] = { dxr_miss_str, dxr_any_hit_str };
+			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+			association.NumExports = m_countof(export_names);
+			association.pExports = export_names;
+			association.pSubobjectToAssociate = &state_subobjects[4];
+			state_subobjects[5].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+			state_subobjects[5].pDesc = &association;
+		}
+		{
+			D3D12_RAYTRACING_SHADER_CONFIG shader_config = {};
+			shader_config.MaxPayloadSizeInBytes = 3 * sizeof(float);
+			shader_config.MaxAttributeSizeInBytes = 2 * sizeof(float);
+			state_subobjects[6].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
+			state_subobjects[6].pDesc = &shader_config;
+
+			const wchar_t *export_names[3] = { dxr_miss_str, dxr_any_hit_str, dxr_ray_gen_str };
+			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+			association.NumExports = m_countof(export_names);
+			association.pExports = export_names;
+			association.pSubobjectToAssociate = &state_subobjects[6];
+			state_subobjects[7].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+			state_subobjects[7].pDesc = &association;
+		}
+		{
+			D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_config = {};
+			pipeline_config.MaxTraceRecursionDepth = 2;
+			state_subobjects[8].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
+			state_subobjects[8].pDesc = &pipeline_config;
+		}
+		{
+			D3D12_ROOT_PARAMETER root_params[1] = {};
+			root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+			root_params[0].Descriptor.ShaderRegister = 0;
+			D3D12_ROOT_SIGNATURE_DESC global_root_sig_desc = {};
+			global_root_sig_desc.NumParameters = m_countof(root_params);
+			global_root_sig_desc.pParameters = root_params;
+			ID3DBlob *global_root_sig_blob = nullptr;
+			ID3DBlob *global_root_sig_error = nullptr;
+			m_d3d_assert(D3D12SerializeRootSignature(&global_root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &global_root_sig_blob, &global_root_sig_error));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, global_root_sig_blob->GetBufferPointer(), global_root_sig_blob->GetBufferSize(), IID_PPV_ARGS(&world->dxr_global_root_sig)));
+			global_root_sig_blob->Release();
+			state_subobjects[9].Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
+			state_subobjects[9].pDesc = &world->dxr_global_root_sig;
+		}
+		D3D12_STATE_OBJECT_DESC state_object_desc = {};
+		state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+		state_object_desc.NumSubobjects = m_countof(state_subobjects);
+		state_object_desc.pSubobjects = state_subobjects;
+
+		m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_shadow_pipeline_state)));
 	}
 	{
-		D3D12_HIT_GROUP_DESC hit_group_desc = {};
-		hit_group_desc.HitGroupExport = dxr_hit_group_str;
-		hit_group_desc.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
-		hit_group_desc.AnyHitShaderImport = dxr_any_hit_str;
-		state_subobjects[1].Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
-		state_subobjects[1].pDesc = &hit_group_desc;
+		//hlsl_bytecode_file bytecode_file("hlsl/ao.rt.bytecode");
+		//D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
+		//D3D12_STATE_OBJECT_DESC state_object_desc = {};
+		//state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+		//state_object_desc.NumSubobjects = m_countof(state_subobjects);
+		//state_object_desc.pSubobjects = state_subobjects;
+		//m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_ao_pipeline_state)));
 	}
-	{
-		D3D12_DESCRIPTOR_RANGE ranges[2] = {};
-		ranges[0].BaseShaderRegister = 0;
-		ranges[0].NumDescriptors = 1;
-		ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-		ranges[0].OffsetInDescriptorsFromTableStart = 0;
-		ranges[1].BaseShaderRegister = 0;
-		ranges[1].NumDescriptors = 3;
-		ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		ranges[1].OffsetInDescriptorsFromTableStart = 1;
-
-		D3D12_ROOT_PARAMETER root_params[1] = {};
-		root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		root_params[0].DescriptorTable.NumDescriptorRanges = m_countof(ranges);
-		root_params[0].DescriptorTable.pDescriptorRanges = ranges;
-
-		D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
-		root_sig_desc.NumParameters = m_countof(root_params);
-		root_sig_desc.pParameters = root_params;
-		root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-		ID3D12RootSignature *root_sig = nullptr;
-		ID3DBlob *sig_blob = nullptr;
-		ID3DBlob *error_blob = nullptr;
-		m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
-		m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
-		sig_blob->Release();
-		state_subobjects[2].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-		state_subobjects[2].pDesc = &root_sig;
-
-		const wchar_t *export_names[1] = { dxr_ray_gen_str };
-		D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-		association.NumExports = m_countof(export_names);
-		association.pExports = export_names;
-		association.pSubobjectToAssociate = &state_subobjects[2];
-		state_subobjects[3].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-		state_subobjects[3].pDesc = &association;
-	}
-	{
-		D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
-		root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-		ID3D12RootSignature *root_sig_2 = nullptr;
-		ID3DBlob *sig_blob = nullptr;
-		ID3DBlob *error_blob = nullptr;
-		m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
-		m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig_2)));
-		sig_blob->Release();
-		state_subobjects[4].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-		state_subobjects[4].pDesc = &root_sig_2;
-
-		const wchar_t *export_names[2] = { dxr_miss_str, dxr_any_hit_str };
-		D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-		association.NumExports = m_countof(export_names);
-		association.pExports = export_names;
-		association.pSubobjectToAssociate = &state_subobjects[4];
-		state_subobjects[5].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-		state_subobjects[5].pDesc = &association;
-	}
-	{
-		D3D12_RAYTRACING_SHADER_CONFIG shader_config = {};
-		shader_config.MaxPayloadSizeInBytes = 3 * sizeof(float);
-		shader_config.MaxAttributeSizeInBytes = 2 * sizeof(float);
-		state_subobjects[6].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
-		state_subobjects[6].pDesc = &shader_config;
-
-		const wchar_t *export_names[3] = { dxr_miss_str, dxr_any_hit_str, dxr_ray_gen_str };
-		D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-		association.NumExports = m_countof(export_names);
-		association.pExports = export_names;
-		association.pSubobjectToAssociate = &state_subobjects[6];
-		state_subobjects[7].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-		state_subobjects[7].pDesc = &association;
-	}
-	{
-		D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_config = {};
-		pipeline_config.MaxTraceRecursionDepth = 2;
-		state_subobjects[8].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
-		state_subobjects[8].pDesc = &pipeline_config;
-	}
-	{
-		D3D12_ROOT_PARAMETER root_params[1] = {};
-		root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-		root_params[0].Descriptor.ShaderRegister = 0;
-		D3D12_ROOT_SIGNATURE_DESC global_root_sig_desc = {};
-		global_root_sig_desc.NumParameters = m_countof(root_params);
-		global_root_sig_desc.pParameters = root_params;
-		ID3DBlob *global_root_sig_blob = nullptr;
-		ID3DBlob *global_root_sig_error = nullptr;
-		m_d3d_assert(D3D12SerializeRootSignature(&global_root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &global_root_sig_blob, &global_root_sig_error));
-		m_d3d_assert(d3d12->device->CreateRootSignature(0, global_root_sig_blob->GetBufferPointer(), global_root_sig_blob->GetBufferSize(), IID_PPV_ARGS(&world->dxr_global_root_sig)));
-		global_root_sig_blob->Release();
-		state_subobjects[9].Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
-		state_subobjects[9].pDesc = &world->dxr_global_root_sig;
-	}
-	D3D12_STATE_OBJECT_DESC state_object_desc = {};
-	state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
-	state_object_desc.NumSubobjects = m_countof(state_subobjects);
-	state_object_desc.pSubobjects = state_subobjects;
-
-	m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_shadow_pipeline_state)));
 }
 
 void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {

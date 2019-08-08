@@ -22,7 +22,7 @@
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{C5BD4379-FEF5-4364-860D-CD11795ED00D}</ProjectGuid>
     <RootNamespace>editor</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.18362.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -72,11 +72,11 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
     <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\physx;$(IncludePath)</IncludePath>
-    <LibraryPath>$(SolutionDir)..\..\vendor\lib\vc15_x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(SolutionDir)..\..\vendor\lib\vs_2017_x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(SolutionDir)..\..\vendor\include;$(SolutionDir)..\..\vendor\include\physx;$(IncludePath)</IncludePath>
-    <LibraryPath>$(SolutionDir)..\..\vendor\lib\vc15_x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(SolutionDir)..\..\vendor\lib\vs_2017_x64;$(LibraryPath)</LibraryPath>
     <OutDir>$(SolutionDir)..\..\build\</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

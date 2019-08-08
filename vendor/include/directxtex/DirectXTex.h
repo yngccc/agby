@@ -20,17 +20,16 @@
 #if !defined(__d3d11_h__) && !defined(__d3d11_x_h__) && !defined(__d3d12_h__) && !defined(__d3d12_x_h__)
 #if defined(_XBOX_ONE) && defined(_TITLE)
 #include <d3d11_x.h>
-#define DCOMMON_H_INCLUDED
 #else
 #include <d3d11_1.h>
 #endif
 #endif
 
-#include <directxmath.h>
+#include <DirectXMath.h>
 
-#include <ocidl.h>
+#include <OCIdl.h>
 
-#define DIRECTX_TEX_VERSION 161
+#define DIRECTX_TEX_VERSION 162
 
 struct IWICImagingFactory;
 struct IWICMetadataQueryReader;
@@ -132,7 +131,7 @@ namespace DirectX
             // Helper for miscFlags
 
         bool __cdecl IsPMAlpha() const { return ((miscFlags2 & TEX_MISC2_ALPHA_MODE_MASK) == TEX_ALPHA_MODE_PREMULTIPLIED) != 0; }
-        void __cdecl SetAlphaMode(TEX_ALPHA_MODE mode) { miscFlags2 = (miscFlags2 & ~TEX_MISC2_ALPHA_MODE_MASK) | static_cast<uint32_t>(mode); }
+        void __cdecl SetAlphaMode(TEX_ALPHA_MODE mode) { miscFlags2 = (miscFlags2 & ~static_cast<uint32_t>(TEX_MISC2_ALPHA_MODE_MASK)) | static_cast<uint32_t>(mode); }
         TEX_ALPHA_MODE __cdecl GetAlphaMode() const { return static_cast<TEX_ALPHA_MODE>(miscFlags2 & TEX_MISC2_ALPHA_MODE_MASK); }
             // Helpers for miscFlags2
 

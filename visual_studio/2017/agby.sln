@@ -30,6 +30,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ray_tracer", "ray_tracer\ra
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hlsl", "hlsl", "{E1246798-C815-40CF-8759-5F67D164A3D0}"
 	ProjectSection(SolutionItems) = preProject
+		..\..\src\hlsl\ao.rt.hlsl = ..\..\src\hlsl\ao.rt.hlsl
 		..\..\src\hlsl\blit_to_swap_chain.vps.hlsl = ..\..\src\hlsl\blit_to_swap_chain.vps.hlsl
 		..\..\src\hlsl\common.h = ..\..\src\hlsl\common.h
 		..\..\src\hlsl\gbuffer.vps.hlsl = ..\..\src\hlsl\gbuffer.vps.hlsl
