@@ -1,10 +1,10 @@
 #include "common.h"
 
-RWTexture2DArray<float> output_textures : register(u0);
-
 RaytracingAccelerationStructure scene : register(t0);
 Texture2D<float3> position_texture : register(t1);
 Texture2D<float3> normal_texture : register(t2);
+
+RWTexture2DArray<float> output_textures : register(u0);
 
 cbuffer constants : register(b0) {
 	light lights[4];

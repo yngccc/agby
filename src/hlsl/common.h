@@ -57,3 +57,19 @@ float3 cook_torrance_brdf(float3 wi, float3 wo, float3 normal, float3 diffuse, f
 
 	return (kd * fd + fs) * n_dot_wi;
 }
+
+float rand_xorshift(inout uint rng_state) {
+	rng_state ^= (rng_state << 13);
+	rng_state ^= (rng_state >> 17);
+	rng_state ^= (rng_state << 5);
+	return float(rng_state) * (1.0 / 4294967296.0);
+}
+
+uint wang_hash(uint seed) {
+	seed = (seed ^ 61) ^ (seed >> 16);
+	seed *= 9;
+	seed = seed ^ (seed >> 4);
+	seed *= 0x27d4eb2d;
+	seed = seed ^ (seed >> 15);
+	return seed;
+}

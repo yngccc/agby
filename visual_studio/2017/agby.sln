@@ -4,29 +4,14 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 15.0.27130.2020
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "import", "import\import.vcxproj", "{671B707A-E1DA-4859-8E8B-34F984E53BFA}"
-	ProjectSection(ProjectDependencies) = postProject
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C} = {5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test\test.vcxproj", "{D9B845C7-F214-4B0F-92B2-DD31197901B4}"
-	ProjectSection(ProjectDependencies) = postProject
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C} = {5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "editor", "editor\editor.vcxproj", "{C5BD4379-FEF5-4364-860D-CD11795ED00D}"
-	ProjectSection(ProjectDependencies) = postProject
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C} = {5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "game", "game\game.vcxproj", "{00FE37CB-EBED-4F22-B012-14BA1C7A9E3F}"
-	ProjectSection(ProjectDependencies) = postProject
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C} = {5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}
-	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ray_tracer", "ray_tracer\ray_tracer.vcxproj", "{245F7607-7822-47A7-9E82-C61BA4E072C7}"
-	ProjectSection(ProjectDependencies) = postProject
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C} = {5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}
-	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hlsl", "hlsl", "{E1246798-C815-40CF-8759-5F67D164A3D0}"
 	ProjectSection(SolutionItems) = preProject
@@ -47,7 +32,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "miscs", "miscs", "{CCCD23EF
 		..\..\src\flatbuffers\world.fbs = ..\..\src\flatbuffers\world.fbs
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "prebuild", "prebuild\prebuild.vcxproj", "{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "prebuild", "prebuild\prebuild.vcxproj", "{902C5376-58B2-41B6-BBAE-22C633800532}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -95,14 +80,14 @@ Global
 		{245F7607-7822-47A7-9E82-C61BA4E072C7}.Release|x64.Build.0 = Release|x64
 		{245F7607-7822-47A7-9E82-C61BA4E072C7}.Release|x86.ActiveCfg = Release|Win32
 		{245F7607-7822-47A7-9E82-C61BA4E072C7}.Release|x86.Build.0 = Release|Win32
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Debug|x64.ActiveCfg = Debug|x64
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Debug|x64.Build.0 = Debug|x64
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Debug|x86.ActiveCfg = Debug|Win32
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Debug|x86.Build.0 = Debug|Win32
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Release|x64.ActiveCfg = Release|x64
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Release|x64.Build.0 = Release|x64
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Release|x86.ActiveCfg = Release|Win32
-		{5F807F9C-8CB8-4F0C-924E-33A7B1E88E9C}.Release|x86.Build.0 = Release|Win32
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Debug|x64.ActiveCfg = Debug|x64
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Debug|x64.Build.0 = Debug|x64
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Debug|x86.ActiveCfg = Debug|Win32
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Debug|x86.Build.0 = Debug|Win32
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Release|x64.ActiveCfg = Release|x64
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Release|x64.Build.0 = Release|x64
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Release|x86.ActiveCfg = Release|Win32
+		{902C5376-58B2-41B6-BBAE-22C633800532}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

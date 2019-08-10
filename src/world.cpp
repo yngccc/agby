@@ -325,18 +325,21 @@ struct world {
 
 	std::vector<ID3D12Resource *>dxr_bottom_acceleration_buffers;
 	ID3D12Resource *dxr_top_acceleration_buffer;
-	ID3D12RootSignature *dxr_global_root_sig;
 
+	ID3D12RootSignature *dxr_shadow_global_root_sig;
 	ID3D12StateObject *dxr_shadow_pipeline_state;
 	ID3D12Resource *dxr_shadow_shader_table;
 	uint32 dxr_shadow_shader_table_entry_size;
 	ID3D12Resource *dxr_shadow_output_texture_array;
 
+	ID3D12RootSignature *dxr_ao_global_root_sig;
 	ID3D12StateObject *dxr_ao_pipeline_state;
 	ID3D12Resource *dxr_ao_shader_table;
 	uint32 dxr_ao_shader_table_entry_size;
+	ID3D12Resource *dxr_ao_output_texture;
 
-	ID3D12DescriptorHeap *dxr_descriptor_heap; // shadow output textures | top acceleration buffer | gbuffer position texture | gbuffer normal texture
+	// top acceleration buffer | gbuffer position texture | gbuffer normal texture | shadow output textures | ao output texture
+	ID3D12DescriptorHeap *dxr_descriptor_heap;
 
 	physx::PxFoundation *px_foundation;
 	physx::PxPvd *px_pvd;
@@ -1237,14 +1240,12 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		}
 		{
 			D3D12_DESCRIPTOR_RANGE ranges[2] = {};
-			ranges[0].BaseShaderRegister = 0;
-			ranges[0].NumDescriptors = 1;
-			ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-			ranges[0].OffsetInDescriptorsFromTableStart = 0;
-			ranges[1].BaseShaderRegister = 0;
 			ranges[1].NumDescriptors = 3;
 			ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-			ranges[1].OffsetInDescriptorsFromTableStart = 1;
+			ranges[1].OffsetInDescriptorsFromTableStart = 0;
+			ranges[0].NumDescriptors = 1;
+			ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+			ranges[0].OffsetInDescriptorsFromTableStart = 3;
 
 			D3D12_ROOT_PARAMETER root_params[1] = {};
 			root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -1275,14 +1276,14 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		{
 			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
 			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-			ID3D12RootSignature *root_sig_2 = nullptr;
+			ID3D12RootSignature *root_sig = nullptr;
 			ID3DBlob *sig_blob = nullptr;
 			ID3DBlob *error_blob = nullptr;
 			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig_2)));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
 			sig_blob->Release();
 			state_subobjects[4].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-			state_subobjects[4].pDesc = &root_sig_2;
+			state_subobjects[4].pDesc = &root_sig;
 
 			const wchar_t *export_names[2] = { dxr_miss_str, dxr_any_hit_str };
 			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
@@ -1294,7 +1295,7 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		}
 		{
 			D3D12_RAYTRACING_SHADER_CONFIG shader_config = {};
-			shader_config.MaxPayloadSizeInBytes = 3 * sizeof(float);
+			shader_config.MaxPayloadSizeInBytes = sizeof(float);
 			shader_config.MaxAttributeSizeInBytes = 2 * sizeof(float);
 			state_subobjects[6].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
 			state_subobjects[6].pDesc = &shader_config;
@@ -1309,7 +1310,7 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 		}
 		{
 			D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_config = {};
-			pipeline_config.MaxTraceRecursionDepth = 2;
+			pipeline_config.MaxTraceRecursionDepth = 1;
 			state_subobjects[8].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
 			state_subobjects[8].pDesc = &pipeline_config;
 		}
@@ -1323,26 +1324,129 @@ void dxr_init_pipeline_state(world *world, d3d12 *d3d12) {
 			ID3DBlob *global_root_sig_blob = nullptr;
 			ID3DBlob *global_root_sig_error = nullptr;
 			m_d3d_assert(D3D12SerializeRootSignature(&global_root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &global_root_sig_blob, &global_root_sig_error));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, global_root_sig_blob->GetBufferPointer(), global_root_sig_blob->GetBufferSize(), IID_PPV_ARGS(&world->dxr_global_root_sig)));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, global_root_sig_blob->GetBufferPointer(), global_root_sig_blob->GetBufferSize(), IID_PPV_ARGS(&world->dxr_shadow_global_root_sig)));
 			global_root_sig_blob->Release();
 			state_subobjects[9].Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
-			state_subobjects[9].pDesc = &world->dxr_global_root_sig;
+			state_subobjects[9].pDesc = &world->dxr_shadow_global_root_sig;
 		}
 		D3D12_STATE_OBJECT_DESC state_object_desc = {};
 		state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
 		state_object_desc.NumSubobjects = m_countof(state_subobjects);
 		state_object_desc.pSubobjects = state_subobjects;
-
 		m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_shadow_pipeline_state)));
 	}
 	{
-		//hlsl_bytecode_file bytecode_file("hlsl/ao.rt.bytecode");
-		//D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
-		//D3D12_STATE_OBJECT_DESC state_object_desc = {};
-		//state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
-		//state_object_desc.NumSubobjects = m_countof(state_subobjects);
-		//state_object_desc.pSubobjects = state_subobjects;
-		//m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_ao_pipeline_state)));
+		hlsl_bytecode_file bytecode_file("hlsl/ao.rt.bytecode");
+		D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
+		{
+			D3D12_EXPORT_DESC export_descs[3] = { {dxr_ray_gen_str}, {dxr_miss_str}, {dxr_any_hit_str} };
+			D3D12_DXIL_LIBRARY_DESC dxil_lib_desc = {};
+			dxil_lib_desc.DXILLibrary.pShaderBytecode = bytecode_file.bytecode.pShaderBytecode;
+			dxil_lib_desc.DXILLibrary.BytecodeLength = bytecode_file.bytecode.BytecodeLength;
+			dxil_lib_desc.NumExports = m_countof(export_descs);
+			dxil_lib_desc.pExports = export_descs;
+			state_subobjects[0].Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
+			state_subobjects[0].pDesc = &dxil_lib_desc;
+		}
+		{
+			D3D12_HIT_GROUP_DESC hit_group_desc = {};
+			hit_group_desc.HitGroupExport = dxr_hit_group_str;
+			hit_group_desc.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
+			hit_group_desc.AnyHitShaderImport = dxr_any_hit_str;
+			state_subobjects[1].Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
+			state_subobjects[1].pDesc = &hit_group_desc;
+		}
+		{
+			D3D12_DESCRIPTOR_RANGE ranges[2] = {};
+			ranges[1].NumDescriptors = 3;
+			ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+			ranges[1].OffsetInDescriptorsFromTableStart = 0;
+			ranges[0].NumDescriptors = 1;
+			ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+			ranges[0].OffsetInDescriptorsFromTableStart = 4;
+
+			D3D12_ROOT_PARAMETER root_params[1] = {};
+			root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+			root_params[0].DescriptorTable.NumDescriptorRanges = m_countof(ranges);
+			root_params[0].DescriptorTable.pDescriptorRanges = ranges;
+
+			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
+			root_sig_desc.NumParameters = m_countof(root_params);
+			root_sig_desc.pParameters = root_params;
+			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+			ID3D12RootSignature *root_sig = nullptr;
+			ID3DBlob *sig_blob = nullptr;
+			ID3DBlob *error_blob = nullptr;
+			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
+			sig_blob->Release();
+			state_subobjects[2].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+			state_subobjects[2].pDesc = &root_sig;
+
+			const wchar_t *export_names[1] = { dxr_ray_gen_str };
+			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+			association.NumExports = m_countof(export_names);
+			association.pExports = export_names;
+			association.pSubobjectToAssociate = &state_subobjects[2];
+			state_subobjects[3].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+			state_subobjects[3].pDesc = &association;
+		}
+		{
+			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
+			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+			ID3D12RootSignature *root_sig = nullptr;
+			ID3DBlob *sig_blob = nullptr;
+			ID3DBlob *error_blob = nullptr;
+			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
+			sig_blob->Release();
+			state_subobjects[4].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+			state_subobjects[4].pDesc = &root_sig;
+
+			const wchar_t *export_names[2] = { dxr_miss_str, dxr_any_hit_str };
+			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+			association.NumExports = m_countof(export_names);
+			association.pExports = export_names;
+			association.pSubobjectToAssociate = &state_subobjects[4];
+			state_subobjects[5].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+			state_subobjects[5].pDesc = &association;
+		}
+		{
+			D3D12_RAYTRACING_SHADER_CONFIG shader_config = {};
+			shader_config.MaxPayloadSizeInBytes = sizeof(float);
+			shader_config.MaxAttributeSizeInBytes = 2 * sizeof(float);
+			state_subobjects[6].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
+			state_subobjects[6].pDesc = &shader_config;
+
+			const wchar_t *export_names[3] = { dxr_miss_str, dxr_any_hit_str, dxr_ray_gen_str };
+			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
+			association.NumExports = m_countof(export_names);
+			association.pExports = export_names;
+			association.pSubobjectToAssociate = &state_subobjects[6];
+			state_subobjects[7].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+			state_subobjects[7].pDesc = &association;
+		}
+		{
+			D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_config = {};
+			pipeline_config.MaxTraceRecursionDepth = 1;
+			state_subobjects[8].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
+			state_subobjects[8].pDesc = &pipeline_config;
+		}
+		{
+			D3D12_ROOT_SIGNATURE_DESC global_root_sig_desc = {};
+			ID3DBlob *global_root_sig_blob = nullptr;
+			ID3DBlob *global_root_sig_error = nullptr;
+			m_d3d_assert(D3D12SerializeRootSignature(&global_root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &global_root_sig_blob, &global_root_sig_error));
+			m_d3d_assert(d3d12->device->CreateRootSignature(0, global_root_sig_blob->GetBufferPointer(), global_root_sig_blob->GetBufferSize(), IID_PPV_ARGS(&world->dxr_ao_global_root_sig)));
+			global_root_sig_blob->Release();
+			state_subobjects[9].Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
+			state_subobjects[9].pDesc = &world->dxr_ao_global_root_sig;
+		}
+		D3D12_STATE_OBJECT_DESC state_object_desc = {};
+		state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+		state_object_desc.NumSubobjects = m_countof(state_subobjects);
+		state_object_desc.pSubobjects = state_subobjects;
+		m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_ao_pipeline_state)));
 	}
 }
 
@@ -1353,41 +1457,67 @@ void dxr_init_shader_resources(world *world, d3d12 *d3d12, window *window) {
 	world->dxr_shadow_output_texture_array = d3d12_create_texture_2d(d3d12, window->width, window->height, 4, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	world->dxr_shadow_output_texture_array->SetName(L"dxr_shadow_output_texture_array");
 
+	world->dxr_ao_output_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	world->dxr_ao_output_texture->SetName(L"dxr_ao_output_texture");
+
 	D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
 	descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	descriptor_heap_desc.NumDescriptors = 8;
+	descriptor_heap_desc.NumDescriptors = 16;
 	descriptor_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	m_d3d_assert(d3d12->device->CreateDescriptorHeap(&descriptor_heap_desc, IID_PPV_ARGS(&world->dxr_descriptor_heap)));
 
 	D3D12_CPU_DESCRIPTOR_HANDLE dxr_cpu_descriptor_handle = world->dxr_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
 	uint32 dxr_cpu_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
+	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
+
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
 	uav_desc.Format = DXGI_FORMAT_R8_UNORM;
 	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
 	uav_desc.Texture2DArray.ArraySize = 4;
-	d3d12->device->CreateUnorderedAccessView(world->dxr_shadow_output_texture_array, nullptr, &uav_desc, dxr_cpu_descriptor_handle);
-
-	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
-	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
+	d3d12->device->CreateUnorderedAccessView(world->dxr_shadow_output_texture_array, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
+	uav_desc.Format = DXGI_FORMAT_R8_UNORM;
+	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+	uav_desc.Texture2DArray.ArraySize = 1;
+	d3d12->device->CreateUnorderedAccessView(world->dxr_ao_output_texture, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 4 * dxr_cpu_descriptor_handle_size });
 }
 
 void dxr_init_shader_table(world *world, d3d12 *d3d12) {
-	world->dxr_shadow_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
-	world->dxr_shadow_shader_table_entry_size = round_up(world->dxr_shadow_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+	{
+		world->dxr_shadow_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
+		world->dxr_shadow_shader_table_entry_size = round_up(world->dxr_shadow_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 
-	world->dxr_shadow_shader_table = d3d12_create_buffer(d3d12, world->dxr_shadow_shader_table_entry_size * 3, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		world->dxr_shadow_shader_table = d3d12_create_buffer(d3d12, world->dxr_shadow_shader_table_entry_size * 3, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
-	uint8 *shader_table_ptr = nullptr;
-	m_d3d_assert(world->dxr_shadow_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
-	ID3D12StateObjectProperties *state_object_properties = nullptr;
-	world->dxr_shadow_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
-	memcpy(shader_table_ptr, state_object_properties->GetShaderIdentifier(dxr_ray_gen_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	uint64 gpu_descriptor_handle = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
-	*(uint64 *)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = gpu_descriptor_handle;
-	memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	world->dxr_shadow_shader_table->Unmap(0, nullptr);
+		uint8 *shader_table_ptr = nullptr;
+		m_d3d_assert(world->dxr_shadow_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
+		ID3D12StateObjectProperties *state_object_properties = nullptr;
+		world->dxr_shadow_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
+		memcpy(shader_table_ptr, state_object_properties->GetShaderIdentifier(dxr_ray_gen_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+		uint64 gpu_descriptor_handle = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
+		*(uint64 *)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = gpu_descriptor_handle;
+		memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+		memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+		world->dxr_shadow_shader_table->Unmap(0, nullptr);
+	}
+	{
+		world->dxr_ao_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
+		world->dxr_ao_shader_table_entry_size = round_up(world->dxr_ao_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+
+		world->dxr_ao_shader_table = d3d12_create_buffer(d3d12, world->dxr_ao_shader_table_entry_size * 3, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+		uint8 *shader_table_ptr = nullptr;
+		m_d3d_assert(world->dxr_ao_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
+		ID3D12StateObjectProperties *state_object_properties = nullptr;
+		world->dxr_ao_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
+		memcpy(shader_table_ptr, state_object_properties->GetShaderIdentifier(dxr_ray_gen_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+		uint64 gpu_descriptor_handle = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
+		*(uint64 *)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = gpu_descriptor_handle;
+		memcpy(shader_table_ptr + world->dxr_ao_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+		memcpy(shader_table_ptr + world->dxr_ao_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+		world->dxr_ao_shader_table->Unmap(0, nullptr);
+	}
 }
 
 void dxr_build_acceleration_buffers(world *world, d3d12 *d3d12) {
@@ -1551,7 +1681,7 @@ void dxr_build_acceleration_buffers(world *world, d3d12 *d3d12) {
 		srv_desc.RaytracingAccelerationStructure.Location = world->dxr_top_acceleration_buffer->GetGPUVirtualAddress();
 		D3D12_CPU_DESCRIPTOR_HANDLE dxr_cpu_descriptor_handle = world->dxr_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
 		uint32 dxr_cpu_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + dxr_cpu_descriptor_handle_size });
+		d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + dxr_cpu_descriptor_handle_size * 0 });
 	}
 }
 
@@ -1769,7 +1899,7 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 
 		d3d12->command_list->SetPipelineState1(world->dxr_shadow_pipeline_state);
 		d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
-		d3d12->command_list->SetComputeRootSignature(world->dxr_global_root_sig);
+		d3d12->command_list->SetComputeRootSignature(world->dxr_shadow_global_root_sig);
 
 		uint32 constants_offset = 0;
 		frame_constants_buffer_append(&lights_info, sizeof(lights_info), &constants_offset);
@@ -1789,6 +1919,40 @@ void world_render_commands(world *world, d3d12 *d3d12, world_render_params *para
 		rays_desc.HitGroupTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_shadow_shader_table_entry_size;
 		rays_desc.HitGroupTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
 		rays_desc.HitGroupTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+
+		d3d12->command_list->DispatchRays(&rays_desc);
+
+		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		d3d12->command_list->ResourceBarrier(1, &barrier);
+	}
+	if (world->dxr_top_acceleration_buffer) {
+		D3D12_RESOURCE_BARRIER barrier = {};
+		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		barrier.Transition.pResource = world->dxr_ao_output_texture;
+		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		d3d12->command_list->ResourceBarrier(1, &barrier);
+
+		d3d12->command_list->SetPipelineState1(world->dxr_ao_pipeline_state);
+		d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
+		d3d12->command_list->SetComputeRootSignature(world->dxr_ao_global_root_sig);
+
+		D3D12_DISPATCH_RAYS_DESC rays_desc = {};
+		DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
+		m_d3d_assert(d3d12->swap_chain->GetDesc(&swap_chain_desc));
+		rays_desc.Width = swap_chain_desc.BufferDesc.Width;
+		rays_desc.Height = swap_chain_desc.BufferDesc.Height;
+		rays_desc.Depth = 1;
+		rays_desc.RayGenerationShaderRecord.StartAddress = world->dxr_ao_shader_table->GetGPUVirtualAddress();
+		rays_desc.RayGenerationShaderRecord.SizeInBytes = world->dxr_ao_shader_table_entry_size;
+		rays_desc.MissShaderTable.StartAddress = world->dxr_ao_shader_table->GetGPUVirtualAddress() + world->dxr_ao_shader_table_entry_size;
+		rays_desc.MissShaderTable.StrideInBytes = world->dxr_ao_shader_table_entry_size;
+		rays_desc.MissShaderTable.SizeInBytes = world->dxr_ao_shader_table_entry_size;
+		rays_desc.HitGroupTable.StartAddress = world->dxr_ao_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_ao_shader_table_entry_size;
+		rays_desc.HitGroupTable.StrideInBytes = world->dxr_ao_shader_table_entry_size;
+		rays_desc.HitGroupTable.SizeInBytes = world->dxr_ao_shader_table_entry_size;
 
 		d3d12->command_list->DispatchRays(&rays_desc);
 
