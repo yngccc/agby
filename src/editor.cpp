@@ -19,8 +19,8 @@
 struct {
 	bool initialized;
 	bool quit;
-	window *window;
-	d3d12 *d3d12;
+	window* window;
+	d3d12* d3d12;
 } window_message_channel = {};
 
 enum edit_window_tab {
@@ -42,7 +42,7 @@ enum selectable_object_type {
 	selectable_object_sphere_light
 };
 
-const char *edit_window_tab_strs[] = { "Player", "StaticObject", "DynamicObject", "Model", "Light", "Terrain", "Skybox" };
+const char* edit_window_tab_strs[] = { "Player", "StaticObject", "DynamicObject", "Model", "Light", "Terrain", "Skybox" };
 
 enum tool_type {
 	tool_type_select,
@@ -98,29 +98,29 @@ struct editor {
 	double coarse_frame_time;
 	ring_buffer<float> frame_time_ring_buffer;
 
-	ImGuiContext *imgui_context;
+	ImGuiContext* imgui_context;
 
-	ID3D12RootSignature *imgui_root_signature;
-	ID3D12PipelineState *imgui_pipeline_state;
+	ID3D12RootSignature* imgui_root_signature;
+	ID3D12PipelineState* imgui_pipeline_state;
 
-	ID3D12Resource *imgui_vertex_buffer;
+	ID3D12Resource* imgui_vertex_buffer;
 	D3D12_VERTEX_BUFFER_VIEW imgui_vertex_buffer_view;
 	uint32 imgui_vertex_buffer_capacity;
-	ID3D12Resource *imgui_index_buffer;
+	ID3D12Resource* imgui_index_buffer;
 	D3D12_INDEX_BUFFER_VIEW imgui_index_buffer_view;
 	uint32 imgui_index_buffer_capacity;
 
-	ID3D12DescriptorHeap *imgui_descriptor_heap;
+	ID3D12DescriptorHeap* imgui_descriptor_heap;
 
-	ID3D12Resource *imgui_font_texture;
+	ID3D12Resource* imgui_font_texture;
 
-	ID3D12Resource *select_icon_texture;
+	ID3D12Resource* select_icon_texture;
 	D3D12_GPU_DESCRIPTOR_HANDLE select_icon_texture_gpu_descriptor_handle;
-	ID3D12Resource *translate_icon_texture;
+	ID3D12Resource* translate_icon_texture;
 	D3D12_GPU_DESCRIPTOR_HANDLE translate_icon_texture_gpu_descriptor_handle;
-	ID3D12Resource *rotate_icon_texture;
+	ID3D12Resource* rotate_icon_texture;
 	D3D12_GPU_DESCRIPTOR_HANDLE rotate_icon_texture_gpu_descriptor_handle;
-	ID3D12Resource *scale_icon_texture;
+	ID3D12Resource* scale_icon_texture;
 	D3D12_GPU_DESCRIPTOR_HANDLE scale_icon_texture_gpu_descriptor_handle;
 
 	//ID3D11Texture2D *terrain_bump_icon_texture;
@@ -148,8 +148,8 @@ struct editor {
 	//ID3D11Texture2D *terrain_road_icon_texture;
 	//ID3D11ShaderResourceView *terrain_road_icon_texture_view;
 
-	ID3D11Texture2D **terrain_paint_textures;
-	ID3D11ShaderResourceView **terrain_paint_texture_views;
+	ID3D11Texture2D** terrain_paint_textures;
+	ID3D11ShaderResourceView** terrain_paint_texture_views;
 	uint32 terrain_paint_texture_count;
 	uint32 terrain_paint_texture_index;
 
@@ -212,12 +212,11 @@ struct editor {
 
 	uint64 world_frame_memory_arena_size;
 	char world_save_file[256];
-	world_editor_settings old_world_editor_settings;
 
 	edit_operation undoes[256];
 	uint32 undo_count;
 
-	edit_operation *redoes[256];
+	edit_operation* redoes[256];
 	uint32 redo_count;
 };
 
@@ -227,8 +226,8 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 		result = DefWindowProcA(hwnd, msg, wparam, lparam);
 	}
 	else {
-		window *window = window_message_channel.window;
-		d3d12 *d3d12 = window_message_channel.d3d12;
+		window* window = window_message_channel.window;
+		d3d12* d3d12 = window_message_channel.d3d12;
 		switch (msg) {
 		default: {
 			result = DefWindowProcA(hwnd, msg, wparam, lparam);
@@ -301,7 +300,7 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 			uint32 raw_input_size = sizeof(raw_input);
 			GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &raw_input, &raw_input_size, sizeof(RAWINPUTHEADER));
 			if (raw_input.header.dwType == RIM_TYPEMOUSE) {
-				RAWMOUSE *raw_mouse = &raw_input.data.mouse;
+				RAWMOUSE* raw_mouse = &raw_input.data.mouse;
 				if (raw_mouse->usFlags == MOUSE_MOVE_RELATIVE) {
 					window->raw_mouse_dx += raw_mouse->lLastX;
 					window->raw_mouse_dy += raw_mouse->lLastY;
@@ -313,108 +312,72 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 	return result;
 }
 
-void load_editor_options(const char *text, int64 len, editor *editor) {
-	enum token_type {
-		token_identifer,
-		token_colon,
-		token_integer,
-		token_eof,
-		token_bad
-	};
-	struct token {
-		token_type type;
-		const char *text;
-		uint32 len;
-	};
-	auto get_token = [=](const char **current_text) -> token {
-		while (true) {
-			if (((*current_text) - text) >= len) {
-				return token{ token_eof, nullptr, 0 };
+bool editor_load_settings(editor* editor) {
+	file_tokenizer ft;
+	if (!file_tokenizer_init(&ft, "editor_settings.txt")) {
+		return false;
+	}
+	auto delete_ft = scope_exit([&] { file_tokenizer_delete(ft);  });
+
+	token tk;
+	while (ft.get_token(&tk)) {
+		if (!strncmp(tk.ptr, "camera_position:", tk.len)) {
+			token tx, ty, tz;
+			float fx, fy, fz;
+			if (!ft.get_token(&tx) || !tx.to_float(&fx) || 
+				!ft.get_token(&ty) || !ty.to_float(&fy) || 
+				!ft.get_token(&tz) || !tz.to_float(&fz)) {
+				return false;
 			}
-			else if (isspace((*current_text)[0])) {
-				(*current_text) += 1;
+			editor->camera_position = XMVectorSet(fx, fy, fz, 0);
+		}
+		else if (!strncmp(tk.ptr, "camera_view:", tk.len)) {
+			token tx, ty, tz;
+			float fx, fy, fz;
+			if (!ft.get_token(&tx) || !tx.to_float(&fx) || 
+				!ft.get_token(&ty) || !ty.to_float(&fy) || 
+				!ft.get_token(&tz) || !tz.to_float(&fz)) {
+				return false;
 			}
-			else {
-				break;
+			editor->camera_view = XMVectorSet(fx, fy, fz, 0);
+		}
+		else if (!strncmp(tk.ptr, "camera_move_speed:", tk.len)) {
+			token ts;
+			float fs;
+			if (!ft.get_token(&ts) || !ts.to_float(&fs)) {
+				return false;
 			}
+			editor->camera_move_speed = (uint32)fs;
 		}
-		char c = (*current_text)[0];
-		if (c == ':') {
-			(*current_text) += 1;
-			return token{ token_colon, (*current_text) - 1, 1 };
-		}
-		else if (isdigit(c)) {
-			uint32 l = 1;
-			(*current_text) += 1;
-			while (((*current_text) - text) < len && (isdigit((*current_text)[0]))) {
-				(*current_text) += 1;
-				l += 1;
+		else if (!strncmp(tk.ptr, "camera_rotate_speed:", tk.len)) {
+			token ts;
+			float fs;
+			if (!ft.get_token(&ts) || !ts.to_float(&fs)) {
+				return false;
 			}
-			return token{ token_integer, (*current_text) - l, l };
-		}
-		else if (isalpha(c)) {
-			uint32 l = 1;
-			(*current_text) += 1;
-			while (((*current_text) - text) < len && (isalnum((*current_text)[0]) || (*current_text)[0] == '_')) {
-				(*current_text) += 1;
-				l += 1;
-			}
-			return token{ token_identifer, (*current_text) - l, l };
-		}
-		else {
-			return token{ token_bad, nullptr, 0 };
-		}
-	};
-	auto token_eql = [](token tk, const char *cmp_str) -> bool {
-		auto len = strlen(cmp_str);
-		return tk.len == len && !memcmp(tk.text, cmp_str, len);
-	};
-	const char *current_text = text;
-	while (true) {
-		token t1 = get_token(&current_text);
-		token t2 = get_token(&current_text);
-		token t3 = get_token(&current_text);
-		if (t1.type == token_eof || t2.type == token_eof || t3.type == token_eof) {
-			break;
-		}
-		else if (t1.type != token_identifer || t2.type != token_colon || (t3.type != token_identifer && t3.type != token_integer)) {
-			continue;
-		}
-		else {
-			if (token_eql(t1, "camera_move_speed")) {
-				char *endptr = nullptr;
-				uint32 value = strtoul(t3.text, &endptr, 10);
-				if (endptr != t3.text) {
-					editor->camera_move_speed = value;
-				}
-			}
-			else if (token_eql(t1, "camera_rotate_speed")) {
-				char *endptr = nullptr;
-				uint32 value = strtoul(t3.text, &endptr, 10);
-				if (endptr != t3.text) {
-					editor->camera_rotate_speed = value;
-				}
-			}
-			continue;
+			editor->camera_rotate_speed = (uint32)fs;
 		}
 	}
+
+	return true;
 }
 
-void save_editor_options(const char *file, editor *editor) {
-	char *text = new char[m_megabytes(1)];
+void editor_save_settings(editor* editor) {
+	char* text = new char[m_megabytes(1)];
 	uint32 offset = 0;
-	offset += sprintf(text + offset, "camera_move_speed: %u\r\n", editor->camera_move_speed);
-	offset += sprintf(text + offset, "camera_rotate_speed: %u\r\n", editor->camera_rotate_speed);
+	offset += sprintf(text + offset, "camera_position: %f %f %f\n", XMVectorGetX(editor->camera_position), XMVectorGetY(editor->camera_position), XMVectorGetZ(editor->camera_position));
+	offset += sprintf(text + offset, "camera_view: %f %f %f\n", XMVectorGetX(editor->camera_view), XMVectorGetY(editor->camera_view), XMVectorGetZ(editor->camera_view));
+	offset += sprintf(text + offset, "camera_move_speed: %u\n", editor->camera_move_speed);
+	offset += sprintf(text + offset, "camera_rotate_speed: %u\n", editor->camera_rotate_speed);
 	file_mapping fm;
-	if (file_mapping_create(file, offset, &fm)) {
-		memcpy(fm.ptr, text, offset);
-		file_mapping_flush(fm);
-		file_mapping_close(fm);
-	}
+	m_assert(file_mapping_create("editor_settings.txt", offset, &fm));
+	memcpy(fm.ptr, text, offset);
+	file_mapping_flush(fm);
+	file_mapping_close(fm);
 	delete[]text;
 }
 
-void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
+void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 	{
 		ImGui::CreateContext();
 		ImGui::StyleColorsDark();
@@ -468,13 +431,13 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 		D3D12_GPU_DESCRIPTOR_HANDLE descriptor_gpu_heap_handle = editor->imgui_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
 		uint32 descriptor_heap_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		{
-			uint8 *texture_data;
+			uint8* texture_data;
 			int32 texture_width, texture_height;
-			m_assert(ImGui::GetIO().Fonts->AddFontFromFileTTF("assets/fonts/OpenSans-Regular.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 128));
+			m_assert(ImGui::GetIO().Fonts->AddFontFromFileTTF("../assets/fonts/OpenSans-Regular.ttf", (float)GetSystemMetrics(SM_CXSCREEN) / 128));
 			ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&texture_data, &texture_width, &texture_height);
 			auto clear_font_tex_data = scope_exit([] {
 				ImGui::GetIO().Fonts->ClearTexData();
-			});
+				});
 			editor->imgui_font_texture = d3d12_create_texture_2d(d3d12, texture_width, texture_height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 			d3d12_copy_texture_2d(d3d12, editor->imgui_font_texture, texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 			d3d12->device->CreateShaderResourceView(editor->imgui_font_texture, nullptr, descriptor_cpu_heap_handle);
@@ -482,9 +445,9 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 			descriptor_cpu_heap_handle.ptr += descriptor_heap_handle_size;
 			descriptor_gpu_heap_handle.ptr += descriptor_heap_handle_size;
 		}
-		auto load_texture = [&](const char *file, DXGI_FORMAT fmt, ID3D12Resource **texture, D3D12_GPU_DESCRIPTOR_HANDLE *texture_gpu_descriptor_handle) {
+		auto load_texture = [&](const char* file, DXGI_FORMAT fmt, ID3D12Resource** texture, D3D12_GPU_DESCRIPTOR_HANDLE* texture_gpu_descriptor_handle) {
 			int32 width, height, channel;
-			uint8 *texture_data = stbi_load(file, &width, &height, &channel, 4);
+			uint8* texture_data = stbi_load(file, &width, &height, &channel, 4);
 			m_assert(texture_data);
 
 			*texture = d3d12_create_texture_2d(d3d12, width, height, 1, 1, fmt, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -496,10 +459,10 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 
 			stbi_image_free(texture_data);
 		};
-		load_texture("assets/icons/select.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->select_icon_texture, &editor->select_icon_texture_gpu_descriptor_handle);
-		load_texture("assets/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->translate_icon_texture, &editor->translate_icon_texture_gpu_descriptor_handle);
-		load_texture("assets/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->rotate_icon_texture, &editor->rotate_icon_texture_gpu_descriptor_handle);
-		load_texture("assets/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->scale_icon_texture, &editor->scale_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/select.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->select_icon_texture, &editor->select_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->translate_icon_texture, &editor->translate_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->rotate_icon_texture, &editor->rotate_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->scale_icon_texture, &editor->scale_icon_texture_gpu_descriptor_handle);
 	}
 	{
 		D3D12_DESCRIPTOR_RANGE desc_range = {};
@@ -548,7 +511,7 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-		ID3DBlob *sig_blob = nullptr;
+		ID3DBlob* sig_blob = nullptr;
 		m_d3d_assert(D3D12SerializeRootSignature(&sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, nullptr));
 		d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&editor->imgui_root_signature));
 		sig_blob->Release();
@@ -591,11 +554,11 @@ void imgui_init(editor *editor, d3d12 *d3d12, window *window) {
 	}
 }
 
-void imgui_render_commands(editor *editor, d3d12 *d3d12, window *window) {
-	ImDrawData *imgui_draw_data = ImGui::GetDrawData();
+void imgui_render_commands(editor* editor, d3d12* d3d12, window* window) {
+	ImDrawData* imgui_draw_data = ImGui::GetDrawData();
 
-	uint8 *vertex_buffer = nullptr;
-	uint8 *index_buffer = nullptr;
+	uint8* vertex_buffer = nullptr;
+	uint8* index_buffer = nullptr;
 	D3D12_RANGE buffer_range = { 0, 0 };
 	m_d3d_assert(editor->imgui_vertex_buffer->Map(0, &buffer_range, (void**)&vertex_buffer));
 	m_d3d_assert(editor->imgui_index_buffer->Map(0, &buffer_range, (void**)&index_buffer));
@@ -603,7 +566,7 @@ void imgui_render_commands(editor *editor, d3d12 *d3d12, window *window) {
 	uint32 vertex_buffer_offset = 0;
 	uint32 index_buffer_offset = 0;
 	for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
-		ImDrawList *dlist = imgui_draw_data->CmdLists[i];
+		ImDrawList* dlist = imgui_draw_data->CmdLists[i];
 		uint32 vertices_size = dlist->VtxBuffer.Size * sizeof(ImDrawVert);
 		uint32 indices_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
 		uint32 new_vertex_buffer_offset = vertex_buffer_offset + round_up(vertices_size, (uint32)sizeof(ImDrawVert));
@@ -634,7 +597,7 @@ void imgui_render_commands(editor *editor, d3d12 *d3d12, window *window) {
 	vertex_buffer_offset = 0;
 	index_buffer_offset = 0;
 	for (int32 i = 0; i < imgui_draw_data->CmdListsCount; i += 1) {
-		ImDrawList *dlist = imgui_draw_data->CmdLists[i];
+		ImDrawList* dlist = imgui_draw_data->CmdLists[i];
 		uint32 vertices_size = dlist->VtxBuffer.Size * sizeof(ImDrawVert);
 		uint32 indices_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
 		uint32 vertex_index = vertex_buffer_offset / sizeof(ImDrawVert);
@@ -642,7 +605,7 @@ void imgui_render_commands(editor *editor, d3d12 *d3d12, window *window) {
 		vertex_buffer_offset += round_up(vertices_size, (uint32)sizeof(ImDrawVert));
 		index_buffer_offset += round_up(indices_size, (uint32)sizeof(ImDrawIdx));
 		for (int32 i = 0; i < dlist->CmdBuffer.Size; i += 1) {
-			ImDrawCmd *dcmd = &dlist->CmdBuffer.Data[i];
+			ImDrawCmd* dcmd = &dlist->CmdBuffer.Data[i];
 			D3D11_RECT scissor = { (int32)dcmd->ClipRect.x, (int32)dcmd->ClipRect.y, (int32)dcmd->ClipRect.z, (int32)dcmd->ClipRect.w };
 			d3d12->command_list->RSSetScissorRects(1, &scissor);
 			d3d12->command_list->SetGraphicsRootDescriptorTable(1, D3D12_GPU_DESCRIPTOR_HANDLE{ (uint64)dcmd->TextureId });
@@ -652,9 +615,48 @@ void imgui_render_commands(editor *editor, d3d12 *d3d12, window *window) {
 	}
 }
 
-void editor_init(editor *editor, d3d12 *d3d12, window *window) {
-	*editor = {};
+void editor_blit_imgui_render_commands(editor* editor, world* world, d3d12* d3d12, window* window) {
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	barrier.Transition.pResource = d3d12->swap_chain_render_targets[d3d12->swap_chain_buffer_index];
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	d3d12->command_list->ResourceBarrier(1, &barrier);
 
+	D3D12_CPU_DESCRIPTOR_HANDLE swap_chain_render_target_handle = d3d12->swap_chain_render_targets_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+	swap_chain_render_target_handle.ptr += d3d12->swap_chain_buffer_index * d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	float swap_chain_clear_color[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	d3d12->command_list->ClearRenderTargetView(swap_chain_render_target_handle, swap_chain_clear_color, 0, nullptr);
+	d3d12->command_list->OMSetRenderTargets(1, &swap_chain_render_target_handle, false, nullptr);
+
+	D3D12_VIEWPORT viewport = { 0.0f, 0.0f, (float)window->width, (float)window->height, 0.0f, 1.0f };
+	RECT scissor = { 0, 0, (LONG)window->width, (LONG)window->height };
+	d3d12->command_list->RSSetViewports(1, &viewport);
+	d3d12->command_list->RSSetScissorRects(1, &scissor);
+
+	uint32 world_frame_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	D3D12_CPU_DESCRIPTOR_HANDLE world_frame_cpu_descriptor_handle = { world->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart().ptr + world->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
+	D3D12_GPU_DESCRIPTOR_HANDLE world_frame_gpu_descriptor_handle = { world->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr + world->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
+	d3d12->device->CreateShaderResourceView(world->render_target, nullptr, world_frame_cpu_descriptor_handle);
+	d3d12->device->CreateShaderResourceView(d3d12->dither_texture, nullptr, { world_frame_cpu_descriptor_handle.ptr + world_frame_descriptor_handle_size });
+	world->frame_descriptor_handle_count += 2;
+
+	d3d12->command_list->SetPipelineState(d3d12->blit_to_swap_chain_pipeline_state);
+	d3d12->command_list->SetGraphicsRootSignature(d3d12->blit_to_swap_chain_root_signature);
+	d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
+	d3d12->command_list->SetGraphicsRootDescriptorTable(0, world_frame_gpu_descriptor_handle);
+	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	d3d12->command_list->DrawInstanced(3, 1, 0, 0);
+
+	imgui_render_commands(editor, d3d12, window);
+
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+	d3d12->command_list->ResourceBarrier(1, &barrier);
+}
+
+void editor_init(editor* editor, d3d12* d3d12, window* window) {
 	timer_init(&editor->timer);
 
 	editor->frame_time_ring_buffer = {};
@@ -666,7 +668,7 @@ void editor_init(editor *editor, d3d12 *d3d12, window *window) {
 	editor->camera_fovy = degree_to_radian(40);
 	editor->camera_znear = 10000.0f;
 	editor->camera_zfar = 0.1f;
-	editor->camera_position = XMVectorSet(50, 50, 50, 0);
+	editor->camera_position = XMVectorSet(10, 10, 10, 0);
 	editor->camera_view = -XMVector3Normalize(editor->camera_position);
 
 	editor->static_object_index = UINT32_MAX;
@@ -684,13 +686,8 @@ void editor_init(editor *editor, d3d12 *d3d12, window *window) {
 
 	imgui_init(editor, d3d12, window);
 
-	{ // options
-		file_mapping option_file_mapping = {};
-		if (file_mapping_open("editor_options.txt", &option_file_mapping, true)) {
-			load_editor_options((const char *)option_file_mapping.ptr, option_file_mapping.size, editor);
-			file_mapping_close(option_file_mapping);
-		}
-	}
+	m_assert(editor_load_settings(editor));
+
 	// { // textures
 	// 	auto create_texture = [&](const char *file, DXGI_FORMAT fmt, ID3D11Texture2D **texture, ID3D11ShaderResourceView **shader_resource_view) {
 	// 		uint8 *texture_data;
@@ -712,51 +709,47 @@ void editor_init(editor *editor, d3d12 *d3d12, window *window) {
 	// 		stbi_image_free(texture_data);
 	// 	};
 
-	// 	create_texture("assets/icons/pick.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->pick_icon_texture, &editor->pick_icon_texture_view);
-	// 	create_texture("assets/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->translate_icon_texture, &editor->translate_icon_texture_view);
-	// 	create_texture("assets/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->rotate_icon_texture, &editor->rotate_icon_texture_view);
-	// 	create_texture("assets/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->scale_icon_texture, &editor->scale_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_bump.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_bump_icon_texture, &editor->terrain_bump_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_raise_lower.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_raise_lower_icon_texture, &editor->terrain_raise_lower_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_flatten.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_flatten_icon_texture, &editor->terrain_flatten_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_height.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_height_icon_texture, &editor->terrain_height_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_ramp.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_ramp_icon_texture, &editor->terrain_ramp_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_smooth.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_smooth_icon_texture, &editor->terrain_smooth_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_noise.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_noise_icon_texture, &editor->terrain_noise_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_water.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_water_icon_texture, &editor->terrain_water_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_hole.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_hole_icon_texture, &editor->terrain_hole_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_paint.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_paint_icon_texture, &editor->terrain_paint_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_tree.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_tree_icon_texture, &editor->terrain_tree_icon_texture_view);
-	// 	create_texture("assets/icons/terrain_road.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_road_icon_texture, &editor->terrain_road_icon_texture_view);
+	// 	create_texture("../assets/icons/pick.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->pick_icon_texture, &editor->pick_icon_texture_view);
+	// 	create_texture("../assets/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->translate_icon_texture, &editor->translate_icon_texture_view);
+	// 	create_texture("../assets/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->rotate_icon_texture, &editor->rotate_icon_texture_view);
+	// 	create_texture("../assets/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->scale_icon_texture, &editor->scale_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_bump.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_bump_icon_texture, &editor->terrain_bump_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_raise_lower.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_raise_lower_icon_texture, &editor->terrain_raise_lower_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_flatten.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_flatten_icon_texture, &editor->terrain_flatten_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_height.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_height_icon_texture, &editor->terrain_height_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_ramp.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_ramp_icon_texture, &editor->terrain_ramp_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_smooth.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_smooth_icon_texture, &editor->terrain_smooth_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_noise.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_noise_icon_texture, &editor->terrain_noise_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_water.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_water_icon_texture, &editor->terrain_water_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_hole.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_hole_icon_texture, &editor->terrain_hole_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_paint.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_paint_icon_texture, &editor->terrain_paint_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_tree.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_tree_icon_texture, &editor->terrain_tree_icon_texture_view);
+	// 	create_texture("../assets/icons/terrain_road.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->terrain_road_icon_texture, &editor->terrain_road_icon_texture_view);
 
 	// 	editor->terrain_paint_texture_count = 0;
-	// 	iterate_files_in_dir("assets/terrains/textures", [&](const char *file_name) {
+	// 	iterate_files_in_dir("../assets/terrains/textures", [&](const char *file_name) {
 	// 		editor->terrain_paint_texture_count += 1;
 	// 	});
 	// 	editor->terrain_paint_textures = new ID3D11Texture2D*[editor->terrain_paint_texture_count];
 	// 	editor->terrain_paint_texture_views = new ID3D11ShaderResourceView*[editor->terrain_paint_texture_count];
 	// 	uint32 index = 0;
-	// 	iterate_files_in_dir("assets/terrains/textures", [&](const char *file_name) {
+	// 	iterate_files_in_dir("../assets/terrains/textures", [&](const char *file_name) {
 	// 		char path[256];
-	// 		snprintf(path, sizeof(path), "assets/terrains/textures/%s", file_name);
+	// 		snprintf(path, sizeof(path), "../assets/terrains/textures/%s", file_name);
 	// 		create_texture(path, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, &editor->terrain_paint_textures[index], &editor->terrain_paint_texture_views[index]);
 	// 		index += 1;
 	// 	});
 }
 
-bool editor_load_world(editor *editor, world *world, d3d12 *d3d12, const char *file) {
-	if (!world_load_from_file(world, d3d12, file, &editor->old_world_editor_settings)) {
+bool editor_load_world(editor* editor, world* world, d3d12* d3d12, const char* file) {
+	if (!world_load_from_file(world, d3d12, file)) {
 		return false;
 	}
-	else {
-		editor->camera_position = editor->old_world_editor_settings.camera_position;
-		editor->camera_view = editor->old_world_editor_settings.camera_view;
-		snprintf(editor->world_save_file, sizeof(editor->world_save_file), "%s", file);
-		return true;
-	}
+	snprintf(editor->world_save_file, sizeof(editor->world_save_file), "%s", file);
+	return true;
 }
 
-bool editor_save_world(editor *editor, world *world, bool save_as) {
+bool editor_save_world(editor* editor, world* world, bool save_as) {
 	char world_save_file[256] = {};
 	if (save_as) {
 		if (!open_file_dialog(world_save_file, sizeof(world_save_file))) {
@@ -771,45 +764,21 @@ bool editor_save_world(editor *editor, world *world, bool save_as) {
 			array_copy(world_save_file, editor->world_save_file);
 		}
 	}
-	world_editor_settings editor_settings = { editor->camera_position, editor->camera_view };
-	if (!world_save_to_file(world, world_save_file, &editor_settings)) {
+	if (!world_save_to_file(world, world_save_file)) {
 		return false;
 	}
-	else {
-		//for (auto &terrain : world->terrains) {
-		//	m_assert(terrain.height_texture_data);
-		//	m_assert(terrain.diffuse_texture_data);
-		//	file_mapping terrain_file_mapping;
-		//	char file_path[128] = "assets/terrains/";
-		//	strcat(file_path, terrain.file);
-		//	m_assert(file_mapping_open(file_path, &terrain_file_mapping, false));
-		//	gpk_terrain *gpk_terrain = (struct gpk_terrain *)terrain_file_mapping.ptr;
-		//	uint8 *height_texture_ptr = terrain_file_mapping.ptr + gpk_terrain->height_map_offset;
-		//	uint8 *diffuse_texture_ptr = terrain_file_mapping.ptr + gpk_terrain->diffuse_map_offset;
-		//	uint32 texture_size = terrain.width * terrain.sample_per_meter * terrain.height * terrain.sample_per_meter;
-		//	memcpy(height_texture_ptr, terrain.height_texture_data, texture_size * sizeof(int16));
-		//	memcpy(diffuse_texture_ptr, terrain.diffuse_texture_data, texture_size * sizeof(uint32));
-		//	file_mapping_flush(terrain_file_mapping);
-		//	file_mapping_close(terrain_file_mapping);
-		//}
-		array_copy(editor->world_save_file, world_save_file);
-		return true;
-	}
+	array_copy(editor->world_save_file, world_save_file);
+	return true;
 }
 
-bool editor_need_saving(editor *editor, world *world) {
+bool editor_need_saving(editor* editor, world* world) {
 	if (editor->undo_count > 0) {
 		return true;
 	}
-	else if (!XMVector3Equal(editor->camera_position, editor->old_world_editor_settings.camera_position) || !XMVector3Equal(editor->camera_view, editor->old_world_editor_settings.camera_view)) {
-		return true;
-	}
-	else {
-		return false;
-	}
+	return false;
 }
 
-void editor_add_undo(editor *editor, edit_operation operation) {
+void editor_add_undo(editor* editor, edit_operation operation) {
 	if (editor->undo_count >= m_countof(editor->undoes)) {
 		uint32 n = 32;
 		memmove(editor->undoes, editor->undoes + n, (m_countof(editor->undoes) - n) * sizeof(editor->undoes[0]));
@@ -819,18 +788,18 @@ void editor_add_undo(editor *editor, edit_operation operation) {
 	editor->undo_count += 1;
 }
 
-void editor_pop_undo(editor *editor, world *world) {
+void editor_pop_undo(editor* editor, world* world) {
 	if (editor->undo_count > 0) {
-		edit_operation *operation = &editor->undoes[editor->undo_count - 1];
+		edit_operation* operation = &editor->undoes[editor->undo_count - 1];
 		switch (operation->type) {
 		case edit_operation_object_transform: {
-			transform_operation *op = &operation->transform_operation;
+			transform_operation* op = &operation->transform_operation;
 			switch (op->transformable_type) {
 			case transformable_type_player: {
 				world->player.transform = op->original_transform;
 			} break;
 			case transformable_type_static_object: {
-				for (auto &object : world->static_objects) {
+				for (auto& object : world->static_objects) {
 					if (object.id == op->id) {
 						object.transform = op->original_transform;
 						break;
@@ -838,7 +807,7 @@ void editor_pop_undo(editor *editor, world *world) {
 				}
 			} break;
 			case transformable_type_dynamic_object: {
-				for (auto &object : world->dynamic_objects) {
+				for (auto& object : world->dynamic_objects) {
 					if (object.id == op->id) {
 						object.transform = op->original_transform;
 						break;
@@ -846,7 +815,7 @@ void editor_pop_undo(editor *editor, world *world) {
 				}
 			} break;
 			case transformable_type_model: {
-				for (auto &model : world->models) {
+				for (auto& model : world->models) {
 					if (!strcmp(model.file, op->id)) {
 						model.transform = op->original_transform;
 						break;
@@ -860,7 +829,7 @@ void editor_pop_undo(editor *editor, world *world) {
 	}
 }
 
-void editor_check_quit(editor *editor) {
+void editor_check_quit(editor* editor) {
 	if (window_message_channel.quit) {
 		window_message_channel.quit = false;
 		editor->quit_popup = true;
@@ -870,7 +839,7 @@ void editor_check_quit(editor *editor) {
 	}
 }
 
-void editor_check_toggle_fullscreen(window *window) {
+void editor_check_toggle_fullscreen(window* window) {
 	if (ImGui::IsKeyPressed(VK_F11)) {
 		static uint32 width = window->width;
 		static uint32 height = window->height;
@@ -885,7 +854,7 @@ void editor_check_toggle_fullscreen(window *window) {
 	}
 }
 
-void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
+void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize;
 
 	if (editor->error_popup) {
@@ -956,7 +925,7 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 		if (ImGui::Button("Ok")) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
-			for (auto &object : world->static_objects) {
+			for (auto& object : world->static_objects) {
 				if (object.id == id) {
 					duplicate = true;
 					break;
@@ -971,14 +940,13 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				editor->static_object_index = (uint32)world->static_objects.size();
-				world->static_objects.push_back(static_object{});
-				static_object *static_object = &world->static_objects.back();
+				editor->static_object_index = (uint32)world->static_objects.size;
+				static_object* static_object = world->static_objects.append({});
 				static_object->model_index = UINT32_MAX;
 				static_object->transform = transform_identity();
 				static_object->animation_index = UINT32_MAX;
 				static_object->animation_time = 0;
-				char *id_cstr = new char[strlen(id) + 1]();
+				char* id_cstr = new char[strlen(id) + 1]();
 				strcpy(id_cstr, id);
 				static_object->id = { id_cstr, (uint32)strlen(id) };
 				close_popup();
@@ -1012,7 +980,7 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 		if (ImGui::Button("Ok")) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
-			for (uint32 i = 0; i < world->static_objects.size(); i += 1) {
+			for (uint32 i = 0; i < world->static_objects.size; i += 1) {
 				if (world->static_objects[i].id == id && i != editor->static_object_index) {
 					duplicate = true;
 					break;
@@ -1027,8 +995,8 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				static_object *static_object = &world->static_objects[editor->static_object_index];
-				char *id_cstr = new char[strlen(id) + 1]();
+				static_object* static_object = &world->static_objects[editor->static_object_index];
+				char* id_cstr = new char[strlen(id) + 1]();
 				strcpy(id_cstr, id);
 				static_object->id = { id_cstr, (uint32)strlen(id) };
 				close_popup();
@@ -1062,7 +1030,7 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 		if (ImGui::Button("Ok")) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
-			for (auto &object : world->dynamic_objects) {
+			for (auto& object : world->dynamic_objects) {
 				if (object.id == id) {
 					duplicate = true;
 					break;
@@ -1077,14 +1045,13 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				editor->dynamic_object_index = (uint32)world->dynamic_objects.size();
-				world->dynamic_objects.push_back(dynamic_object{});
-				dynamic_object *dynamic_object = &world->dynamic_objects.back();
+				editor->dynamic_object_index = (uint32)world->dynamic_objects.size;
+				dynamic_object* dynamic_object = world->dynamic_objects.append({});
 				dynamic_object->model_index = UINT32_MAX;
 				dynamic_object->transform = transform_identity();
 				dynamic_object->animation_index = UINT32_MAX;
 				dynamic_object->animation_time = 0;
-				char *id_cstr = new char[strlen(id) + 1]();
+				char* id_cstr = new char[strlen(id) + 1]();
 				strcpy(id_cstr, id);
 				dynamic_object->id = { id_cstr, (uint32)strlen(id_cstr) };
 				close_popup();
@@ -1118,7 +1085,7 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 		if (ImGui::Button("Ok")) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
-			for (uint32 i = 0; i < world->dynamic_objects.size(); i += 1) {
+			for (uint32 i = 0; i < world->dynamic_objects.size; i += 1) {
 				if (world->dynamic_objects[i].id == id && i != editor->dynamic_object_index) {
 					duplicate = true;
 					break;
@@ -1133,8 +1100,8 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				dynamic_object *dynamic_object = &world->dynamic_objects[editor->dynamic_object_index];
-				char *id_cstr = new char[strlen(id) + 1]();
+				dynamic_object* dynamic_object = &world->dynamic_objects[editor->dynamic_object_index];
+				char* id_cstr = new char[strlen(id) + 1]();
 				strcpy(id_cstr, id);
 				dynamic_object->id = { id_cstr, (uint32)strlen(id_cstr) };
 				close_popup();
@@ -1184,9 +1151,9 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "Error: create_file_mapping failed\nFile: %s", file);
 			}
 			else {
-				*(gpk_terrain *)terrain_file_mapping.ptr = terrain;
-				int16 *height_map = (int16 *)(terrain_file_mapping.ptr + terrain.height_map_offset);
-				uint8 *diffuse_map = (uint8 *)(terrain_file_mapping.ptr + terrain.diffuse_map_offset);
+				*(gpk_terrain*)terrain_file_mapping.ptr = terrain;
+				int16* height_map = (int16*)(terrain_file_mapping.ptr + terrain.height_map_offset);
+				uint8* diffuse_map = (uint8*)(terrain_file_mapping.ptr + terrain.diffuse_map_offset);
 				memset(height_map, 0, texture_size * sizeof(int16));
 				memset(diffuse_map, 150, texture_size * sizeof(uint32));
 				file_mapping_flush(terrain_file_mapping);
@@ -1240,7 +1207,7 @@ void editor_check_popups(editor *editor, world *world, d3d12 *d3d12) {
 	}
 }
 
-void editor_top_menu(editor *editor, world *world, d3d12 *d3d12) {
+void editor_top_menu(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::PushID("top_menu_bar");
 	if (ImGui::BeginMainMenuBar()) {
 		editor->top_menu_bar_height = ImGui::GetWindowHeight();
@@ -1309,8 +1276,8 @@ void editor_top_menu(editor *editor, world *world, d3d12 *d3d12) {
 			ImGui::EndMenu();
 		}
 		ImGui::PopID();
-		ImGui::PushID("options");
-		if (ImGui::BeginMenu("Options")) {
+		ImGui::PushID("settings");
+		if (ImGui::BeginMenu("Settings")) {
 			ImGui::PushID("camera");
 			if (ImGui::BeginMenu("Camera")) {
 				uint32 min = 0;
@@ -1330,7 +1297,7 @@ void editor_top_menu(editor *editor, world *world, d3d12 *d3d12) {
 
 }
 
-void editor_bottom_menu(editor *editor) {
+void editor_bottom_menu(editor* editor) {
 	float menu_height = editor->top_menu_bar_height * 1.5f;
 	ImGui::SetNextWindowPos(ImVec2{ 0, ImGui::GetIO().DisplaySize.y - menu_height });
 	ImGui::SetNextWindowSize(ImVec2{ ImGui::GetIO().DisplaySize.x, menu_height });
@@ -1389,10 +1356,10 @@ void editor_bottom_menu(editor *editor) {
 	ImGui::PopID();
 }
 
-void editor_edit_window_model_transform(world *world, uint32 *model_index, transform *transform) {
-	const char *model_file = *model_index < world->models.size() ? world->models[*model_index].file : nullptr;
+void editor_edit_window_model_transform(world* world, uint32* model_index, transform* transform) {
+	const char* model_file = *model_index < world->models.size ? world->models[*model_index].file : nullptr;
 	if (ImGui::BeginCombo("model", model_file)) {
-		for (uint32 i = 0; i < world->models.size(); i += 1) {
+		for (uint32 i = 0; i < world->models.size; i += 1) {
 			if (ImGui::Selectable(world->models[i].file, *model_index == i)) {
 				*model_index = i;
 			}
@@ -1410,21 +1377,21 @@ void editor_edit_window_model_transform(world *world, uint32 *model_index, trans
 	}
 }
 
-void editor_edit_window_player_tab(editor *editor, world *world) {
+void editor_edit_window_player_tab(editor* editor, world* world) {
 	ImGui::PushID("player_tab");
 	editor_edit_window_model_transform(world, &world->player.model_index, &world->player.transform);
 	ImGui::PopID();
 }
 
-void editor_edit_window_static_object_tab(editor *editor, world *world) {
+void editor_edit_window_static_object_tab(editor* editor, world* world) {
 	ImGui::PushID("static_object_tab");
 	if (ImGui::Button("Add")) {
 		editor->add_static_object_popup = true;
 	}
-	static_object *static_object = editor->static_object_index < world->static_objects.size() ? &world->static_objects[editor->static_object_index] : nullptr;
-	const char *id = static_object ? static_object->id.ptr : nullptr;
+	static_object* static_object = editor->static_object_index < world->static_objects.size ? &world->static_objects[editor->static_object_index] : nullptr;
+	const char* id = static_object ? static_object->id.ptr : nullptr;
 	if (ImGui::BeginCombo("static objects", id)) {
-		for (uint32 i = 0; i < world->static_objects.size(); i += 1) {
+		for (uint32 i = 0; i < world->static_objects.size; i += 1) {
 			if (ImGui::Selectable(world->static_objects[i].id.ptr, editor->static_object_index == i)) {
 				editor->static_object_index = i;
 				static_object = &world->static_objects[i];
@@ -1443,15 +1410,15 @@ void editor_edit_window_static_object_tab(editor *editor, world *world) {
 	ImGui::PopID();
 }
 
-void editor_edit_window_dynamic_object_tab(editor *editor, world *world) {
+void editor_edit_window_dynamic_object_tab(editor* editor, world* world) {
 	ImGui::PushID("dynamic_object_tab");
 	if (ImGui::Button("Add")) {
 		editor->add_dynamic_object_popup = true;
 	}
-	dynamic_object *dynamic_object = editor->dynamic_object_index < world->dynamic_objects.size() ? &world->dynamic_objects[editor->dynamic_object_index] : nullptr;
-	const char *id = dynamic_object ? dynamic_object->id.ptr : nullptr;
+	dynamic_object* dynamic_object = editor->dynamic_object_index < world->dynamic_objects.size ? &world->dynamic_objects[editor->dynamic_object_index] : nullptr;
+	const char* id = dynamic_object ? dynamic_object->id.ptr : nullptr;
 	if (ImGui::BeginCombo("dynamic objects", id)) {
-		for (uint32 i = 0; i < world->dynamic_objects.size(); i += 1) {
+		for (uint32 i = 0; i < world->dynamic_objects.size; i += 1) {
 			if (ImGui::Selectable(world->dynamic_objects[i].id.ptr, editor->dynamic_object_index == i)) {
 				editor->dynamic_object_index = i;
 				dynamic_object = &world->dynamic_objects[i];
@@ -1470,13 +1437,13 @@ void editor_edit_window_dynamic_object_tab(editor *editor, world *world) {
 	ImGui::PopID();
 }
 
-void editor_edit_window_model_tab(editor *editor, world *world, d3d12 *d3d12) {
+void editor_edit_window_model_tab(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::PushID("model_tab");
 	if (ImGui::Button("Import")) {
 		char file[256] = {};
 		if (open_file_dialog(file, sizeof(file))) {
 			if (world_add_model(world, d3d12, file, transform_identity(), collision{ collision_type_none })) {
-				editor->model_index = (uint32)world->models.size() - 1;
+				editor->model_index = (uint32)world->models.size - 1;
 			}
 			else {
 				snprintf(editor->error_msg, sizeof(editor->error_msg), "Add model failed\nFile: %s", file);
@@ -1487,10 +1454,10 @@ void editor_edit_window_model_tab(editor *editor, world *world, d3d12 *d3d12) {
 	ImGui::SameLine();
 	ImGui::Checkbox("Adjust", &editor->adjust_model);
 	ImGui::Separator();
-	model *model = editor->model_index < world->models.size() ? &world->models[editor->model_index] : nullptr;
-	const char *file = model ? model->file : nullptr;
+	model* model = editor->model_index < world->models.size ? &world->models[editor->model_index] : nullptr;
+	const char* file = model ? model->file : nullptr;
 	if (ImGui::BeginCombo("models", file)) {
-		for (uint32 i = 0; i < world->models.size(); i += 1) {
+		for (uint32 i = 0; i < world->models.size; i += 1) {
 			if (ImGui::Selectable(world->models[i].file, editor->model_index == i)) {
 				editor->model_index = i;
 				model = &world->models[i];
@@ -1515,7 +1482,7 @@ void editor_edit_window_model_tab(editor *editor, world *world, d3d12 *d3d12) {
 			}
 		}
 		else {
-			const char *preview_str = collision_type_strs[model->collision.type];
+			const char* preview_str = collision_type_strs[model->collision.type];
 			if (ImGui::BeginCombo("shapes", preview_str)) {
 				if (ImGui::Selectable("sphere", model->collision.type == collision_type_sphere)) {
 					if (model->collision.type != collision_type_sphere) {
@@ -1555,28 +1522,26 @@ void editor_edit_window_model_tab(editor *editor, world *world, d3d12 *d3d12) {
 	ImGui::PopID();
 }
 
-void editor_direct_light_properties(editor *editor, direct_light *direct_light) {
+void editor_direct_light_properties(editor* editor, direct_light* direct_light) {
 	ImGui::Text("Properties:");
 	ImGui::ColorEdit3("color", &direct_light->color.x);
-	float extra = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x * 2 + ImGui::CalcTextSize("direct color").x;
-	ImGui::PushItemWidth(ImGui::GetItemRectSize().x - extra);
 	ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
 	ImGui::DragFloat3("position", &direct_light->position.x);
 	ImGui::DragFloat3("direction", &direct_light->dir.x);
 	ImGui::PopItemFlag();
-	ImGui::PopItemWidth();
 	ImGui::SameLine();
 	if (ImGui::Button("reset")) {
 		direct_light->dir = { 0, 1, 0 };
 	}
 }
 
-void editor_sphere_light_properties(editor *editor, sphere_light *sphere_light) {
+void editor_sphere_light_properties(editor* editor, sphere_light* sphere_light) {
 	ImGui::Text("Properties:");
+	ImGui::ColorEdit3("color", &sphere_light->color.x);
 	ImGui::InputFloat3("position", &sphere_light->position.x);
 }
 
-void editor_edit_window_terrain_tab(editor *editor, world *world) {
+void editor_edit_window_terrain_tab(editor* editor, world* world) {
 	ImGui::PushID("terrain_tab");
 	if (ImGui::Button("New")) {
 		editor->new_terrain_popup = true;
@@ -1597,10 +1562,10 @@ void editor_edit_window_terrain_tab(editor *editor, world *world) {
 			}
 		}
 	}
-	terrain *terrain = world->terrain_index < world->terrains.size() ? &world->terrains[world->terrain_index] : nullptr;
-	const char *file = terrain ? terrain->file : nullptr;
+	terrain* terrain = world->terrain_index < world->terrains.size ? &world->terrains[world->terrain_index] : nullptr;
+	const char* file = terrain ? terrain->file : nullptr;
 	if (ImGui::BeginCombo("terrains", file)) {
-		for (uint32 i = 0; i < world->terrains.size(); i += 1) {
+		for (uint32 i = 0; i < world->terrains.size; i += 1) {
 			if (ImGui::Selectable(world->terrains[i].file, world->terrain_index == i)) {
 				world->terrain_index = i;
 				terrain = &world->terrains[i];
@@ -1611,7 +1576,7 @@ void editor_edit_window_terrain_tab(editor *editor, world *world) {
 	ImGui::PopID();
 }
 
-void editor_edit_window_skybox_tab(editor *editor, world *world) {
+void editor_edit_window_skybox_tab(editor* editor, world* world) {
 	ImGui::PushID("skybox_tab");
 	if (ImGui::Button("Import")) {
 		char file[256] = {};
@@ -1622,10 +1587,10 @@ void editor_edit_window_skybox_tab(editor *editor, world *world) {
 			//}
 		}
 	}
-	skybox *skybox = world->skybox_index < world->skyboxes.size() ? &world->skyboxes[world->skybox_index] : nullptr;
-	const char *file = skybox ? skybox->file : nullptr;
+	skybox* skybox = world->skybox_index < world->skyboxes.size ? &world->skyboxes[world->skybox_index] : nullptr;
+	const char* file = skybox ? skybox->file : nullptr;
 	if (ImGui::BeginCombo("skyboxes", file)) {
-		for (uint32 i = 0; i < world->skyboxes.size(); i += 1) {
+		for (uint32 i = 0; i < world->skyboxes.size; i += 1) {
 			if (ImGui::Selectable(world->skyboxes[i].file, world->skybox_index == i)) {
 				world->skybox_index = i;
 				skybox = &world->skyboxes[i];
@@ -1636,7 +1601,7 @@ void editor_edit_window_skybox_tab(editor *editor, world *world) {
 	ImGui::PopID();
 }
 
-void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
+void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::SetNextWindowPos(ImVec2{ 0, editor->top_menu_bar_height }, ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.85f }, ImGuiCond_Always);
 	ImGui::PushID("objects_window");
@@ -1650,11 +1615,11 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 				if (ImGui::BeginPopup("direct lights popup")) {
 					if (ImGui::Button("New")) {
 						direct_light direct_light = { {0, 0, 0}, vec3_normalize({1, 1, 1}), {1, 1, 1} };
-						world->direct_lights.push_back(direct_light);
+						world->direct_lights.append(direct_light);
 					}
 					ImGui::EndPopup();
 				}
-				for (uint32 i = 0; i < world->direct_lights.size(); i += 1) {
+				for (uint32 i = 0; i < world->direct_lights.size; i += 1) {
 					bool selected = editor->selected_object_type == selectable_object_direct_light && editor->selected_object_index == i;
 					char index_str[8] = "";
 					itoa(i, index_str, 10);
@@ -1669,14 +1634,14 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 				ImGui::OpenPopupOnItemClick("sphere lights popup");
 				if (ImGui::BeginPopup("sphere lights popup")) {
 					if (ImGui::Selectable("New")) {
-						sphere_light sphere_light = { {0, 0, 0}, {1, 1, 1}, 1, 10 };
-						world->sphere_lights.push_back(sphere_light);
+						sphere_light sphere_light = { {0, 0, 0}, {1, 1, 1}, 1 };
+						world->sphere_lights.append(sphere_light);
 						editor->selected_object_type = selectable_object_sphere_light;
-						editor->selected_object_index = (uint32)world->sphere_lights.size() - 1;
+						editor->selected_object_index = (uint32)world->sphere_lights.size - 1;
 					}
 					ImGui::EndPopup();
 				}
-				for (uint32 i = 0; i < world->sphere_lights.size(); i += 1) {
+				for (uint32 i = 0; i < world->sphere_lights.size; i += 1) {
 					bool selected = editor->selected_object_type == selectable_object_sphere_light && editor->selected_object_index == i;
 					char index_str[8] = "";
 					itoa(i, index_str, 10);
@@ -1689,7 +1654,7 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 					ImGui::OpenPopupOnItemClick(popup_id_str);
 					if (ImGui::BeginPopup(popup_id_str)) {
 						if (ImGui::Selectable("Delete")) {
-							world->sphere_lights.erase(world->sphere_lights.begin() + i);
+							world->sphere_lights.remove(i);
 							editor->selected_object_type = selectable_object_none;
 						}
 						ImGui::EndPopup();
@@ -1704,7 +1669,7 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 						char file[256] = {};
 						if (open_file_dialog(file, sizeof(file))) {
 							if (world_add_model(world, d3d12, file, transform_identity(), collision{ collision_type_none })) {
-								editor->model_index = (uint32)world->models.size() - 1;
+								editor->model_index = (uint32)world->models.size - 1;
 								dxr_build_acceleration_buffers(world, d3d12);
 							}
 							else {
@@ -1715,7 +1680,7 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 					}
 					ImGui::EndPopup();
 				}
-				for (uint32 i = 0; i < world->models.size(); i += 1) {
+				for (uint32 i = 0; i < world->models.size; i += 1) {
 					bool selected = editor->selected_object_type == selectable_object_model && editor->selected_object_index == i;
 					if (ImGui::Selectable(world->models[i].file, selected)) {
 						editor->selected_object_type = selectable_object_model;
@@ -1730,11 +1695,11 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 		ImGui::PushID("properties");
 		if (ImGui::BeginChild("object_properties")) {
 			if (editor->selected_object_type == selectable_object_direct_light) {
-				direct_light *direct_light = &world->direct_lights[editor->selected_object_index];
+				direct_light* direct_light = &world->direct_lights[editor->selected_object_index];
 				editor_direct_light_properties(editor, direct_light);
 			}
 			else if (editor->selected_object_type == selectable_object_sphere_light) {
-				sphere_light *sphere_light = &world->sphere_lights[editor->selected_object_index];
+				sphere_light* sphere_light = &world->sphere_lights[editor->selected_object_index];
 				editor_sphere_light_properties(editor, sphere_light);
 			}
 		}
@@ -1745,14 +1710,14 @@ void editor_objects_window(editor *editor, world *world, d3d12 *d3d12) {
 	ImGui::PopID();
 }
 
-void editor_memories_window(editor *editor, world *world) {
+void editor_memories_window(editor* editor, world* world) {
 	ImGui::SetNextWindowPos(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.85f, editor->top_menu_bar_height }, ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.15f, ImGui::GetIO().DisplaySize.y * 0.2f }, ImGuiCond_Always);
 	ImGui::PushID("memory_usage_window");
 	if (ImGui::Begin("Memory Usage", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
 		editor->memory_window_pos = ImGui::GetWindowPos();
 		editor->memory_window_size = ImGui::GetWindowSize();
-		auto imgui_render_memory = [](uint64 memory_size, uint64 memory_capacity, const char *memory_name) {
+		auto imgui_render_memory = [](uint64 memory_size, uint64 memory_capacity, const char* memory_name) {
 			char overlay[64] = {};
 			snprintf(overlay, sizeof(overlay), "%s / %s", pretty_print_bytes(memory_size).data(), pretty_print_bytes(memory_capacity).data());
 			ImGui::ProgressBar((float)((double)memory_size / (double)memory_capacity), ImVec2{ ImGui::GetWindowContentRegionWidth() * 0.5f, 0 }, overlay);
@@ -1768,12 +1733,12 @@ void editor_memories_window(editor *editor, world *world) {
 	ImGui::PopID();
 }
 
-float editor_frame_time_ring_buffer_values_getter(void *data, int index) {
-	editor *editor = (struct editor *)data;
+float editor_frame_time_ring_buffer_values_getter(void* data, int index) {
+	editor* editor = (struct editor*)data;
 	return editor->frame_time_ring_buffer.buffer[(editor->frame_time_ring_buffer.read_index + index) % editor->frame_time_ring_buffer.capacity];
 }
 
-void editor_frame_statistic_window(editor *editor, window *window) {
+void editor_frame_statistic_window(editor* editor, window* window) {
 	if (editor->show_frame_statistic_window) {
 		ImGui::PushID("frame_statistic_window");
 		ImGui::SetNextWindowPos(ImVec2((float)window->width / 2, (float)window->height / 2), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
@@ -1786,7 +1751,7 @@ void editor_frame_statistic_window(editor *editor, window *window) {
 	}
 }
 
-void editor_update_camera(editor *editor, window *window) {
+void editor_update_camera(editor* editor, window* window) {
 	if (ImGui::IsMouseClicked(2)) {
 		cursor_pin(true);
 		editor->camera_active = true;
@@ -1851,14 +1816,14 @@ void editor_update_camera(editor *editor, window *window) {
 	}
 }
 
-void editor_tool_gizmo(editor *editor, world *world, window *window) {
+void editor_tool_gizmo(editor* editor, world* world, window* window) {
 	float aspect = (float)window->width / (float)window->height;
 	float znear = min(editor->camera_znear, editor->camera_zfar);
 	float zfar = max(editor->camera_znear, editor->camera_zfar);
 	mat4 camera_view_mat = mat4_look_at(vec3_from_xmvector(editor->camera_position), vec3_from_xmvector(editor->camera_position + editor->camera_view));
 	mat4 camera_proj_mat = mat4_project(editor->camera_fovy, aspect, znear, zfar);
 
-	auto render_direct_light = [&](direct_light *dir_light) {
+	auto render_direct_light = [&](direct_light* dir_light) {
 		vec3 line_verts[2] = { {0, 0, 0}, {0, 0.1f, 0} };
 		vec3 tri_verts[3] = { {-0.02f, 0.1f, 0}, {0.02f, 0.1f, 0}, {0, 0.11f, 0} };
 		vec3 translation = dir_light->position;
@@ -1883,17 +1848,17 @@ void editor_tool_gizmo(editor *editor, world *world, window *window) {
 		for (uint32 i = 0; i < m_countof(tri_verts); i += 1) {
 			tri_screen_space_verts[i] = transform_to_screen_space(tri_verts[i]);
 		}
-		ImDrawList *draw_list = ImGuizmo::gContext.mDrawList;
+		ImDrawList* draw_list = ImGuizmo::gContext.mDrawList;
 		draw_list->AddLine(line_screen_space_verts[0], line_screen_space_verts[1], 0xffffffff);
 		draw_list->AddTriangleFilled(tri_screen_space_verts[0], tri_screen_space_verts[1], tri_screen_space_verts[2], 0xffffffff);
 	};
 
 	if (editor->selected_object_type == selectable_object_direct_light) {
-		direct_light *direct_light = &world->direct_lights[editor->selected_object_index];
+		direct_light* direct_light = &world->direct_lights[editor->selected_object_index];
 		if (editor->tool_type == tool_type_translate) {
 			mat4 transform_mat = mat4_from_translate(direct_light->position);
 			ImGuizmo::BeginFrame();
-			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
+			ImGuizmo::Manipulate((const float*)camera_view_mat, (const float*)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float*)transform_mat);
 			direct_light->position = mat4_get_translate(transform_mat);
 			// render_direct_light(direct_light);
 		}
@@ -1901,17 +1866,17 @@ void editor_tool_gizmo(editor *editor, world *world, window *window) {
 			vec3 default_dir = { 0, 1, 0 };
 			mat4 transform_mat = mat4_from_translate(direct_light->position) * mat4_from_rotate(quat_from_between(default_dir, direct_light->dir));
 			ImGuizmo::BeginFrame();
-			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float *)transform_mat);
+			ImGuizmo::Manipulate((const float*)camera_view_mat, (const float*)camera_proj_mat, ImGuizmo::ROTATE, ImGuizmo::LOCAL, (float*)transform_mat);
 			direct_light->dir = vec3_normalize(mat4_get_rotate(transform_mat) * default_dir);
 			// render_direct_light(direct_light);
 		}
 	}
 	else if (editor->selected_object_type == selectable_object_sphere_light) {
-		sphere_light *sphere_light = &world->sphere_lights[editor->selected_object_index];
+		sphere_light* sphere_light = &world->sphere_lights[editor->selected_object_index];
 		if (editor->tool_type == tool_type_translate) {
 			mat4 transform_mat = mat4_from_translate(sphere_light->position);
 			ImGuizmo::BeginFrame();
-			ImGuizmo::Manipulate((const float *)camera_view_mat, (const float *)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float *)transform_mat);
+			ImGuizmo::Manipulate((const float*)camera_view_mat, (const float*)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float*)transform_mat);
 			sphere_light->position = mat4_get_translate(transform_mat);
 		}
 	}
@@ -2074,19 +2039,19 @@ void editor_tool_gizmo(editor *editor, world *world, window *window) {
 	//}
 }
 
-void editor_check_undo(editor *editor, world *world) {
+void editor_check_undo(editor* editor, world* world) {
 	if (ImGui::IsKeyPressed('Z') && ImGui::IsKeyDown(VK_CONTROL)) {
 		editor_pop_undo(editor, world);
 	}
 }
 
-void append_extra_model_constants(editor *editor, world *world, d3d *d3d) {
+void append_extra_model_constants(editor* editor, world* world, d3d* d3d) {
 	//if (editor->adjust_model && editor->model_index < world->model_count) {
 	//	world_add_model_render_data(world, d3d, editor->model_index, transform_identity(), 0, 0, true);
 	//}
 }
 
-void append_terrain_brush_constants(editor *editor, world *world, d3d *d3d) {
+void append_terrain_brush_constants(editor* editor, world* world, d3d* d3d) {
 	//if (editor->terrain_brush_tool_active) {
 	//	m_debug_assert(world->terrain_index < world->terrain_count);
 	//	terrain *terrain = &world->terrains[world->terrain_index];
@@ -2104,7 +2069,7 @@ void append_terrain_brush_constants(editor *editor, world *world, d3d *d3d) {
 	//}
 }
 
-void render_terrain_brush(editor *editor, world *world, d3d *d3d) {
+void render_terrain_brush(editor* editor, world* world, d3d* d3d) {
 	//if (editor->terrain_brush_tool_active) {
 	//	editor->terrain_brush_tool_active = false;
 	//	m_debug_assert(world->terrain_index < world->terrain_count);
@@ -2125,30 +2090,27 @@ void render_terrain_brush(editor *editor, world *world, d3d *d3d) {
 	//}
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
 	set_current_dir_to_exe_dir();
 
-	window *window = new struct window();
+	window* window = new struct window();
 	window_init(window, window_message_callback);
 	// set_window_fullscreen(window, true);
 
-	d3d12 *d3d12 = new struct d3d12();
+	d3d12* d3d12 = new struct d3d12();
 	d3d12_init(d3d12, window);
 
-	editor *editor = new struct editor();
+	editor* editor = new struct editor();
 	editor_init(editor, d3d12, window);
 
-	world *world = new struct world;
+	world* world = new struct world();
 	world_init(world, d3d12);
+	const char* world_file = "../assets/worlds/example.txt";
 	if (argc > 1) {
-		const char *world_file = argv[1];
-		m_assert(editor_load_world(editor, world, d3d12, world_file));
+		world_file = argv[1];
 	}
-	else {
-		const char *world_file = "assets\\worlds\\example.gpk";
-		if (file_exists(world_file)) {
-			m_assert(editor_load_world(editor, world, d3d12, world_file));
-		}
+	if (file_exists(world_file)) {
+		m_assert(editor_load_world(editor, world, d3d12, world_file));
 	}
 
 	dxr_init_pipeline_state(world, d3d12);
@@ -2176,7 +2138,7 @@ int main(int argc, char **argv) {
 				frame_count = 0;
 				frame_time = 0;
 			}
-		});
+			});
 
 		window->raw_mouse_dx = 0;
 		window->raw_mouse_dy = 0;
@@ -2201,58 +2163,23 @@ int main(int argc, char **argv) {
 		m_d3d_assert(d3d12->command_list->Reset(d3d12->command_allocator, nullptr));
 
 		world_render_params world_render_params = {
-			editor->camera_view_proj_mat, editor->camera_position, editor->camera_view, editor->camera_fovy
+			editor->camera_view_proj_mat,
+			editor->camera_position,
+			editor->camera_view,
+			editor->camera_fovy
 		};
 		world_render_commands(world, d3d12, &world_render_params);
 
-		D3D12_RESOURCE_BARRIER barrier = {};
-		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		barrier.Transition.pResource = d3d12->swap_chain_render_targets[d3d12->swap_chain_buffer_index];
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		d3d12->command_list->ResourceBarrier(1, &barrier);
-
-		D3D12_CPU_DESCRIPTOR_HANDLE swap_chain_render_target_handle = d3d12->swap_chain_render_targets_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-		swap_chain_render_target_handle.ptr += d3d12->swap_chain_buffer_index * d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		float swap_chain_clear_color[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-		d3d12->command_list->ClearRenderTargetView(swap_chain_render_target_handle, swap_chain_clear_color, 0, nullptr);
-		d3d12->command_list->OMSetRenderTargets(1, &swap_chain_render_target_handle, false, nullptr);
-
-		D3D12_VIEWPORT viewport = { 0.0f, 0.0f, (float)window->width, (float)window->height, 0.0f, 1.0f };
-		RECT scissor = { 0, 0, (LONG)window->width, (LONG)window->height };
-		d3d12->command_list->RSSetViewports(1, &viewport);
-		d3d12->command_list->RSSetScissorRects(1, &scissor);
-
-		uint32 world_frame_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		D3D12_CPU_DESCRIPTOR_HANDLE world_frame_cpu_descriptor_handle = { world->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart().ptr + world->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
-		D3D12_GPU_DESCRIPTOR_HANDLE world_frame_gpu_descriptor_handle = { world->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr + world->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
-		d3d12->device->CreateShaderResourceView(world->render_target, nullptr, world_frame_cpu_descriptor_handle);
-		d3d12->device->CreateShaderResourceView(d3d12->dither_texture, nullptr, { world_frame_cpu_descriptor_handle.ptr + world_frame_descriptor_handle_size });
-		world->frame_descriptor_handle_count += 2;
-
-		d3d12->command_list->SetPipelineState(d3d12->blit_to_swap_chain_pipeline_state);
-		d3d12->command_list->SetGraphicsRootSignature(d3d12->blit_to_swap_chain_root_signature);
-		d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
-		d3d12->command_list->SetGraphicsRootDescriptorTable(0, world_frame_gpu_descriptor_handle);
-		d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		d3d12->command_list->DrawInstanced(3, 1, 0, 0);
-
-		imgui_render_commands(editor, d3d12, window);
-
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-		d3d12->command_list->ResourceBarrier(1, &barrier);
+		editor_blit_imgui_render_commands(editor, world, d3d12, window);
 
 		d3d12->command_list->Close();
-
-		d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList **)&d3d12->command_list);
+		d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
 		m_d3d_assert(d3d12->swap_chain->Present(1, 0));
 
 		d3d12_wait_command_list(d3d12);
 		d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
 	}
-	save_editor_options("editor_options.txt", editor);
+	editor_save_settings(editor);
 	ImGui::DestroyContext(editor->imgui_context);
 
 	// d3d12->dxgi_debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_IGNORE_INTERNAL);

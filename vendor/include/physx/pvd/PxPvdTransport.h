@@ -23,7 +23,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Copyright (c) 2008-2018 NVIDIA Corporation. All rights reserved.
+// Copyright (c) 2008-2019 NVIDIA Corporation. All rights reserved.
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.
 
@@ -112,14 +112,14 @@ class PxPvdTransport
 	\param port ip port used for pvd, should same as the port setting in pvd application.
 	\param timeoutInMilliseconds timeout when connect to pvd host.
 */
-PX_PVDSDK_API PxPvdTransport* PX_CALL_CONV
+PX_C_EXPORT PxPvdTransport* PX_CALL_CONV
 PxDefaultPvdSocketTransportCreate(const char* host, int port, unsigned int timeoutInMilliseconds);
 
 /**
 	\brief Create a default file transport.
 	\param name full path filename used save captured pvd data, or NULL for a fake/test file transport.
 */
-PX_PVDSDK_API PxPvdTransport* PX_CALL_CONV PxDefaultPvdFileTransportCreate(const char* name);
+PX_C_EXPORT PxPvdTransport* PX_CALL_CONV PxDefaultPvdFileTransportCreate(const char* name);
 
 #if !PX_DOXYGEN
 } // namespace physx

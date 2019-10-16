@@ -46,6 +46,7 @@ ps_output pixel_shader(vs_output vs_output) {
 	float3 emissive = emissive_texture.Sample(texture_sampler, vs_output.texcoord);
 
 	float3 lo = emissive;
+	// lo += diffuse / 5;
 	for (uint i = 0; i < 4; i += 1) {
 		if (i < light_count) {
 			light l = lights[i];
@@ -61,7 +62,7 @@ ps_output pixel_shader(vs_output vs_output) {
 #if 1
 			lo += cook_torrance_brdf(wi, wo, normal, diffuse, roughness_metallic.x, roughness_metallic.y) * l.color.rgb * visibility;
 #else
-			lo += cook_torrance_brdf(wi, wo, normal, float3(0.8, 0.8, 0.8), 1, 0) * l.color.rgb * visibility; 
+			lo += cook_torrance_brdf(wi, wo, normal, float3(0.8, 0.8, 0.8), 1, 0) * l.color.rgb * visibility;
 #endif
 		}
 	}

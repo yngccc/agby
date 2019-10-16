@@ -23,7 +23,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Copyright (c) 2008-2018 NVIDIA Corporation. All rights reserved.
+// Copyright (c) 2008-2019 NVIDIA Corporation. All rights reserved.
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.
 
@@ -70,6 +70,13 @@ Compiler defines, see http://sourceforge.net/p/predef/wiki/Compilers/
 #endif
 #elif defined(__clang__)
 #define PX_CLANG 1
+	#if defined (__clang_major__) 
+		#define PX_CLANG_MAJOR __clang_major__
+	#elif defined (_clang_major)
+		#define PX_CLANG_MAJOR _clang_major
+	#else
+		#define PX_CLANG_MAJOR 0
+	#endif	
 #elif defined(__GNUC__) // note: __clang__ implies __GNUC__
 #define PX_GCC 1
 #else
@@ -81,6 +88,8 @@ Operating system defines, see http://sourceforge.net/p/predef/wiki/OperatingSyst
 */
 #if defined(_XBOX_ONE)
 #define PX_XBOXONE 1
+#elif defined(WINAPI_FAMILY) && WINAPI_FAMILY == WINAPI_FAMILY_APP
+#define PX_UWP 1
 #elif defined(_WIN64) // note: _XBOX_ONE implies _WIN64
 #define PX_WIN64 1
 #elif defined(_WIN32) // note: _M_PPC implies _WIN32
@@ -108,7 +117,7 @@ Architecture defines, see http://sourceforge.net/p/predef/wiki/Architectures/
 #define PX_X64 1
 #elif defined(__i386__) || defined(_M_IX86) || defined (__EMSCRIPTEN__)
 #define PX_X86 1
-#elif defined(__arm64__) || defined(__aarch64__)
+#elif defined(__arm64__) || defined(__aarch64__) || defined(_M_ARM64)
 #define PX_A64 1
 #elif defined(__arm__) || defined(_M_ARM)
 #define PX_ARM 1
@@ -172,6 +181,9 @@ define anything not defined on this platform to 0
 #ifndef PX_SWITCH
 #define PX_SWITCH 0
 #endif
+#ifndef PX_UWP
+#define PX_UWP 0
+#endif
 #ifndef PX_X64
 #define PX_X64 0
 #endif
@@ -209,6 +221,9 @@ define anything not defined through the command line to 0
 #ifndef PX_PROFILE
 #define PX_PROFILE 0
 #endif
+#ifndef PX_DEBUG_CRT
+#define PX_DEBUG_CRT 0
+#endif
 #ifndef PX_NVTX
 #define PX_NVTX 0
 #endif
@@ -222,7 +237,7 @@ family shortcuts
 // compiler
 #define PX_GCC_FAMILY (PX_CLANG || PX_GCC)
 // os
-#define PX_WINDOWS_FAMILY (PX_WIN32 || PX_WIN64)
+#define PX_WINDOWS_FAMILY (PX_WIN32 || PX_WIN64 || PX_UWP)
 #define PX_MICROSOFT_FAMILY (PX_XBOXONE || PX_WINDOWS_FAMILY)
 #define PX_LINUX_FAMILY (PX_LINUX || PX_ANDROID)
 #define PX_APPLE_FAMILY (PX_IOS || PX_OSX)                  // equivalent to #if __APPLE__
@@ -240,7 +255,7 @@ family shortcuts
 /**
 C++ standard library defines
 */
-#if defined(_LIBCPP_VERSION) || PX_WIN64 || PX_WIN32 || PX_PS4 || PX_XBOXONE || PX_EMSCRIPTEN
+#if defined(_LIBCPP_VERSION) || PX_WIN64 || PX_WIN32 || PX_PS4 || PX_XBOXONE || PX_UWP || PX_EMSCRIPTEN
 #define PX_LIBCPP 1
 #else
 #define PX_LIBCPP 0
@@ -277,37 +292,12 @@ DLL export macros
 #define PX_UNIX_EXPORT
 #endif
 
-#if PX_WINDOWS_FAMILY
+#if (PX_WINDOWS_FAMILY || PX_XBOXONE || PX_PS4)
 #define PX_DLL_EXPORT __declspec(dllexport)
 #define PX_DLL_IMPORT __declspec(dllimport)
 #else
 #define PX_DLL_EXPORT PX_UNIX_EXPORT
 #define PX_DLL_IMPORT
-#endif
-
-/**
-Define API function declaration
-
-PX_FOUNDATION_DLL=1 - used by the DLL library (PhysXCommon) to export the API
-PX_FOUNDATION_DLL=0 - for windows configurations where the PX_FOUNDATION_API is linked through standard static linking
-no definition       - this will allow DLLs and libraries to use the exported API from PhysXCommon
-
-*/
-
-#if PX_WINDOWS_FAMILY && !PX_ARM_FAMILY
-#ifndef PX_FOUNDATION_DLL
-#define PX_FOUNDATION_API PX_DLL_IMPORT
-#elif PX_FOUNDATION_DLL
-#define PX_FOUNDATION_API PX_DLL_EXPORT
-#endif
-#elif PX_UNIX_FAMILY
-#ifdef PX_FOUNDATION_DLL
-#define PX_FOUNDATION_API PX_UNIX_EXPORT
-#endif
-#endif
-
-#ifndef PX_FOUNDATION_API
-#define PX_FOUNDATION_API
 #endif
 
 /**
@@ -433,7 +423,7 @@ General defines
 */
 
 // static assert
-#if (defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7))) || (PX_PS4) || (PX_APPLE_FAMILY) || (PX_SWITCH) || (PX_CLANG && PX_ARM)
+#if(defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7))) || (PX_PS4) || (PX_APPLE_FAMILY) || (PX_SWITCH) || (PX_CLANG && PX_ARM)
 #define PX_COMPILE_TIME_ASSERT(exp) typedef char PX_CONCAT(PxCompileTimeAssert_Dummy, __COUNTER__)[(exp) ? 1 : -1] __attribute__((unused))
 #else
 #define PX_COMPILE_TIME_ASSERT(exp) typedef char PxCompileTimeAssert_Dummy[(exp) ? 1 : -1]

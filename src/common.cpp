@@ -7,7 +7,6 @@
 
 #define _USE_MATH_DEFINES
 #define _CRT_SECURE_NO_WARNINGS
-#define _ITERATOR_DEBUG_LEVEL 0
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -117,7 +116,7 @@ T round_up(T n, T multi) {
 }
 
 template <typename T>
-void round_up(T *n, T multi) {
+void round_up(T* n, T multi) {
 	T remainder = *n % multi;
 	if (remainder != 0) {
 		*n = *n + (multi - remainder);
@@ -155,12 +154,15 @@ struct scope_exit_func {
 	~scope_exit_func() { func(); }
 };
 
-template <typename F> scope_exit_func<F> scope_exit(F f) { return scope_exit_func<F>(f); }
+template <typename F>
+scope_exit_func<F> scope_exit(F f) {
+	return scope_exit_func<F>(f);
+}
 
 template <typename T>
 struct range {
-	range(T *first, T *last) : begin_{ first }, end_{ last } {}
-	range(T *first, uint64 size) : begin_{ first }, end_{ first + size } {}
+	range(T* first, T* last) : begin_{ first }, end_{ last } {}
+	range(T* first, uint64 size) : begin_{ first }, end_{ first + size } {}
 	T* begin() const { return begin_; }
 	T* end() const { return end_; }
 private:
@@ -169,13 +171,56 @@ private:
 };
 
 template <typename T>
-range<T> make_range(T *first, T *last) { return range<T>{first, last}; }
+range<T> make_range(T* first, T* last) { return range<T>{first, last}; }
 
 template <typename T>
-range<T> make_range(T *first, uint64 size) { return range<T>{first, size}; }
+range<T> make_range(T* first, uint64 size) { return range<T>{first, size}; }
+
+template <typename T>
+struct array {
+	T* elems;
+	uint64 size;
+	uint64 capacity;
+
+	T* begin() const { return elems; }
+	T* end() const { return elems + size; }
+
+	T& operator[](uint64 index) {
+		m_debug_assert(index < size);
+		return elems[index];
+	}
+
+	T* append(const T& value) {
+		if (size < capacity) {
+			elems[size] = value;
+			size += 1;
+			return &elems[size - 1];
+		}
+		else {
+			capacity = max(capacity * 2, 64ull);
+			T* new_elems = new T[capacity];
+			memcpy(new_elems, elems, size * sizeof(T));
+			new_elems[size] = value;
+			delete[] elems;
+			elems = new_elems;
+			size += 1;
+			return &new_elems[size - 1];
+		}
+	}
+
+	void clear() {
+		size = 0;
+	}
+
+	void remove(uint64 index) {
+		m_debug_assert(index < size);
+		memmove(elems + index, elems + index + 1, (size - index - 1) * sizeof(T));
+		size -= 1;
+	}
+};
 
 template <typename T, uint32 N>
-void array_set(T(&array)[N], const T &value) {
+void array_fill(T(&array)[N], const T& value) {
 	for (uint32 i = 0; i < N; i += 1) {
 		array[i] = value;
 	}
@@ -188,21 +233,21 @@ void array_copy(T(&dst_array)[dst_size], const T(&src_array)[src_size]) {
 }
 
 template <typename T>
-void array_remove(T *array, uint32 *array_size, uint32 index) {
+void array_remove(T* array, uint32* array_size, uint32 index) {
 	m_debug_assert(*array_size > 0 && index < *array_size);
 	memmove(array + index, array + index + 1, (*array_size - index - 1) * sizeof(T));
 	*array_size -= 1;
 }
 
 template <typename T>
-void array_remove_swap_end(T *array, uint32 *array_size, uint32 index) {
+void array_remove_swap_end(T* array, uint32* array_size, uint32 index) {
 	m_debug_assert(*array_size > 0 && index < *array_size);
 	array[index] = array[*array_size - 1];
 	*array_size -= 1;
 }
 
 template <typename T>
-void array_insert(T *array, uint32 *array_size, const T &elem, uint32 insert_index) {
+void array_insert(T* array, uint32* array_size, const T& elem, uint32 insert_index) {
 	m_debug_assert(insert_index <= *array_size);
 	memmove(array + insert_index + 1, array + insert_index, (*array_size - insert_index) * sizeof(T));
 	array[insert_index] = elem;
@@ -210,18 +255,18 @@ void array_insert(T *array, uint32 *array_size, const T &elem, uint32 insert_ind
 }
 
 template <typename T>
-void list_prepend(T **list_head, T *new_head) {
+void list_prepend(T** list_head, T* new_head) {
 	new_head->next = *list_head;
 	*list_head = new_head;
 }
 
 template <typename T>
-void list_append(T **list_head, T *new_tail) {
+void list_append(T** list_head, T* new_tail) {
 	if (!*list_head) {
 		*list_head = new_tail;
 	}
 	else {
-		T *node = *list_head;
+		T* node = *list_head;
 		while (node->next) {
 			node = node->next;
 		}
@@ -231,8 +276,8 @@ void list_append(T **list_head, T *new_tail) {
 }
 
 template <typename T>
-void list_remove(T **list_head, T *node) {
-	T *list_node = *list_head;
+void list_remove(T** list_head, T* node) {
+	T* list_node = *list_head;
 	if (list_node == node) {
 		*list_head = node->next;
 	}
@@ -249,7 +294,7 @@ void list_remove(T **list_head, T *node) {
 
 template <typename T>
 struct ring_buffer {
-	T *buffer;
+	T* buffer;
 	uint32 read_index;
 	uint32 write_index;
 	uint32 size;
@@ -257,7 +302,7 @@ struct ring_buffer {
 };
 
 template <typename T>
-void ring_buffer_write(ring_buffer<T> *rb, T elem) {
+void ring_buffer_write(ring_buffer<T>* rb, T elem) {
 	rb->buffer[rb->write_index] = elem;
 	if (rb->size == (rb->capacity - 1)) {
 		rb->read_index = (rb->read_index + 1) % rb->capacity;
@@ -276,11 +321,11 @@ void ring_buffer_write(ring_buffer<T> *rb, T elem) {
 }
 
 struct string {
-	const char *ptr;
+	const char* ptr;
 	uint32 len;
 };
 
-bool operator==(const string &s1, const string &s2) {
+bool operator==(const string& s1, const string& s2) {
 	if (s1.len != s2.len) {
 		return false;
 	}
@@ -289,11 +334,11 @@ bool operator==(const string &s1, const string &s2) {
 	}
 }
 
-bool operator!=(const string &s1, const string &s2) {
+bool operator!=(const string& s1, const string& s2) {
 	return !(s1 == s2);
 }
 
-bool operator==(const string &s1, const char *s2) {
+bool operator==(const string& s1, const char* s2) {
 	uint64 s2_len = strlen(s2);
 	if (s1.len != s2_len) {
 		return false;
@@ -303,14 +348,14 @@ bool operator==(const string &s1, const char *s2) {
 	}
 }
 
-bool operator!=(const string &s1, const char *s2) {
+bool operator!=(const string& s1, const char* s2) {
 	return !(s1 == s2);
 }
 
-uint32 murmur3_32(const void *key, uint32 len) {
+uint32 murmur3_32(const void* key, uint32 len) {
 	uint32 seed = 0xdeadbeef;
 
-	const uint8 *data = (const uint8 *)key;
+	const uint8* data = (const uint8*)key;
 	const int nblocks = len / 4;
 
 	uint32 h1 = seed;
@@ -318,7 +363,7 @@ uint32 murmur3_32(const void *key, uint32 len) {
 	const uint32 c1 = 0xcc9e2d51;
 	const uint32 c2 = 0x1b873593;
 
-	const uint32 *blocks = (const uint32 *)(data + nblocks * 4);
+	const uint32* blocks = (const uint32*)(data + nblocks * 4ll);
 
 	for (int i = -nblocks; i; i += 1) {
 		uint32 k1 = blocks[i];
@@ -330,7 +375,7 @@ uint32 murmur3_32(const void *key, uint32 len) {
 		h1 = h1 * 5 + 0xe6546b64;
 	}
 
-	const uint8 *tail = (const uint8 *)(data + nblocks * 4);
+	const uint8* tail = (const uint8*)(data + nblocks * 4ll);
 	uint32 k1 = 0;
 
 	switch (len & 3) {
@@ -360,7 +405,7 @@ struct hash_map_elem {
 
 template <typename KEY, typename VALUE>
 struct hash_map {
-	hash_map_elem<KEY, VALUE> *elems;
+	hash_map_elem<KEY, VALUE>* elems;
 	VALUE zero_elem_value;
 	bool zero_elem_used;
 	uint32 capacity;
@@ -376,31 +421,31 @@ bool hash_map_key_is_zero(uint64 i) {
 }
 
 template <typename VALUE>
-bool hash_map_elem_is_empty(const hash_map_elem<string, VALUE> *elem) {
+bool hash_map_elem_is_empty(const hash_map_elem<string, VALUE>* elem) {
 	return elem->key.ptr == nullptr && elem->key.len == 0;
 }
 
 template <typename VALUE>
-bool hash_map_elem_is_empty(const hash_map_elem<uint32, VALUE> *elem) {
+bool hash_map_elem_is_empty(const hash_map_elem<uint32, VALUE>* elem) {
 	return elem->key == 0;
 }
 
 template <typename VALUE>
-hash_map_elem<string, VALUE> *hash_map_get_first(const hash_map<string, VALUE> *map, string key) {
+hash_map_elem<string, VALUE>* hash_map_get_first(const hash_map<string, VALUE>* map, string key) {
 	uint32 hash = murmur3_32(key.ptr, key.len);
 	uint32 index = hash & (map->capacity - 1);
 	return map->elems + index;
 }
 
 template <typename VALUE>
-hash_map_elem<uint32, VALUE> *hash_map_get_first(const hash_map<uint32, VALUE> *map, uint32 key) {
+hash_map_elem<uint32, VALUE>* hash_map_get_first(const hash_map<uint32, VALUE>* map, uint32 key) {
 	uint32 hash = murmur3_32(&key, sizeof(key));
 	uint32 index = hash & (map->capacity - 1);
 	return map->elems + index;
 }
 
 template <typename KEY, typename VALUE>
-hash_map_elem<KEY, VALUE> *hash_map_get_next(const hash_map<KEY, VALUE> *map, hash_map_elem<KEY, VALUE> *elem) {
+hash_map_elem<KEY, VALUE>* hash_map_get_next(const hash_map<KEY, VALUE>* map, hash_map_elem<KEY, VALUE>* elem) {
 	if (elem + 1 != map->elems + map->capacity) {
 		return elem + 1;
 	}
@@ -410,7 +455,7 @@ hash_map_elem<KEY, VALUE> *hash_map_get_next(const hash_map<KEY, VALUE> *map, ha
 }
 
 template <typename KEY, typename VALUE>
-uint32 hash_map_get_offset(const hash_map<KEY, VALUE> *map, hash_map_elem<KEY, VALUE> *elem1, hash_map_elem<KEY, VALUE> *elem2) {
+uint32 hash_map_get_offset(const hash_map<KEY, VALUE>* map, hash_map_elem<KEY, VALUE>* elem1, hash_map_elem<KEY, VALUE>* elem2) {
 	ptrdiff_t diff = elem2 - elem1;
 	if (diff >= 0) {
 		return (uint32)diff;
@@ -421,7 +466,7 @@ uint32 hash_map_get_offset(const hash_map<KEY, VALUE> *map, hash_map_elem<KEY, V
 }
 
 template <typename KEY, typename VALUE>
-void hash_map_initialize(hash_map<KEY, VALUE> *map, uint32 capacity) {
+void hash_map_initialize(hash_map<KEY, VALUE>* map, uint32 capacity) {
 	m_assert(capacity >= 256 && is_pow2(capacity));
 	*map = {};
 	map->capacity = capacity;
@@ -429,25 +474,25 @@ void hash_map_initialize(hash_map<KEY, VALUE> *map, uint32 capacity) {
 }
 
 template <typename KEY, typename VALUE>
-void hash_map_delete(hash_map<KEY, VALUE> *map) {
+void hash_map_delete(hash_map<KEY, VALUE>* map) {
 	delete[] map->elems;
 	*map = {};
 }
 
 template <typename KEY, typename VALUE>
-void hash_map_resize(hash_map<KEY, VALUE> *map, uint32 new_capacity) {
+void hash_map_resize(hash_map<KEY, VALUE>* map, uint32 new_capacity) {
 	m_assert(is_pow2(new_capacity));
 	m_assert(map->size * 4 <= new_capacity * 3);
 
-	hash_map_elem<KEY, VALUE> *old_elem_begin = map->elems;
-	hash_map_elem<KEY, VALUE> *old_elem_end = map->elems + map->capacity;
+	hash_map_elem<KEY, VALUE>* old_elem_begin = map->elems;
+	hash_map_elem<KEY, VALUE>* old_elem_end = map->elems + map->capacity;
 
 	map->capacity = new_capacity;
 	map->elems = new hash_map_elem<KEY, VALUE>[new_capacity]();
 
-	for (hash_map_elem<KEY, VALUE> *old_elem = old_elem_begin; old_elem != old_elem_end; old_elem += 1) {
+	for (hash_map_elem<KEY, VALUE>* old_elem = old_elem_begin; old_elem != old_elem_end; old_elem += 1) {
 		if (!hash_map_elem_is_empty(old_elem)) {
-			for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, old_elem->key); ; elem = hash_map_get_next(map, elem)) {
+			for (hash_map_elem<KEY, VALUE>* elem = hash_map_get_first(map, old_elem->key); ; elem = hash_map_get_next(map, elem)) {
 				if (hash_map_elem_is_empty(elem)) {
 					*elem = *old_elem;
 					break;
@@ -460,7 +505,7 @@ void hash_map_resize(hash_map<KEY, VALUE> *map, uint32 new_capacity) {
 }
 
 template <typename KEY, typename VALUE>
-bool hash_map_get(const hash_map<KEY, VALUE> *map, KEY key, VALUE *value) {
+bool hash_map_get(const hash_map<KEY, VALUE>* map, KEY key, VALUE* value) {
 	if (hash_map_key_is_zero(key)) {
 		if (!map->zero_elem_used) {
 			return false;
@@ -471,7 +516,7 @@ bool hash_map_get(const hash_map<KEY, VALUE> *map, KEY key, VALUE *value) {
 		}
 	}
 	else {
-		for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
+		for (hash_map_elem<KEY, VALUE>* elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
 			if (hash_map_elem_is_empty(elem)) {
 				return false;
 			}
@@ -484,7 +529,7 @@ bool hash_map_get(const hash_map<KEY, VALUE> *map, KEY key, VALUE *value) {
 }
 
 template <typename KEY, typename VALUE>
-bool hash_map_insert(hash_map<KEY, VALUE> *map, KEY key, VALUE value) {
+bool hash_map_insert(hash_map<KEY, VALUE>* map, KEY key, VALUE value) {
 	if (hash_map_key_is_zero(key)) {
 		if (map->zero_elem_used) {
 			return false;
@@ -498,7 +543,7 @@ bool hash_map_insert(hash_map<KEY, VALUE> *map, KEY key, VALUE value) {
 	}
 	else {
 		for (;;) {
-			for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
+			for (hash_map_elem<KEY, VALUE>* elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
 				if (hash_map_elem_is_empty(elem)) {
 					if ((map->size + 1) * 4 >= map->capacity * 3) {
 						hash_map_resize(map, map->capacity * 2);
@@ -520,7 +565,7 @@ bool hash_map_insert(hash_map<KEY, VALUE> *map, KEY key, VALUE value) {
 }
 
 template <typename KEY, typename VALUE>
-bool hash_map_remove(hash_map<KEY, VALUE> *map, KEY key) {
+bool hash_map_remove(hash_map<KEY, VALUE>* map, KEY key) {
 	if (hash_map_key_is_zero(key)) {
 		if (map->zero_elem_used) {
 			map->zero_elem_used = false;
@@ -533,19 +578,19 @@ bool hash_map_remove(hash_map<KEY, VALUE> *map, KEY key) {
 		}
 	}
 	else {
-		for (hash_map_elem<KEY, VALUE> *elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
+		for (hash_map_elem<KEY, VALUE>* elem = hash_map_get_first(map, key); ; elem = hash_map_get_next(map, elem)) {
 			if (hash_map_elem_is_empty(elem)) {
 				return false;
 			}
 			else if (elem->key == key) {
-				for (hash_map_elem<KEY, VALUE> *next_elem = hash_map_get_next(map, elem); ; next_elem = hash_map_get_next(map, next_elem)) {
+				for (hash_map_elem<KEY, VALUE>* next_elem = hash_map_get_next(map, elem); ; next_elem = hash_map_get_next(map, next_elem)) {
 					if (hash_map_elem_is_empty(next_elem)) {
 						memset(elem, 0, sizeof(*elem));
 						map->size -= 1;
 						return true;
 					}
 					else {
-						hash_map_elem<KEY, VALUE> *ideal_elem = hash_map_get_first(map, next_elem->key);
+						hash_map_elem<KEY, VALUE>* ideal_elem = hash_map_get_first(map, next_elem->key);
 						if (hash_map_get_offset(map, ideal_elem, elem) < hash_map_get_offset(map, ideal_elem, next_elem)) {
 							*elem = *next_elem;
 							elem = next_elem;
@@ -557,9 +602,9 @@ bool hash_map_remove(hash_map<KEY, VALUE> *map, KEY key) {
 	}
 }
 
-const char *get_file_name(const char *path) {
-	const char *ptr_0 = strrchr(path, '/');
-	const char *ptr_1 = strrchr(path, '\\');
+const char* get_file_name(const char* path) {
+	const char* ptr_0 = strrchr(path, '/');
+	const char* ptr_1 = strrchr(path, '\\');
 	if (ptr_0 && ptr_1) {
 		return ptr_0 > ptr_1 ? ptr_0 : ptr_1;
 	}
@@ -575,69 +620,69 @@ const char *get_file_name(const char *path) {
 }
 
 struct memory_arena {
-	uint8 *memory;
+	uint8* memory;
 	uint64 size;
 	uint64 capacity;
 };
 
-bool memory_arena_init(uint64 capacity, memory_arena *arena) {
+bool memory_arena_init(uint64 capacity, memory_arena* arena) {
 	arena->memory = new uint8[capacity]();
 	arena->size = 0;
 	arena->capacity = capacity;
 	return arena->memory != nullptr;
 }
 
-void memory_arena_destroy(memory_arena *arena) {
+void memory_arena_destroy(memory_arena* arena) {
 	delete[] arena->memory;
 	*arena = {};
 }
 
 template <typename T>
-T *memory_arena_alloc(memory_arena *memory_arena, uint64 count, uint64 alignment = alignof(T)) {
+T* memory_arena_alloc(memory_arena* memory_arena, uint64 count, uint64 alignment = alignof(T)) {
 	m_debug_assert(is_pow2(alignment));
 	if (count == 0) {
 		return nullptr;
 	}
-	uint8 *memory = (uint8 *)memory_arena->memory + memory_arena->size;
+	uint8* memory = (uint8*)memory_arena->memory + memory_arena->size;
 	uint64 remainder = (uintptr_t)memory % alignment;
 	uint64 offset = (remainder == 0) ? 0 : (alignment - remainder);
 	uint64 new_arena_size = memory_arena->size + offset + count * sizeof(T);
 	m_assert(new_arena_size <= memory_arena->capacity);
 	memory_arena->size = new_arena_size;
 	memset(memory + offset, 0, count * sizeof(T));
-	return (T *)(memory + offset);
+	return (T*)(memory + offset);
 }
 
 struct memory_arena_undo_alloc_scope_exit {
-	memory_arena *arena;
+	memory_arena* arena;
 	uint64 restore_size;
-	memory_arena_undo_alloc_scope_exit(memory_arena *a) : arena(a), restore_size(a->size) {};
+	memory_arena_undo_alloc_scope_exit(memory_arena* a) : arena(a), restore_size(a->size) {};
 	~memory_arena_undo_alloc_scope_exit() { arena->size = restore_size; }
 };
 
 struct memory_pool {
-	void *free_block;
-	uint32 free_block_count;
-	uint32 block_count;
-	uint32 block_size;
-	uint32 block_alignment;
-	uint8 *memory;
+	void* free_block;
+	uint64 free_block_count;
+	uint64 block_count;
+	uint64 block_size;
+	uint64 block_alignment;
+	uint8* memory;
 };
 
-void memory_pool_clear(memory_pool *pool) {
-	uint8 *free_block = (uint8 *)pool->memory;
+void memory_pool_clear(memory_pool* pool) {
+	uint8* free_block = (uint8*)pool->memory;
 	for (uint64 i = 0; i < (pool->block_count - 1); i += 1) {
-		*(void **)free_block = free_block + pool->block_size;
+		*(void**)free_block = free_block + pool->block_size;
 		free_block += pool->block_size;
 	}
-	*(void **)free_block = nullptr;
+	*(void**)free_block = nullptr;
 	pool->free_block = pool->memory;
 	pool->free_block_count = pool->block_count;
 }
 
-bool memory_arena_init(memory_pool *pool, uint32 block_count, uint32 block_size, uint32 block_alignment) {
+bool memory_arena_init(memory_pool* pool, uint64 block_count, uint64 block_size, uint64 block_alignment) {
 	m_debug_assert(block_count > 0);
-	block_alignment = max(block_alignment, (uint32)sizeof(void *));
+	block_alignment = max(block_alignment, sizeof(void*));
 	m_debug_assert(is_pow2(block_alignment));
 	round_up(&block_size, block_alignment);
 	uint64 memory_size = block_size * block_count;
@@ -651,28 +696,28 @@ bool memory_arena_init(memory_pool *pool, uint32 block_count, uint32 block_size,
 	return true;
 }
 
-void memory_pool_destroy(memory_pool *pool) {
+void memory_pool_destroy(memory_pool* pool) {
 	delete[] pool->memory;
 	*pool = {};
 }
 
 template <typename T>
-T *memory_pool_alloc(memory_pool *memory_pool) {
+T* memory_pool_alloc(memory_pool* memory_pool) {
 	m_debug_assert(sizeof(T) <= memory_pool->block_size);
-	T *block = (T *)memory_pool->free_block;
+	T* block = (T*)memory_pool->free_block;
 	if (!block) {
 		return block;
 	}
-	memory_pool->free_block = *(T **)block;
+	memory_pool->free_block = *(T**)block;
 	memory_pool->free_block_count -= 1;
 	m_debug_assert((uintptr_t)block % alignof(T) == 0);
 	return block;
 }
 
-void memory_pool_free(memory_pool *memory_pool, void *block) {
+void memory_pool_free(memory_pool* memory_pool, void* block) {
 	m_debug_assert((uintptr_t)block >= (uintptr_t)memory_pool->memory);
 	m_debug_assert((uintptr_t)block < (uintptr_t)memory_pool->memory + memory_pool->block_count * memory_pool->block_size);
-	*(void **)block = memory_pool->free_block;
+	*(void**)block = memory_pool->free_block;
 	memory_pool->free_block = block;
 	memory_pool->free_block_count += 1;
 }
@@ -712,9 +757,9 @@ std::array<char, 256> get_winapi_err_str() {
 void show_console() {
 	if (!GetConsoleWindow()) {
 		AllocConsole();
-		freopen("CONIN$", "r", stdin);
-		freopen("CONOUT$", "w", stdout);
-		freopen("CONOUT$", "w", stderr);
+		m_assert(freopen("CONIN$", "r", stdin));
+		m_assert(freopen("CONOUT$", "w", stdout));
+		m_assert(freopen("CONOUT$", "w", stderr));
 	}
 }
 
@@ -723,15 +768,15 @@ struct timer {
 	LARGE_INTEGER performance_counters[2];
 };
 
-void timer_init(timer *timer) {
+void timer_init(timer* timer) {
 	QueryPerformanceFrequency(&timer->performance_frequency);
 }
 
-void timer_start(timer *timer) {
+void timer_start(timer* timer) {
 	QueryPerformanceCounter(&timer->performance_counters[0]);
 }
 
-void timer_stop(timer *timer) {
+void timer_stop(timer* timer) {
 	QueryPerformanceCounter(&timer->performance_counters[1]);
 }
 
@@ -740,12 +785,12 @@ double timer_get_duration(timer timer) {
 	return (double)ticks / (double)timer.performance_frequency.QuadPart;
 }
 
-bool get_current_dir(char *dir, uint32 dir_buf_size) {
+bool get_current_dir(char* dir, uint32 dir_buf_size) {
 	DWORD d = GetCurrentDirectoryA(dir_buf_size, dir);
 	return d > 0;
 }
 
-bool set_current_dir(char *dir) {
+bool set_current_dir(char* dir) {
 	return SetCurrentDirectoryA(dir);
 }
 
@@ -755,7 +800,7 @@ bool set_current_dir_to_exe_dir() {
 	if (n == sizeof(path) && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
 		return false;
 	}
-	char *path_ptr = strrchr(path, '\\');
+	char* path_ptr = strrchr(path, '\\');
 	if (!path_ptr) {
 		return false;
 	}
@@ -766,19 +811,94 @@ bool set_current_dir_to_exe_dir() {
 	return true;
 }
 
-bool file_exists(const char *path) {
+bool file_exists(const char* path) {
 	DWORD dwAttrib = GetFileAttributesA(path);
 	return (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 }
 
+struct token {
+	char* ptr;
+	int len;
+
+	bool to_float(float* fp) {
+		char c = ptr[len];
+		ptr[len] = '\0';
+		auto restore_char = scope_exit([&] { ptr[len] = c; });
+		char* endptr = nullptr;
+		*fp = strtof(ptr, &endptr);
+		if (errno == ERANGE) {
+			return false;
+		}
+		if (*fp == 0.0f && endptr == ptr) {
+			return false;
+		}
+		return true;
+	}
+};
+
+struct file_tokenizer {
+	FILE* file;
+	size_t file_len;
+	char* file_data;
+	size_t file_pos;
+
+	bool get_token(token* tk) {
+		while (file_pos < file_len && isspace(file_data[file_pos])) {
+			file_pos += 1;
+		}
+		if (file_pos >= file_len) {
+			return false;
+		}
+		size_t tk_pos = file_pos;
+		int len = 0;
+		while (file_pos < file_len && !isspace(file_data[file_pos])) {
+			len += 1;
+			file_pos += 1;
+		}
+		tk->ptr = file_data + tk_pos;
+		tk->len = len;
+		return true;
+	}
+};
+
+bool file_tokenizer_init(file_tokenizer* ft, const char* file_name) {
+	FILE* file = fopen(file_name, "r");
+	if (!file) {
+		return false;
+	}
+	fseek(file, 0, SEEK_END);
+	long file_size = ftell(file);
+	rewind(file);
+
+	char* file_data = new char[file_size + 1]();
+
+	size_t file_len = fread(file_data, 1, file_size, file);
+
+	if (file_len != file_size && ferror(file)) {
+		delete[] file_data;
+		fclose(file);
+		return false;
+	}
+	ft->file = file;
+	ft->file_len = file_len;
+	ft->file_data = file_data;
+	ft->file_pos = 0;
+	return true;
+}
+
+void file_tokenizer_delete(file_tokenizer ft) {
+	delete[] ft.file_data;
+	fclose(ft.file);
+}
+
 struct file_mapping {
-	uint8 *ptr;
+	uint8* ptr;
 	uint64 size;
 	HANDLE mapping_handle;
 	HANDLE file_handle;
 };
 
-bool file_mapping_create(const char *file_name, uint64 file_size, file_mapping *file_mapping) {
+bool file_mapping_create(const char* file_name, uint64 file_size, file_mapping* file_mapping) {
 	HANDLE file_handle = CreateFileA(file_name, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (file_handle == INVALID_HANDLE_VALUE) {
 		return false;
@@ -801,7 +921,7 @@ bool file_mapping_create(const char *file_name, uint64 file_size, file_mapping *
 		DeleteFileA(file_name);
 		return false;
 	}
-	uint8 *mapping_ptr = (uint8 *)MapViewOfFile(mapping_handle, FILE_MAP_WRITE, 0, 0, 0);
+	uint8* mapping_ptr = (uint8*)MapViewOfFile(mapping_handle, FILE_MAP_WRITE, 0, 0, 0);
 	if (!mapping_ptr) {
 		CloseHandle(file_handle);
 		CloseHandle(mapping_handle);
@@ -815,7 +935,7 @@ bool file_mapping_create(const char *file_name, uint64 file_size, file_mapping *
 	return true;
 }
 
-bool file_mapping_open(const char *file_name, file_mapping *file_mapping, bool read_only) {
+bool file_mapping_open(const char* file_name, file_mapping* file_mapping, bool read_only) {
 	DWORD access_flags = read_only ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE);
 	DWORD share_flags = read_only ? FILE_SHARE_READ : 0;
 	HANDLE file_handle = CreateFileA(file_name, access_flags, share_flags, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -832,7 +952,7 @@ bool file_mapping_open(const char *file_name, file_mapping *file_mapping, bool r
 		CloseHandle(file_handle);
 		return false;
 	}
-	uint8 *mapping_ptr = (uint8 *)MapViewOfFile(mapping_handle, read_only ? FILE_MAP_READ : FILE_MAP_WRITE, 0, 0, 0);
+	uint8* mapping_ptr = (uint8*)MapViewOfFile(mapping_handle, read_only ? FILE_MAP_READ : FILE_MAP_WRITE, 0, 0, 0);
 	if (!mapping_ptr) {
 		CloseHandle(file_handle);
 		CloseHandle(mapping_handle);
@@ -845,7 +965,7 @@ bool file_mapping_open(const char *file_name, file_mapping *file_mapping, bool r
 	return true;
 }
 
-void file_mapping_resize(file_mapping *file_mapping, uint64 file_size) {
+void file_mapping_resize(file_mapping* file_mapping, uint64 file_size) {
 	m_assert(UnmapViewOfFile(file_mapping->ptr));
 	m_assert(CloseHandle(file_mapping->mapping_handle));
 
@@ -857,7 +977,7 @@ void file_mapping_resize(file_mapping *file_mapping, uint64 file_size) {
 	file_mapping->mapping_handle = CreateFileMappingA(file_mapping->file_handle, nullptr, PAGE_READWRITE, 0, 0, nullptr);
 	m_assert(file_mapping->mapping_handle);
 
-	file_mapping->ptr = (uint8 *)MapViewOfFile(file_mapping->mapping_handle, FILE_MAP_WRITE, 0, 0, 0);
+	file_mapping->ptr = (uint8*)MapViewOfFile(file_mapping->mapping_handle, FILE_MAP_WRITE, 0, 0, 0);
 	m_assert(file_mapping->ptr);
 
 	file_mapping->size = file_size;
@@ -875,7 +995,7 @@ void file_mapping_close(file_mapping file_mapping) {
 }
 
 template <typename T>
-bool iterate_files_in_dir(const char *dir, T func) {
+bool iterate_files_in_dir(const char* dir, T func) {
 	char dir_buf[256];
 	snprintf(dir_buf, sizeof(dir_buf), "%s\\*", dir);
 
@@ -898,12 +1018,12 @@ bool iterate_files_in_dir(const char *dir, T func) {
 	return true;
 }
 
-bool open_file_dialog(char *file, uint32 file_buf_size) {
+bool open_file_dialog(char* file, uint32 file_buf_size) {
 	char cur_dir[512];
 	m_assert(get_current_dir(cur_dir, sizeof(cur_dir)));
 	auto restore_cur_dir = scope_exit([&] {
 		set_current_dir(cur_dir);
-	});
+		});
 
 	OPENFILENAME open_file_name = {};
 	open_file_name.lStructSize = sizeof(open_file_name);
@@ -913,12 +1033,12 @@ bool open_file_dialog(char *file, uint32 file_buf_size) {
 	return GetOpenFileNameA(&open_file_name);
 }
 
-bool save_file_dialog(char *file, uint32 file_buf_size) {
+bool save_file_dialog(char* file, uint32 file_buf_size) {
 	char cur_dir[512];
 	m_assert(get_current_dir(cur_dir, sizeof(cur_dir)));
 	auto restore_cur_dir = scope_exit([&] {
 		set_current_dir(cur_dir);
-	});
+		});
 
 	OPENFILENAME open_file_name = {};
 	open_file_name.lStructSize = sizeof(open_file_name);
@@ -939,10 +1059,8 @@ struct window {
 	int32 raw_mouse_dy;
 };
 
-void window_init(window *window, LRESULT(*window_message_callback)(HWND, UINT, WPARAM, LPARAM)) {
+void window_init(window* window, LRESULT(*window_message_callback)(HWND, UINT, WPARAM, LPARAM)) {
 	SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE);
-
-	*window = {};
 
 	HMODULE instance_handle = GetModuleHandle(nullptr);
 	WNDCLASSA window_class = {};
@@ -986,7 +1104,7 @@ void window_init(window *window, LRESULT(*window_message_callback)(HWND, UINT, W
 	window->screen_height = screen_height;
 };
 
-void window_handle_messages(window *window) {
+void window_handle_messages(window* window) {
 	MSG msg;
 	while (PeekMessageA(&msg, window->handle, 0, 0, PM_REMOVE)) {
 		TranslateMessage(&msg);
@@ -994,11 +1112,11 @@ void window_handle_messages(window *window) {
 	}
 }
 
-void window_show(window *window) {
+void window_show(window* window) {
 	ShowWindow(window->handle, SW_SHOW);
 }
 
-void window_set_title(window *window, const char* fmt, ...) {
+void window_set_title(window* window, const char* fmt, ...) {
 	char buf[256];
 	va_list vl;
 	va_start(vl, fmt);
@@ -1007,7 +1125,7 @@ void window_set_title(window *window, const char* fmt, ...) {
 	SetWindowText(window->handle, buf);
 }
 
-void window_set_size(window *window, uint32 width, uint32 height) {
+void window_set_size(window* window, uint32 width, uint32 height) {
 	width = clamp(width, 256u, window->screen_width);
 	height = clamp(height, 256u, window->screen_height);
 	if (window->width != width || window->height != height) {
@@ -1033,7 +1151,7 @@ void window_set_size(window *window, uint32 width, uint32 height) {
 	}
 }
 
-bool window_cursor_inside(window *window) {
+bool window_cursor_inside(window* window) {
 	return
 		(window->mouse_x >= 0) &&
 		(window->mouse_x <= (int16)window->width) &&
@@ -1065,11 +1183,11 @@ void cursor_pin(bool pin) {
 	}
 }
 
-void flip_image(uint8 *image, uint32 w, uint32 h) {
-	for (uint32 i = 0; i < (h / 2); i += 1) {
-		uint32 *row_1 = (uint32 *)image + i * w;
-		uint32 *row_2 = (uint32 *)image + (h - 1 - i) * w;
-		for (uint32 i = 0; i < w; i += 1) {
+void flip_image(uint8* image, uint64 w, uint64 h) {
+	for (uint64 i = 0; i < (h / 2); i += 1) {
+		uint32* row_1 = (uint32*)image + i * w;
+		uint32* row_2 = (uint32*)image + (h - 1 - i) * w;
+		for (uint64 i = 0; i < w; i += 1) {
 			uint32 tmp_pixel = row_1[i];
 			row_1[i] = row_2[i];
 			row_2[i] = tmp_pixel;
@@ -1077,11 +1195,11 @@ void flip_image(uint8 *image, uint32 w, uint32 h) {
 	}
 }
 
-void convert_rgba_image_to_bgra(uint8 *image, uint32 width, uint32 height) {
-	for (uint32 i = 0; i < height; i += 1) {
-		uint8 *row = image + i * width * 4;
-		for (uint32 i = 0; i < width; i += 1) {
-			uint8 *pixel = row + i * 4;
+void convert_rgba_image_to_bgra(uint8* image, uint64 width, uint64 height) {
+	for (uint64 i = 0; i < height; i += 1) {
+		uint8* row = image + i * width * 4;
+		for (uint64 i = 0; i < width; i += 1) {
+			uint8* pixel = row + i * 4;
 			uint8 r = pixel[0];
 			pixel[0] = pixel[2];
 			pixel[2] = r;
@@ -1089,7 +1207,7 @@ void convert_rgba_image_to_bgra(uint8 *image, uint32 width, uint32 height) {
 	}
 }
 
-bool rgba_image_to_bmp_file(void *image, uint32 image_width, uint32 image_height, const char *bmp_file) {
+bool rgba_image_to_bmp_file(void* image, uint32 image_width, uint32 image_height, const char* bmp_file) {
 	uint32 image_size = image_width * image_height * 4;
 
 	BITMAPV4HEADER bmp_info_header = {};
@@ -1106,19 +1224,21 @@ bool rgba_image_to_bmp_file(void *image, uint32 image_width, uint32 image_height
 
 	BITMAPFILEHEADER bmp_file_header = {};
 	bmp_file_header.bfType = 0x4D42;
-	bmp_file_header.bfSize = sizeof(bmp_file_header) + sizeof(bmp_info_header) + image_size;
-	bmp_file_header.bfOffBits = (DWORD)sizeof(bmp_file_header) + (DWORD)sizeof(bmp_info_header);
+	bmp_file_header.bfSize = (DWORD)(sizeof(bmp_file_header) + sizeof(bmp_info_header) + image_size);
+	bmp_file_header.bfOffBits = (DWORD)(sizeof(bmp_file_header) + sizeof(bmp_info_header));
 
 	HANDLE file_handle = CreateFileA(bmp_file, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (!file_handle) {
 		return false;
 	}
-	DWORD bytes_written = 0;
-	WriteFile(file_handle, (LPSTR)&bmp_file_header, sizeof(bmp_file_header), &bytes_written, nullptr);
-	WriteFile(file_handle, (LPSTR)&bmp_info_header, sizeof(bmp_info_header), &bytes_written, nullptr);
-	WriteFile(file_handle, (LPSTR)image, image_size, &bytes_written, NULL);
-	CloseHandle(file_handle);
-	return true;
+	else {
+		DWORD bytes_written = 0;
+		WriteFile(file_handle, (LPSTR)&bmp_file_header, sizeof(bmp_file_header), &bytes_written, nullptr);
+		WriteFile(file_handle, (LPSTR)&bmp_info_header, sizeof(bmp_info_header), &bytes_written, nullptr);
+		WriteFile(file_handle, (LPSTR)image, image_size, &bytes_written, NULL);
+		CloseHandle(file_handle);
+		return true;
+	}
 }
 
 // struct profiler_code_frame {

@@ -23,7 +23,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Copyright (c) 2008-2018 NVIDIA Corporation. All rights reserved.
+// Copyright (c) 2008-2019 NVIDIA Corporation. All rights reserved.
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.
 
@@ -309,13 +309,13 @@ class PxMat33
 	}
 
 	//! Element access, mathematical way!
-	PX_DEPRECATED PX_CUDA_CALLABLE PX_FORCE_INLINE float operator()(unsigned int row, unsigned int col) const
+	PX_CUDA_CALLABLE PX_FORCE_INLINE float operator()(unsigned int row, unsigned int col) const
 	{
 		return (*this)[col][row];
 	}
 
 	//! Element access, mathematical way!
-	PX_DEPRECATED PX_CUDA_CALLABLE PX_FORCE_INLINE float& operator()(unsigned int row, unsigned int col)
+	PX_CUDA_CALLABLE PX_FORCE_INLINE float& operator()(unsigned int row, unsigned int col)
 	{
 		return (*this)[col][row];
 	}
@@ -339,11 +339,11 @@ class PxMat33
 		return &column0.x;
 	}
 
-	PX_DEPRECATED PX_CUDA_CALLABLE PX_FORCE_INLINE PxVec3& operator[](unsigned int num)
+	PX_CUDA_CALLABLE PX_FORCE_INLINE PxVec3& operator[](unsigned int num)
 	{
 		return (&column0)[num];
 	}
-	PX_DEPRECATED PX_CUDA_CALLABLE PX_FORCE_INLINE const PxVec3& operator[](unsigned int num) const
+	PX_CUDA_CALLABLE PX_FORCE_INLINE const PxVec3& operator[](unsigned int num) const
 	{
 		return (&column0)[num];
 	}

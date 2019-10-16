@@ -24,9 +24,9 @@
 			__debugbreak(); \
 		} \
 		else { \
-			char msg[2048]; \
+			char msg[2048] = {}; \
 			snprintf(msg, sizeof(msg), "D3D Error:\n\nCode: %s\nError: %s", #d3d_call, err_msg); \
-			DWORD response; \
+			DWORD response = 0; \
 			char title[] = "Fatal Error"; \
 			WTSSendMessageA(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, title, sizeof(title) - 1, msg, (DWORD)strlen(msg), MB_OK, 0, &response, FALSE); \
 		} \
@@ -42,134 +42,134 @@
 }
 
 struct d3d_swap_chain {
-	ID3D11Device1 *device;
-	ID3D11DeviceContext1 *context;
+	ID3D11Device1* device;
+	ID3D11DeviceContext1* context;
 
-	IDXGISwapChain1 *swap_chain;
-	ID3D11Texture2D *swap_chain_back_buffer;
-	ID3D11RenderTargetView *swap_chain_render_target_view;
+	IDXGISwapChain1* swap_chain;
+	ID3D11Texture2D* swap_chain_back_buffer;
+	ID3D11RenderTargetView* swap_chain_render_target_view;
 	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc;
 };
 
 struct d3d {
-	ID3D11Device1 *device;
-	ID3D11DeviceContext1 *context;
+	ID3D11Device1* device;
+	ID3D11DeviceContext1* context;
 
-	IDXGISwapChain1 *swap_chain;
-	ID3D11Texture2D *swap_chain_back_buffer;
-	ID3D11RenderTargetView *swap_chain_render_target_view;
+	IDXGISwapChain1* swap_chain;
+	ID3D11Texture2D* swap_chain_back_buffer;
+	ID3D11RenderTargetView* swap_chain_render_target_view;
 	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc;
 
-	ID3D11Texture2D *final_framebuffer_texture;
-	ID3D11ShaderResourceView *final_framebuffer_texture_view;
-	ID3D11RenderTargetView *final_framebuffer_render_target_view;
-	ID3D11Texture2D *final_framebuffer_depth_texture;
-	ID3D11DepthStencilView *final_framebuffer_depth_view;
+	ID3D11Texture2D* final_framebuffer_texture;
+	ID3D11ShaderResourceView* final_framebuffer_texture_view;
+	ID3D11RenderTargetView* final_framebuffer_render_target_view;
+	ID3D11Texture2D* final_framebuffer_depth_texture;
+	ID3D11DepthStencilView* final_framebuffer_depth_view;
 	uint32 final_framebuffer_width;
 	uint32 final_framebuffer_height;
 
-	ID3D11Texture2D *shadow_framebuffer_textures[2];
-	ID3D11ShaderResourceView *shadow_framebuffer_texture_views[2];
-	ID3D11RenderTargetView *shadow_framebuffer_render_target_views[2];
-	ID3D11Texture2D *shadow_framebuffer_depth_texture;
-	ID3D11DepthStencilView *shadow_framebuffer_depth_view;
+	ID3D11Texture2D* shadow_framebuffer_textures[2];
+	ID3D11ShaderResourceView* shadow_framebuffer_texture_views[2];
+	ID3D11RenderTargetView* shadow_framebuffer_render_target_views[2];
+	ID3D11Texture2D* shadow_framebuffer_depth_texture;
+	ID3D11DepthStencilView* shadow_framebuffer_depth_view;
 	uint32 shadow_framebuffer_width;
 	uint32 shadow_framebuffer_height;
 
-	ID3D11SamplerState *repeat_sampler_state;
-	ID3D11SamplerState *mirror_repeat_sampler_state;
-	ID3D11SamplerState *clamp_edge_sampler_state;
-	ID3D11SamplerState *shadow_framebuffer_sampler_state;
+	ID3D11SamplerState* repeat_sampler_state;
+	ID3D11SamplerState* mirror_repeat_sampler_state;
+	ID3D11SamplerState* clamp_edge_sampler_state;
+	ID3D11SamplerState* shadow_framebuffer_sampler_state;
 
-	ID3D11VertexShader *mesh_vs;
-	ID3D11PixelShader *mesh_ps;
-	ID3D11InputLayout *mesh_input_layout;
-	ID3D11RasterizerState *mesh_rasterizer_state;
-	ID3D11DepthStencilState *mesh_depth_stencil_state;
+	ID3D11VertexShader* mesh_vs;
+	ID3D11PixelShader* mesh_ps;
+	ID3D11InputLayout* mesh_input_layout;
+	ID3D11RasterizerState* mesh_rasterizer_state;
+	ID3D11DepthStencilState* mesh_depth_stencil_state;
 
-	ID3D11VertexShader *mesh_shadow_vs;
-	ID3D11PixelShader *mesh_shadow_ps;
+	ID3D11VertexShader* mesh_shadow_vs;
+	ID3D11PixelShader* mesh_shadow_ps;
 
-	ID3D11VertexShader *terrain_vs;
-	ID3D11PixelShader *terrain_ps;
-	ID3D11InputLayout *terrain_input_layout;
-	ID3D11DepthStencilState *terrain_depth_stencil_state;
+	ID3D11VertexShader* terrain_vs;
+	ID3D11PixelShader* terrain_ps;
+	ID3D11InputLayout* terrain_input_layout;
+	ID3D11DepthStencilState* terrain_depth_stencil_state;
 
-	ID3D11VertexShader *terrain_shadow_vs;
-	ID3D11PixelShader *terrain_shadow_ps;
+	ID3D11VertexShader* terrain_shadow_vs;
+	ID3D11PixelShader* terrain_shadow_ps;
 
-	ID3D11VertexShader *terrain_brush_vs;
-	ID3D11PixelShader *terrain_brush_ps;
-	ID3D11InputLayout *terrain_brush_input_layout;
-	ID3D11DepthStencilState *terrain_brush_depth_stencil_state;
+	ID3D11VertexShader* terrain_brush_vs;
+	ID3D11PixelShader* terrain_brush_ps;
+	ID3D11InputLayout* terrain_brush_input_layout;
+	ID3D11DepthStencilState* terrain_brush_depth_stencil_state;
 
-	ID3D11VertexShader *gaussian_blur_x_vs;
-	ID3D11PixelShader *gaussian_blur_x_ps;
-	ID3D11VertexShader *gaussian_blur_y_vs;
-	ID3D11PixelShader *gaussian_blur_y_ps;
+	ID3D11VertexShader* gaussian_blur_x_vs;
+	ID3D11PixelShader* gaussian_blur_x_ps;
+	ID3D11VertexShader* gaussian_blur_y_vs;
+	ID3D11PixelShader* gaussian_blur_y_ps;
 
-	ID3D11VertexShader *skybox_vs;
-	ID3D11PixelShader *skybox_ps;
-	ID3D11RasterizerState *skybox_rasterizer_state;
-	ID3D11DepthStencilState *skybox_depth_stencil_state;
+	ID3D11VertexShader* skybox_vs;
+	ID3D11PixelShader* skybox_ps;
+	ID3D11RasterizerState* skybox_rasterizer_state;
+	ID3D11DepthStencilState* skybox_depth_stencil_state;
 
-	ID3D11VertexShader *collision_shape_vs;
-	ID3D11PixelShader *collision_shape_ps;
-	ID3D11InputLayout *collision_shape_input_layout;
-	ID3D11DepthStencilState *collision_shape_depth_stencil_state;
-	ID3D11BlendState *collision_shape_blend_state;
+	ID3D11VertexShader* collision_shape_vs;
+	ID3D11PixelShader* collision_shape_ps;
+	ID3D11InputLayout* collision_shape_input_layout;
+	ID3D11DepthStencilState* collision_shape_depth_stencil_state;
+	ID3D11BlendState* collision_shape_blend_state;
 
-	ID3D11VertexShader *reference_grid_vs;
-	ID3D11PixelShader *reference_grid_ps;
-	ID3D11InputLayout *reference_grid_input_layout;
-	ID3D11DepthStencilState *reference_grid_depth_stencil_state;
+	ID3D11VertexShader* reference_grid_vs;
+	ID3D11PixelShader* reference_grid_ps;
+	ID3D11InputLayout* reference_grid_input_layout;
+	ID3D11DepthStencilState* reference_grid_depth_stencil_state;
 
-	ID3D11VertexShader *final_framebuffer_to_screen_vs;
-	ID3D11PixelShader *final_framebuffer_to_screen_ps;
+	ID3D11VertexShader* final_framebuffer_to_screen_vs;
+	ID3D11PixelShader* final_framebuffer_to_screen_ps;
 
-	ID3D11VertexShader *imgui_vs;
-	ID3D11PixelShader *imgui_ps;
-	ID3D11InputLayout *imgui_input_layout;
-	ID3D11RasterizerState *imgui_rasterizer_state;
-	ID3D11BlendState *imgui_blend_state;
+	ID3D11VertexShader* imgui_vs;
+	ID3D11PixelShader* imgui_ps;
+	ID3D11InputLayout* imgui_input_layout;
+	ID3D11RasterizerState* imgui_rasterizer_state;
+	ID3D11BlendState* imgui_blend_state;
 };
 
 const uint32 d3d12_swap_chain_buffer_count = 2;
 
 struct d3d12 {
-	ID3D12CommandQueue *command_queue;
-	ID3D12CommandAllocator *command_allocator;
-	ID3D12GraphicsCommandList4 *command_list;
-	ID3D12Fence *command_list_fence;
+	ID3D12CommandQueue* command_queue;
+	ID3D12CommandAllocator* command_allocator;
+	ID3D12GraphicsCommandList4* command_list;
+	ID3D12Fence* command_list_fence;
 	uint64 command_list_fence_value;
 	HANDLE command_list_fence_event;
 
-	ID3D12Resource *swap_chain_render_targets[d3d12_swap_chain_buffer_count];
+	ID3D12Resource* swap_chain_render_targets[d3d12_swap_chain_buffer_count];
 	uint32 swap_chain_buffer_index;
-	ID3D12DescriptorHeap *swap_chain_render_targets_descriptor_heap;
+	ID3D12DescriptorHeap* swap_chain_render_targets_descriptor_heap;
 
-	ID3D12RootSignature *blit_to_swap_chain_root_signature;
-	ID3D12PipelineState *blit_to_swap_chain_pipeline_state;
-	ID3D12RootSignature *gbuffer_root_signature;
-	ID3D12PipelineState *gbuffer_pipeline_state;
-	ID3D12RootSignature *gbuffer_direct_lit_root_signature;
-	ID3D12PipelineState *gbuffer_direct_lit_pipeline_state;
+	ID3D12RootSignature* blit_to_swap_chain_root_signature;
+	ID3D12PipelineState* blit_to_swap_chain_pipeline_state;
+	ID3D12RootSignature* gbuffer_root_signature;
+	ID3D12PipelineState* gbuffer_pipeline_state;
+	ID3D12RootSignature* gbuffer_direct_lit_root_signature;
+	ID3D12PipelineState* gbuffer_direct_lit_pipeline_state;
 
-	ID3D12Resource *copy_buffer;
-	ID3D12Resource *dither_texture;
+	ID3D12Resource* copy_buffer;
+	ID3D12Resource* dither_texture;
 
-	ID3D12Device5 *device;
-	IDXGISwapChain4 *swap_chain;
-	IDXGIAdapter1 *adapter;
-	IDXGIFactory5 *factory;
-	IDXGIDebug *dxgi_debug;
-	IDXGIInfoQueue *dxgi_info_queue;
+	ID3D12Device5* device;
+	IDXGISwapChain4* swap_chain;
+	IDXGIAdapter1* adapter;
+	IDXGIFactory5* factory;
+	IDXGIDebug* dxgi_debug;
+	IDXGIInfoQueue* dxgi_info_queue;
 };
 
 struct hlsl_bytecode_file {
 	file_mapping file_mapping;
 	D3D12_SHADER_BYTECODE bytecode;
-	hlsl_bytecode_file(const char *file) {
+	hlsl_bytecode_file(const char* file) {
 		m_assert(file_mapping_open(file, &file_mapping, true));
 		bytecode.pShaderBytecode = file_mapping.ptr;
 		bytecode.BytecodeLength = file_mapping.size;
@@ -179,12 +179,10 @@ struct hlsl_bytecode_file {
 	}
 };
 
-void d3d12_init(d3d12 *d3d12, window *window) {
-	*d3d12 = {};
-
+void d3d12_init(d3d12* d3d12, window* window) {
 	uint32 dxgi_factory_flags = 0;
 
-	ID3D12Debug1 *debug_controller;
+	ID3D12Debug1* debug_controller = nullptr;
 	m_d3d_assert(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)));
 	debug_controller->EnableDebugLayer();
 	debug_controller->SetEnableGPUBasedValidation(true);
@@ -210,7 +208,7 @@ void d3d12_init(d3d12 *d3d12, window *window) {
 	}
 	m_d3d_assert(D3D12CreateDevice(d3d12->adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12->device)));
 
-	D3D12_FEATURE_DATA_D3D12_OPTIONS5 features;
+	D3D12_FEATURE_DATA_D3D12_OPTIONS5 features = {};
 	m_d3d_assert(d3d12->device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &features, sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS5)));
 	bool dxr_support = features.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
 	m_assert(dxr_support);
@@ -236,8 +234,7 @@ void d3d12_init(d3d12 *d3d12, window *window) {
 	swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	swap_chain_desc.BufferCount = d3d12_swap_chain_buffer_count;
 	swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-
-	m_d3d_assert(d3d12->factory->CreateSwapChainForHwnd(d3d12->command_queue, window->handle, &swap_chain_desc, nullptr, nullptr, (IDXGISwapChain1 **)&d3d12->swap_chain));
+	m_d3d_assert(d3d12->factory->CreateSwapChainForHwnd(d3d12->command_queue, window->handle, &swap_chain_desc, nullptr, nullptr, (IDXGISwapChain1 * *)& d3d12->swap_chain));
 	d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
 
 	D3D12_DESCRIPTOR_HEAP_DESC rtv_descriptor_heap_desc = {};
@@ -253,13 +250,13 @@ void d3d12_init(d3d12 *d3d12, window *window) {
 		m_d3d_set_name(d3d12->swap_chain_render_targets[i], "swap chain backbuffer #%u", i);
 	}
 
-	void d3d12_init_common_resources(struct d3d12 *);
-	void d3d12_init_common_pipelines(struct d3d12 *);
+	void d3d12_init_common_resources(struct d3d12*);
+	void d3d12_init_common_pipelines(struct d3d12*);
 	d3d12_init_common_resources(d3d12);
 	d3d12_init_common_pipelines(d3d12);
 }
 
-void d3d12_init_common_resources(d3d12 *d3d12) {
+void d3d12_init_common_resources(d3d12* d3d12) {
 	uint32 copy_buffer_size = m_megabytes(32);
 	D3D12_HEAP_PROPERTIES heap_props = { D3D12_HEAP_TYPE_UPLOAD };
 	D3D12_RESOURCE_DESC copy_buffer_desc = { D3D12_RESOURCE_DIMENSION_BUFFER, 0, copy_buffer_size, 1, 1, 1, DXGI_FORMAT_UNKNOWN, {1, 0}, D3D12_TEXTURE_LAYOUT_ROW_MAJOR };
@@ -275,13 +272,13 @@ void d3d12_init_common_resources(d3d12 *d3d12) {
 		15, 47,  7, 39, 13, 45,  5, 37,
 		63, 31, 55, 23, 61, 29, 53, 21
 	};
-	ID3D12Resource *d3d12_create_texture_2d(struct d3d12 *, uint32, uint32, uint32, uint32, DXGI_FORMAT, D3D12_HEAP_TYPE, D3D12_RESOURCE_FLAGS, D3D12_RESOURCE_STATES);
-	void d3d12_copy_texture_2d(struct d3d12 *, ID3D12Resource *, uint8 *, D3D12_RESOURCE_STATES);
+	ID3D12Resource* d3d12_create_texture_2d(struct d3d12*, uint32, uint32, uint32, uint32, DXGI_FORMAT, D3D12_HEAP_TYPE, D3D12_RESOURCE_FLAGS, D3D12_RESOURCE_STATES);
+	void d3d12_copy_texture_2d(struct d3d12*, ID3D12Resource*, uint8*, D3D12_RESOURCE_STATES);
 	d3d12->dither_texture = d3d12_create_texture_2d(d3d12, 8, 8, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 	d3d12_copy_texture_2d(d3d12, d3d12->dither_texture, dither_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
-void d3d12_init_common_pipelines(d3d12 *d3d12) {
+void d3d12_init_common_pipelines(d3d12* d3d12) {
 	{
 		D3D12_DESCRIPTOR_RANGE desc_ranges[1] = {};
 		desc_ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -318,7 +315,7 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-		ID3DBlob *sig_blob = nullptr;
+		ID3DBlob* sig_blob = nullptr;
 		m_d3d_assert(D3D12SerializeRootSignature(&sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, nullptr));
 		d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&d3d12->blit_to_swap_chain_root_signature));
 		sig_blob->Release();
@@ -378,7 +375,7 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-		ID3DBlob *sig_blob = nullptr;
+		ID3DBlob* sig_blob = nullptr;
 		m_d3d_assert(D3D12SerializeRootSignature(&sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, nullptr));
 		d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&d3d12->gbuffer_root_signature));
 		sig_blob->Release();
@@ -449,7 +446,7 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 			D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-		ID3DBlob *sig_blob = nullptr;
+		ID3DBlob* sig_blob = nullptr;
 		m_d3d_assert(D3D12SerializeRootSignature(&sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, nullptr));
 		d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&d3d12->gbuffer_direct_lit_root_signature));
 		sig_blob->Release();
@@ -473,14 +470,14 @@ void d3d12_init_common_pipelines(d3d12 *d3d12) {
 	}
 }
 
-void d3d12_wait_command_list(d3d12 *d3d12) {
+void d3d12_wait_command_list(d3d12* d3d12) {
 	d3d12->command_list_fence_value += 1;
 	d3d12->command_queue->Signal(d3d12->command_list_fence, d3d12->command_list_fence_value);
 	d3d12->command_list_fence->SetEventOnCompletion(d3d12->command_list_fence_value, d3d12->command_list_fence_event);
 	WaitForSingleObject(d3d12->command_list_fence_event, INFINITE);
 }
 
-void d3d12_resize_swap_chain(d3d12 *d3d12, uint32 width, uint32 height) {
+void d3d12_resize_swap_chain(d3d12* d3d12, uint32 width, uint32 height) {
 	d3d12_wait_command_list(d3d12);
 	for (uint32 i = 0; i < d3d12_swap_chain_buffer_count; i += 1) {
 		d3d12->swap_chain_render_targets[i]->Release();
@@ -496,7 +493,7 @@ void d3d12_resize_swap_chain(d3d12 *d3d12, uint32 width, uint32 height) {
 	d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
 }
 
-ID3D12Resource *d3d12_create_buffer(d3d12 *d3d12, uint64 size, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS resource_flags, D3D12_RESOURCE_STATES resource_state) {
+ID3D12Resource* d3d12_create_buffer(d3d12* d3d12, uint64 size, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS resource_flags, D3D12_RESOURCE_STATES resource_state) {
 	D3D12_HEAP_PROPERTIES heap_prop = {};
 	heap_prop.Type = heap_type;
 
@@ -511,12 +508,12 @@ ID3D12Resource *d3d12_create_buffer(d3d12 *d3d12, uint64 size, D3D12_HEAP_TYPE h
 	resource_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 	resource_desc.Flags = resource_flags;
 
-	ID3D12Resource *buffer = nullptr;
+	ID3D12Resource* buffer = nullptr;
 	m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &resource_desc, resource_state, nullptr, IID_PPV_ARGS(&buffer)));
 	return buffer;
 }
 
-void d3d12_copy_buffer(d3d12 *d3d12, ID3D12Resource *dst_buffer, uint8 *src_buffer, D3D12_RESOURCE_STATES resource_state) {
+void d3d12_copy_buffer(d3d12* d3d12, ID3D12Resource* dst_buffer, const void* src_buffer, D3D12_RESOURCE_STATES resource_state) {
 	D3D12_RESOURCE_DESC dst_buffer_desc = dst_buffer->GetDesc();
 	D3D12_RESOURCE_DESC copy_buffer_desc = d3d12->copy_buffer->GetDesc();
 
@@ -527,9 +524,9 @@ void d3d12_copy_buffer(d3d12 *d3d12, ID3D12Resource *dst_buffer, uint8 *src_buff
 		m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_props, D3D12_HEAP_FLAG_NONE, &copy_buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, IID_PPV_ARGS(&d3d12->copy_buffer)));
 	}
 
-	uint8 *copy_buffer_ptr = nullptr;
+	uint8* copy_buffer_ptr = nullptr;
 	D3D12_RANGE copy_range = { 0, dst_buffer_desc.Width };
-	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void **)&copy_buffer_ptr));
+	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void**)& copy_buffer_ptr));
 	memcpy(copy_buffer_ptr, src_buffer, dst_buffer_desc.Width);
 	d3d12->copy_buffer->Unmap(0, &copy_range);
 
@@ -546,12 +543,12 @@ void d3d12_copy_buffer(d3d12 *d3d12, ID3D12Resource *dst_buffer, uint8 *src_buff
 	d3d12->command_list->CopyBufferRegion(dst_buffer, 0, d3d12->copy_buffer, 0, dst_buffer_desc.Width);
 	d3d12->command_list->ResourceBarrier(1, &barrier);
 	m_d3d_assert(d3d12->command_list->Close());
-	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
+	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList * *)& d3d12->command_list);
 
 	d3d12_wait_command_list(d3d12);
 }
 
-ID3D12Resource *d3d12_create_texture_2d(d3d12 *d3d12, uint32 width, uint32 height, uint32 array_size, uint32 mips, DXGI_FORMAT format, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS resource_flags, D3D12_RESOURCE_STATES resource_state) {
+ID3D12Resource* d3d12_create_texture_2d(d3d12* d3d12, uint32 width, uint32 height, uint32 array_size, uint32 mips, DXGI_FORMAT format, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS resource_flags, D3D12_RESOURCE_STATES resource_state) {
 	D3D12_HEAP_PROPERTIES heap_props = {};
 	heap_props.Type = heap_type;
 
@@ -568,7 +565,7 @@ ID3D12Resource *d3d12_create_texture_2d(d3d12 *d3d12, uint32 width, uint32 heigh
 	resource_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	resource_desc.Flags = resource_flags;
 
-	ID3D12Resource *texture = nullptr;
+	ID3D12Resource* texture = nullptr;
 	if (resource_flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET || resource_flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) {
 		D3D12_CLEAR_VALUE clear_value = {};
 		clear_value.Format = format;
@@ -580,7 +577,7 @@ ID3D12Resource *d3d12_create_texture_2d(d3d12 *d3d12, uint32 width, uint32 heigh
 	return texture;
 }
 
-void d3d12_copy_texture_2d(d3d12 *d3d12, ID3D12Resource *dst_texture, uint8 *src_texture, D3D12_RESOURCE_STATES resource_state) {
+void d3d12_copy_texture_2d(d3d12* d3d12, ID3D12Resource* dst_texture, uint8* src_texture, D3D12_RESOURCE_STATES resource_state) {
 	D3D12_RESOURCE_DESC texture_desc = dst_texture->GetDesc();
 
 	const uint32 max_mip_count = 16;
@@ -599,9 +596,9 @@ void d3d12_copy_texture_2d(d3d12 *d3d12, ID3D12Resource *dst_texture, uint8 *src
 		m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_props, D3D12_HEAP_FLAG_NONE, &copy_buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&d3d12->copy_buffer)));
 	}
 
-	uint8 *copy_buffer_ptr = nullptr;
+	uint8* copy_buffer_ptr = nullptr;
 	D3D12_RANGE copy_range = { 0, total_size };
-	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void **)&copy_buffer_ptr));
+	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void**)& copy_buffer_ptr));
 	uint64 dst_texture_offset = 0;
 	uint64 src_texture_offset = 0;
 	for (uint32 i = 0; i < texture_desc.MipLevels; i += 1) {
@@ -640,44 +637,42 @@ void d3d12_copy_texture_2d(d3d12 *d3d12, ID3D12Resource *dst_texture, uint8 *src
 	d3d12->command_list->ResourceBarrier(1, &barrier);
 
 	m_d3d_assert(d3d12->command_list->Close());
-	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
+	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList * *)& d3d12->command_list);
 
 	d3d12_wait_command_list(d3d12);
 }
 
-void initialize_d3d_device_swap_chain(d3d *d3d, window *window) {
-	*d3d = {};
-
-	ID3D11Device *device = nullptr;
-	ID3D11DeviceContext *device_context = nullptr;
-	IDXGIDevice *dxgi_device = nullptr;
-	IDXGIAdapter *adapter = nullptr;
-	IDXGIFactory1 *dxgi_factory = nullptr;
-	IDXGIFactory2 *dxgi_factory_2 = nullptr;
+void initialize_d3d_device_swap_chain(d3d* d3d, window* window) {
+	ID3D11Device* device = nullptr;
+	ID3D11DeviceContext* device_context = nullptr;
+	IDXGIDevice* dxgi_device = nullptr;
+	IDXGIAdapter* adapter = nullptr;
+	IDXGIFactory1* dxgi_factory = nullptr;
+	IDXGIFactory2* dxgi_factory_2 = nullptr;
 
 	auto release_resoureces = scope_exit([&] {
 		if (dxgi_device) dxgi_device->Release();
 		if (adapter) adapter->Release();
 		if (dxgi_factory) dxgi_factory->Release();
 		if (dxgi_factory_2) dxgi_factory_2->Release();
-	});
+		});
 
 	uint32 create_device_flags = D3D11_CREATE_DEVICE_DEBUG;
 	D3D_FEATURE_LEVEL feature_levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
 
 	m_d3d_assert(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, create_device_flags, feature_levels, m_countof(feature_levels), D3D11_SDK_VERSION, &device, nullptr, &device_context));
 	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11Device1), (void**)(&d3d->device)));
-	m_d3d_assert(device_context->QueryInterface(__uuidof(ID3D11DeviceContext1), (void**)&d3d->context));
-	m_d3d_assert(device->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgi_device));
+	m_d3d_assert(device_context->QueryInterface(__uuidof(ID3D11DeviceContext1), (void**)& d3d->context));
+	m_d3d_assert(device->QueryInterface(__uuidof(IDXGIDevice), (void**)& dxgi_device));
 	m_d3d_assert(dxgi_device->GetAdapter(&adapter));
-	m_d3d_assert(adapter->GetParent(__uuidof(IDXGIFactory1), (void**)&dxgi_factory));
-	m_d3d_assert(dxgi_factory->QueryInterface(__uuidof(IDXGIFactory2), (void**)&dxgi_factory_2));
+	m_d3d_assert(adapter->GetParent(__uuidof(IDXGIFactory1), (void**)& dxgi_factory));
+	m_d3d_assert(dxgi_factory->QueryInterface(__uuidof(IDXGIFactory2), (void**)& dxgi_factory_2));
 
-	ID3D11Debug *debug = nullptr;
-	ID3D11InfoQueue *info_queue = nullptr;
+	ID3D11Debug* debug = nullptr;
+	ID3D11InfoQueue* info_queue = nullptr;
 
-	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11Debug), (void**)&debug));
-	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11InfoQueue), (void**)&info_queue));
+	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11Debug), (void**)& debug));
+	m_d3d_assert(device->QueryInterface(__uuidof(ID3D11InfoQueue), (void**)& info_queue));
 	m_d3d_assert(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, true));
 	m_d3d_assert(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, true));
 	m_d3d_assert(info_queue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, true));
@@ -701,285 +696,285 @@ void initialize_d3d_device_swap_chain(d3d *d3d, window *window) {
 
 	m_d3d_assert(d3d->swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)(&d3d->swap_chain_back_buffer)));
 	m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->swap_chain_back_buffer, nullptr, &d3d->swap_chain_render_target_view));
+}
+
+void initialize_d3d_framebuffers(d3d* d3d) {
+	{
+		d3d->final_framebuffer_width = d3d->swap_chain_desc.Width;
+		d3d->final_framebuffer_height = d3d->swap_chain_desc.Height;
+
+		D3D11_TEXTURE2D_DESC texture_desc = {};
+		texture_desc.Width = d3d->swap_chain_desc.Width;
+		texture_desc.Height = d3d->swap_chain_desc.Height;
+		texture_desc.MipLevels = 1;
+		texture_desc.ArraySize = 1;
+		texture_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		texture_desc.SampleDesc.Count = 1;
+		texture_desc.Usage = D3D11_USAGE_DEFAULT;
+		texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+		texture_desc.CPUAccessFlags = 0;
+		texture_desc.MiscFlags = 0;
+		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->final_framebuffer_texture));
+		m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->final_framebuffer_texture, nullptr, &d3d->final_framebuffer_render_target_view));
+		m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->final_framebuffer_texture, nullptr, &d3d->final_framebuffer_texture_view));
+
+		texture_desc.Format = DXGI_FORMAT_D32_FLOAT;
+		texture_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->final_framebuffer_depth_texture));
+		m_d3d_assert(d3d->device->CreateDepthStencilView(d3d->final_framebuffer_depth_texture, nullptr, &d3d->final_framebuffer_depth_view));
 	}
+	{
+		d3d->shadow_framebuffer_width = 1024;
+		d3d->shadow_framebuffer_height = 1024;
 
-		void initialize_d3d_framebuffers(d3d *d3d) {
-			{
-				d3d->final_framebuffer_width = d3d->swap_chain_desc.Width;
-				d3d->final_framebuffer_height = d3d->swap_chain_desc.Height;
+		D3D11_TEXTURE2D_DESC texture_desc = {};
+		texture_desc.Width = d3d->shadow_framebuffer_width;
+		texture_desc.Height = d3d->shadow_framebuffer_height;
+		texture_desc.MipLevels = 1;
+		texture_desc.ArraySize = 1;
+		texture_desc.Format = DXGI_FORMAT_R32G32_FLOAT;
+		texture_desc.SampleDesc.Count = 1;
+		texture_desc.Usage = D3D11_USAGE_DEFAULT;
+		texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+		texture_desc.CPUAccessFlags = 0;
+		texture_desc.MiscFlags = 0;
+		for (uint32 i = 0; i < 2; i += 1) {
+			m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->shadow_framebuffer_textures[i]));
+			m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->shadow_framebuffer_textures[i], nullptr, &d3d->shadow_framebuffer_render_target_views[i]));
+			m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->shadow_framebuffer_textures[i], nullptr, &d3d->shadow_framebuffer_texture_views[i]));
+		}
 
-				D3D11_TEXTURE2D_DESC texture_desc = {};
-				texture_desc.Width = d3d->swap_chain_desc.Width;
-				texture_desc.Height = d3d->swap_chain_desc.Height;
-				texture_desc.MipLevels = 1;
-				texture_desc.ArraySize = 1;
-				texture_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-				texture_desc.SampleDesc.Count = 1;
-				texture_desc.Usage = D3D11_USAGE_DEFAULT;
-				texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-				texture_desc.CPUAccessFlags = 0;
-				texture_desc.MiscFlags = 0;
-				m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->final_framebuffer_texture));
-				m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->final_framebuffer_texture, nullptr, &d3d->final_framebuffer_render_target_view));
-				m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->final_framebuffer_texture, nullptr, &d3d->final_framebuffer_texture_view));
-
-				texture_desc.Format = DXGI_FORMAT_D32_FLOAT;
-				texture_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-				m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->final_framebuffer_depth_texture));
-				m_d3d_assert(d3d->device->CreateDepthStencilView(d3d->final_framebuffer_depth_texture, nullptr, &d3d->final_framebuffer_depth_view));
-			}
-			{
-				d3d->shadow_framebuffer_width = 1024;
-				d3d->shadow_framebuffer_height = 1024;
-
-				D3D11_TEXTURE2D_DESC texture_desc = {};
-				texture_desc.Width = d3d->shadow_framebuffer_width;
-				texture_desc.Height = d3d->shadow_framebuffer_height;
-				texture_desc.MipLevels = 1;
-				texture_desc.ArraySize = 1;
-				texture_desc.Format = DXGI_FORMAT_R32G32_FLOAT;
-				texture_desc.SampleDesc.Count = 1;
-				texture_desc.Usage = D3D11_USAGE_DEFAULT;
-				texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-				texture_desc.CPUAccessFlags = 0;
-				texture_desc.MiscFlags = 0;
-				for (uint32 i = 0; i < 2; i += 1) {
-					m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->shadow_framebuffer_textures[i]));
-					m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->shadow_framebuffer_textures[i], nullptr, &d3d->shadow_framebuffer_render_target_views[i]));
-					m_d3d_assert(d3d->device->CreateShaderResourceView(d3d->shadow_framebuffer_textures[i], nullptr, &d3d->shadow_framebuffer_texture_views[i]));
-				}
-
-				texture_desc.Format = DXGI_FORMAT_D32_FLOAT;
-				texture_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-				m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->shadow_framebuffer_depth_texture));
-				m_d3d_assert(d3d->device->CreateDepthStencilView(d3d->shadow_framebuffer_depth_texture, nullptr, &d3d->shadow_framebuffer_depth_view));
-			}
+		texture_desc.Format = DXGI_FORMAT_D32_FLOAT;
+		texture_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, nullptr, &d3d->shadow_framebuffer_depth_texture));
+		m_d3d_assert(d3d->device->CreateDepthStencilView(d3d->shadow_framebuffer_depth_texture, nullptr, &d3d->shadow_framebuffer_depth_view));
 	}
+}
 
-	void initialize_d3d_shaders(d3d *d3d) {
-		struct shader_file_mappings {
-			file_mapping vs_file_mapping;
-			file_mapping ps_file_mapping;
-			shader_file_mappings(struct d3d *d3d, const char *vs_file, const char *ps_file, ID3D11VertexShader **vs, ID3D11PixelShader **ps) {
-				m_assert(file_mapping_open(vs_file, &vs_file_mapping, true));
-				m_d3d_assert(d3d->device->CreateVertexShader(vs_file_mapping.ptr, vs_file_mapping.size, nullptr, vs));
-				m_assert(file_mapping_open(ps_file, &ps_file_mapping, true));
-				m_d3d_assert(d3d->device->CreatePixelShader(ps_file_mapping.ptr, ps_file_mapping.size, nullptr, ps));
-			}
-			~shader_file_mappings() {
-				file_mapping_close(vs_file_mapping);
-				file_mapping_close(ps_file_mapping);
-			}
+void initialize_d3d_shaders(d3d* d3d) {
+	struct shader_file_mappings {
+		file_mapping vs_file_mapping;
+		file_mapping ps_file_mapping;
+		shader_file_mappings(struct d3d* d3d, const char* vs_file, const char* ps_file, ID3D11VertexShader** vs, ID3D11PixelShader** ps) {
+			m_assert(file_mapping_open(vs_file, &vs_file_mapping, true));
+			m_d3d_assert(d3d->device->CreateVertexShader(vs_file_mapping.ptr, vs_file_mapping.size, nullptr, vs));
+			m_assert(file_mapping_open(ps_file, &ps_file_mapping, true));
+			m_d3d_assert(d3d->device->CreatePixelShader(ps_file_mapping.ptr, ps_file_mapping.size, nullptr, ps));
+		}
+		~shader_file_mappings() {
+			file_mapping_close(vs_file_mapping);
+			file_mapping_close(ps_file_mapping);
+		}
+	};
+	{ // mesh
+		shader_file_mappings shaders(d3d, "hlsl/mesh.vs.fxc", "hlsl/mesh.ps.fxc", &d3d->mesh_vs, &d3d->mesh_ps);
+
+		D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TANGENT", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"BLENDINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"BLENDWEIGHT", 0, DXGI_FORMAT_R16G16B16A16_UNORM, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0}
 		};
-		{ // mesh
-			shader_file_mappings shaders(d3d, "hlsl/mesh.vs.fxc", "hlsl/mesh.ps.fxc", &d3d->mesh_vs, &d3d->mesh_ps);
+		m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->mesh_input_layout));
 
-			D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
-				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"NORMAL", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"TANGENT", 0, DXGI_FORMAT_R16G16B16A16_SNORM, 0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"BLENDINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"BLENDWEIGHT", 0, DXGI_FORMAT_R16G16B16A16_UNORM, 0, 40, D3D11_INPUT_PER_VERTEX_DATA, 0}
-			};
-			m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->mesh_input_layout));
+		D3D11_RASTERIZER_DESC rasterizer_state_desc = {};
+		rasterizer_state_desc.FillMode = D3D11_FILL_SOLID;
+		rasterizer_state_desc.CullMode = D3D11_CULL_FRONT;
+		m_d3d_assert(d3d->device->CreateRasterizerState(&rasterizer_state_desc, &d3d->mesh_rasterizer_state));
 
-			D3D11_RASTERIZER_DESC rasterizer_state_desc = {};
-			rasterizer_state_desc.FillMode = D3D11_FILL_SOLID;
-			rasterizer_state_desc.CullMode = D3D11_CULL_FRONT;
-			m_d3d_assert(d3d->device->CreateRasterizerState(&rasterizer_state_desc, &d3d->mesh_rasterizer_state));
-
-			D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
-			depth_stencil_state.DepthEnable = true;
-			depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-			depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
-			m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->mesh_depth_stencil_state));
-		}
-		{ // mesh shadow
-			shader_file_mappings shaders(d3d, "hlsl/mesh_shadow.vs.fxc", "hlsl/mesh_shadow.ps.fxc", &d3d->mesh_shadow_vs, &d3d->mesh_shadow_ps);
-		}
-		{ // terrain
-			shader_file_mappings shaders(d3d, "hlsl/terrain.vs.fxc", "hlsl/terrain.ps.fxc", &d3d->terrain_vs, &d3d->terrain_ps);
-
-			D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
-				{"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0}
-			};
-			m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->terrain_input_layout));
-
-			D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
-			depth_stencil_state.DepthEnable = true;
-			depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-			depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
-			m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->terrain_depth_stencil_state));
-		}
-		{ // terrain shadow
-			shader_file_mappings shaders(d3d, "hlsl/terrain_shadow.vs.fxc", "hlsl/terrain_shadow.ps.fxc", &d3d->terrain_shadow_vs, &d3d->terrain_shadow_ps);
-		}
-		{ // terrain brush
-			shader_file_mappings shaders(d3d, "hlsl/terrain_brush.vs.fxc", "hlsl/terrain_brush.ps.fxc", &d3d->terrain_brush_vs, &d3d->terrain_brush_ps);
-
-			D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
-				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
-			};
-			m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->terrain_brush_input_layout));
-
-			D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
-			depth_stencil_state.DepthEnable = false;
-			depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-			m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->terrain_brush_depth_stencil_state));
-		}
-		{ // gaussian blur x
-			shader_file_mappings shaders(d3d, "hlsl/gaussian_blur_x.vs.fxc", "hlsl/gaussian_blur_x.ps.fxc", &d3d->gaussian_blur_x_vs, &d3d->gaussian_blur_x_ps);
-		}
-		{ // gaussian blur y
-			shader_file_mappings shaders(d3d, "hlsl/gaussian_blur_y.vs.fxc", "hlsl/gaussian_blur_y.ps.fxc", &d3d->gaussian_blur_y_vs, &d3d->gaussian_blur_y_ps);
-		}
-		{ // skybox
-			shader_file_mappings shaders(d3d, "hlsl/skybox.vs.fxc", "hlsl/skybox.ps.fxc", &d3d->skybox_vs, &d3d->skybox_ps);
-
-			D3D11_RASTERIZER_DESC rasterizer_state_desc = {};
-			rasterizer_state_desc.FillMode = D3D11_FILL_SOLID;
-			rasterizer_state_desc.CullMode = D3D11_CULL_NONE;
-			m_d3d_assert(d3d->device->CreateRasterizerState(&rasterizer_state_desc, &d3d->skybox_rasterizer_state));
-
-			D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
-			depth_stencil_state.DepthEnable = true;
-			depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-			depth_stencil_state.DepthFunc = D3D11_COMPARISON_EQUAL;
-			m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->skybox_depth_stencil_state));
-		}
-		{ // collision shape
-			shader_file_mappings shaders(d3d, "hlsl/collision_shape.vs.fxc", "hlsl/collision_shape.ps.fxc", &d3d->collision_shape_vs, &d3d->collision_shape_ps);
-
-			D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
-				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-			};
-			m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->collision_shape_input_layout));
-
-			D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
-			depth_stencil_state.DepthEnable = true;
-			depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-			depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
-			m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->collision_shape_depth_stencil_state));
-
-			D3D11_BLEND_DESC blend_state_desc = {};
-			blend_state_desc.RenderTarget[0].BlendEnable = true;
-			blend_state_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-			blend_state_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-			blend_state_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-			blend_state_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-			blend_state_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-			blend_state_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-			blend_state_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-			m_d3d_assert(d3d->device->CreateBlendState(&blend_state_desc, &d3d->collision_shape_blend_state));
-		}
-		{ // reference grid
-			shader_file_mappings shaders(d3d, "hlsl/reference_grid.vs.fxc", "hlsl/reference_grid.ps.fxc", &d3d->reference_grid_vs, &d3d->reference_grid_ps);
-
-			D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
-				{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
-			};
-			m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->reference_grid_input_layout));
-
-			D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
-			depth_stencil_state.DepthEnable = true;
-			depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-			depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
-			m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->reference_grid_depth_stencil_state));
-		}
-		{ // final framebuffer to screen
-			shader_file_mappings shaders(d3d, "hlsl/final_framebuffer_to_screen.vs.fxc", "hlsl/final_framebuffer_to_screen.ps.fxc", &d3d->final_framebuffer_to_screen_vs, &d3d->final_framebuffer_to_screen_ps);
-		}
-		{ // imgui
-			shader_file_mappings shaders(d3d, "hlsl/imgui.vs.fxc", "hlsl/imgui.ps.fxc", &d3d->imgui_vs, &d3d->imgui_ps);
-
-			D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
-				{"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0},
-				{"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 16, D3D11_INPUT_PER_VERTEX_DATA, 0}
-			};
-			m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->imgui_input_layout));
-
-			D3D11_RASTERIZER_DESC rasterizer_state_desc = {};
-			rasterizer_state_desc.FillMode = D3D11_FILL_SOLID;
-			rasterizer_state_desc.CullMode = D3D11_CULL_NONE;
-			rasterizer_state_desc.ScissorEnable = true;
-			m_d3d_assert(d3d->device->CreateRasterizerState(&rasterizer_state_desc, &d3d->imgui_rasterizer_state));
-
-			D3D11_BLEND_DESC blend_state_desc = {};
-			blend_state_desc.RenderTarget[0].BlendEnable = true;
-			blend_state_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-			blend_state_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-			blend_state_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-			blend_state_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-			blend_state_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-			blend_state_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-			blend_state_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-			m_d3d_assert(d3d->device->CreateBlendState(&blend_state_desc, &d3d->imgui_blend_state));
-		}
+		D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
+		depth_stencil_state.DepthEnable = true;
+		depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
+		m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->mesh_depth_stencil_state));
 	}
-
-	void initialize_d3d_samplers(d3d *d3d) {
-		D3D11_SAMPLER_DESC sampler_desc = {};
-		sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-		sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
-		sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
-		sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
-		sampler_desc.MinLOD = 0;
-		sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
-		sampler_desc.MipLODBias = 0;
-		sampler_desc.MaxAnisotropy = 1;
-		sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-		m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->repeat_sampler_state));
-
-		sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_MIRROR;
-		sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_MIRROR;
-		sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_MIRROR;
-		m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->mirror_repeat_sampler_state));
-
-		sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
-		sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
-		sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-		m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->clamp_edge_sampler_state));
-
-		sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
-		sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
-		sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-		sampler_desc.BorderColor[0] = 0;
-		sampler_desc.BorderColor[1] = 0;
-		sampler_desc.BorderColor[2] = 0;
-		sampler_desc.BorderColor[3] = 0;
-		m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->shadow_framebuffer_sampler_state));
+	{ // mesh shadow
+		shader_file_mappings shaders(d3d, "hlsl/mesh_shadow.vs.fxc", "hlsl/mesh_shadow.ps.fxc", &d3d->mesh_shadow_vs, &d3d->mesh_shadow_ps);
 	}
+	{ // terrain
+		shader_file_mappings shaders(d3d, "hlsl/terrain.vs.fxc", "hlsl/terrain.ps.fxc", &d3d->terrain_vs, &d3d->terrain_ps);
 
-	void initialize_d3d(d3d *d3d, window *window) {
-		initialize_d3d_device_swap_chain(d3d, window);
+		D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		};
+		m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->terrain_input_layout));
+
+		D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
+		depth_stencil_state.DepthEnable = true;
+		depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
+		m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->terrain_depth_stencil_state));
+	}
+	{ // terrain shadow
+		shader_file_mappings shaders(d3d, "hlsl/terrain_shadow.vs.fxc", "hlsl/terrain_shadow.ps.fxc", &d3d->terrain_shadow_vs, &d3d->terrain_shadow_ps);
+	}
+	{ // terrain brush
+		shader_file_mappings shaders(d3d, "hlsl/terrain_brush.vs.fxc", "hlsl/terrain_brush.ps.fxc", &d3d->terrain_brush_vs, &d3d->terrain_brush_ps);
+
+		D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		};
+		m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->terrain_brush_input_layout));
+
+		D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
+		depth_stencil_state.DepthEnable = false;
+		depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->terrain_brush_depth_stencil_state));
+	}
+	{ // gaussian blur x
+		shader_file_mappings shaders(d3d, "hlsl/gaussian_blur_x.vs.fxc", "hlsl/gaussian_blur_x.ps.fxc", &d3d->gaussian_blur_x_vs, &d3d->gaussian_blur_x_ps);
+	}
+	{ // gaussian blur y
+		shader_file_mappings shaders(d3d, "hlsl/gaussian_blur_y.vs.fxc", "hlsl/gaussian_blur_y.ps.fxc", &d3d->gaussian_blur_y_vs, &d3d->gaussian_blur_y_ps);
+	}
+	{ // skybox
+		shader_file_mappings shaders(d3d, "hlsl/skybox.vs.fxc", "hlsl/skybox.ps.fxc", &d3d->skybox_vs, &d3d->skybox_ps);
+
+		D3D11_RASTERIZER_DESC rasterizer_state_desc = {};
+		rasterizer_state_desc.FillMode = D3D11_FILL_SOLID;
+		rasterizer_state_desc.CullMode = D3D11_CULL_NONE;
+		m_d3d_assert(d3d->device->CreateRasterizerState(&rasterizer_state_desc, &d3d->skybox_rasterizer_state));
+
+		D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
+		depth_stencil_state.DepthEnable = true;
+		depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		depth_stencil_state.DepthFunc = D3D11_COMPARISON_EQUAL;
+		m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->skybox_depth_stencil_state));
+	}
+	{ // collision shape
+		shader_file_mappings shaders(d3d, "hlsl/collision_shape.vs.fxc", "hlsl/collision_shape.ps.fxc", &d3d->collision_shape_vs, &d3d->collision_shape_ps);
+
+		D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		};
+		m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->collision_shape_input_layout));
+
+		D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
+		depth_stencil_state.DepthEnable = true;
+		depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
+		m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->collision_shape_depth_stencil_state));
+
+		D3D11_BLEND_DESC blend_state_desc = {};
+		blend_state_desc.RenderTarget[0].BlendEnable = true;
+		blend_state_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+		blend_state_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+		blend_state_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		blend_state_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+		blend_state_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+		blend_state_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		blend_state_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+		m_d3d_assert(d3d->device->CreateBlendState(&blend_state_desc, &d3d->collision_shape_blend_state));
+	}
+	{ // reference grid
+		shader_file_mappings shaders(d3d, "hlsl/reference_grid.vs.fxc", "hlsl/reference_grid.ps.fxc", &d3d->reference_grid_vs, &d3d->reference_grid_ps);
+
+		D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		};
+		m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->reference_grid_input_layout));
+
+		D3D11_DEPTH_STENCIL_DESC depth_stencil_state = {};
+		depth_stencil_state.DepthEnable = true;
+		depth_stencil_state.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		depth_stencil_state.DepthFunc = D3D11_COMPARISON_GREATER;
+		m_d3d_assert(d3d->device->CreateDepthStencilState(&depth_stencil_state, &d3d->reference_grid_depth_stencil_state));
+	}
+	{ // final framebuffer to screen
+		shader_file_mappings shaders(d3d, "hlsl/final_framebuffer_to_screen.vs.fxc", "hlsl/final_framebuffer_to_screen.ps.fxc", &d3d->final_framebuffer_to_screen_vs, &d3d->final_framebuffer_to_screen_ps);
+	}
+	{ // imgui
+		shader_file_mappings shaders(d3d, "hlsl/imgui.vs.fxc", "hlsl/imgui.ps.fxc", &d3d->imgui_vs, &d3d->imgui_ps);
+
+		D3D11_INPUT_ELEMENT_DESC input_element_descs[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 16, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		};
+		m_d3d_assert(d3d->device->CreateInputLayout(input_element_descs, m_countof(input_element_descs), shaders.vs_file_mapping.ptr, shaders.vs_file_mapping.size, &d3d->imgui_input_layout));
+
+		D3D11_RASTERIZER_DESC rasterizer_state_desc = {};
+		rasterizer_state_desc.FillMode = D3D11_FILL_SOLID;
+		rasterizer_state_desc.CullMode = D3D11_CULL_NONE;
+		rasterizer_state_desc.ScissorEnable = true;
+		m_d3d_assert(d3d->device->CreateRasterizerState(&rasterizer_state_desc, &d3d->imgui_rasterizer_state));
+
+		D3D11_BLEND_DESC blend_state_desc = {};
+		blend_state_desc.RenderTarget[0].BlendEnable = true;
+		blend_state_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+		blend_state_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+		blend_state_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		blend_state_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+		blend_state_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+		blend_state_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		blend_state_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+		m_d3d_assert(d3d->device->CreateBlendState(&blend_state_desc, &d3d->imgui_blend_state));
+	}
+}
+
+void initialize_d3d_samplers(d3d* d3d) {
+	D3D11_SAMPLER_DESC sampler_desc = {};
+	sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	sampler_desc.MinLOD = 0;
+	sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
+	sampler_desc.MipLODBias = 0;
+	sampler_desc.MaxAnisotropy = 1;
+	sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+	m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->repeat_sampler_state));
+
+	sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_MIRROR;
+	sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_MIRROR;
+	sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_MIRROR;
+	m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->mirror_repeat_sampler_state));
+
+	sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+	sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+	m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->clamp_edge_sampler_state));
+
+	sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+	sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+	sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+	sampler_desc.BorderColor[0] = 0;
+	sampler_desc.BorderColor[1] = 0;
+	sampler_desc.BorderColor[2] = 0;
+	sampler_desc.BorderColor[3] = 0;
+	m_d3d_assert(d3d->device->CreateSamplerState(&sampler_desc, &d3d->shadow_framebuffer_sampler_state));
+}
+
+void initialize_d3d(d3d* d3d, window* window) {
+	initialize_d3d_device_swap_chain(d3d, window);
+	initialize_d3d_framebuffers(d3d);
+	initialize_d3d_shaders(d3d);
+	initialize_d3d_samplers(d3d);
+}
+
+void resize_d3d_swap_chain(d3d* d3d, uint32 width, uint32 height) {
+	if (d3d->swap_chain_desc.Width != width || d3d->swap_chain_desc.Height != height) {
+		d3d->swap_chain_render_target_view->Release();
+		d3d->swap_chain_back_buffer->Release();
+
+		m_d3d_assert(d3d->swap_chain->ResizeBuffers(d3d->swap_chain_desc.BufferCount, width, height, d3d->swap_chain_desc.Format, 0));
+		m_d3d_assert(d3d->swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)(&d3d->swap_chain_back_buffer)));
+		m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->swap_chain_back_buffer, nullptr, &d3d->swap_chain_render_target_view));
+
+		d3d->swap_chain_desc.Width = width;
+		d3d->swap_chain_desc.Height = height;
+
+		d3d->final_framebuffer_texture_view->Release();
+		d3d->final_framebuffer_render_target_view->Release();
+		d3d->final_framebuffer_texture->Release();
+		d3d->final_framebuffer_depth_view->Release();
+		d3d->final_framebuffer_depth_texture->Release();
+
 		initialize_d3d_framebuffers(d3d);
-		initialize_d3d_shaders(d3d);
-		initialize_d3d_samplers(d3d);
 	}
-
-	void resize_d3d_swap_chain(d3d *d3d, uint32 width, uint32 height) {
-		if (d3d->swap_chain_desc.Width != width || d3d->swap_chain_desc.Height != height) {
-			d3d->swap_chain_render_target_view->Release();
-			d3d->swap_chain_back_buffer->Release();
-
-			m_d3d_assert(d3d->swap_chain->ResizeBuffers(d3d->swap_chain_desc.BufferCount, width, height, d3d->swap_chain_desc.Format, 0));
-			m_d3d_assert(d3d->swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)(&d3d->swap_chain_back_buffer)));
-			m_d3d_assert(d3d->device->CreateRenderTargetView(d3d->swap_chain_back_buffer, nullptr, &d3d->swap_chain_render_target_view));
-
-			d3d->swap_chain_desc.Width = width;
-			d3d->swap_chain_desc.Height = height;
-
-			d3d->final_framebuffer_texture_view->Release();
-			d3d->final_framebuffer_render_target_view->Release();
-			d3d->final_framebuffer_texture->Release();
-			d3d->final_framebuffer_depth_view->Release();
-			d3d->final_framebuffer_depth_texture->Release();
-
-			initialize_d3d_framebuffers(d3d);
-		}
-	}
+}
 
 #endif // __D3D_CPP__

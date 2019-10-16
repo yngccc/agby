@@ -6,8 +6,7 @@ static const uint sphere_light = 1;
 struct light {
 	uint type;
 	float radius;
-	float falloff;
-	float padding;
+	float2 padding;
 	float4 color;
 	float4 position;
 	float4 dir;

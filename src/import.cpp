@@ -262,7 +262,7 @@ void gltf_to_gpk(std::string gltf_file, std::string gpk_file) {
 			auto &gpk_node = gpk_model_nodes[i];
 			gpk_node.mesh_index = (node.mesh >= 0 && node.mesh < gltf_model.meshes.size()) ? node.mesh : UINT32_MAX;
 			gpk_node.skin_index = (node.skin >= 0 && node.skin < gltf_model.skins.size()) ? node.skin : UINT32_MAX;
-			array_set(gpk_node.children, UINT32_MAX);
+			array_fill(gpk_node.children, UINT32_MAX);
 			m_assert(node.children.size() <= m_countof(gpk_node.children));
 			gpk_node.child_count = (uint32)node.children.size();
 			for (uint32 i = 0; i < gpk_node.child_count; i += 1) {

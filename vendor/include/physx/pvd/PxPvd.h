@@ -23,7 +23,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Copyright (c) 2008-2018 NVIDIA Corporation. All rights reserved.
+// Copyright (c) 2008-2019 NVIDIA Corporation. All rights reserved.
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.
 
@@ -41,23 +41,8 @@ namespace physx
 {
 #endif
 
+class PxFoundation;
 class PxPvdTransport;
-
-#if PX_WINDOWS_FAMILY && !PX_ARM_FAMILY
-#ifndef PX_PVDSDK_DLL
-#define PX_PVDSDK_API PX_DLL_IMPORT
-#elif PX_PVDSDK_DLL
-#define PX_PVDSDK_API PX_DLL_EXPORT
-#endif
-#elif PX_UNIX_FAMILY
-#ifdef PX_PVDSDK_DLL
-#define PX_PVDSDK_API PX_UNIX_EXPORT
-#endif
-#endif
-
-#ifndef PX_PVDSDK_API
-#define PX_PVDSDK_API
-#endif
 
 /**
 \brief types of instrumentation that PVD can do.
@@ -183,7 +168,7 @@ class PxPvd : public physx::PxProfilerCallback
 	\brief Create a pvd instance. 	
 	\param foundation is the foundation instance that stores the allocator and error callbacks.
 */
-PX_PVDSDK_API PxPvd* PX_CALL_CONV PxCreatePvd(PxFoundation& foundation);
+PX_C_EXPORT PxPvd* PX_CALL_CONV PxCreatePvd(PxFoundation& foundation);
 
 #if !PX_DOXYGEN
 } // namespace physx

@@ -23,7 +23,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Copyright (c) 2008-2018 NVIDIA Corporation. All rights reserved.
+// Copyright (c) 2008-2019 NVIDIA Corporation. All rights reserved.
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.
 
@@ -107,9 +107,9 @@ class PxVec2
 	/**
 	\brief element access
 	*/
-	PX_DEPRECATED PX_CUDA_CALLABLE PX_FORCE_INLINE float& operator[](int index)
+	PX_CUDA_CALLABLE PX_FORCE_INLINE float& operator[](int index)
 	{
-		PX_ASSERT(index >= 0 && index <= 1);
+		PX_SHARED_ASSERT(index >= 0 && index <= 1);
 
 		return reinterpret_cast<float*>(this)[index];
 	}
@@ -117,9 +117,9 @@ class PxVec2
 	/**
 	\brief element access
 	*/
-	PX_DEPRECATED PX_CUDA_CALLABLE PX_FORCE_INLINE const float& operator[](int index) const
+	PX_CUDA_CALLABLE PX_FORCE_INLINE const float& operator[](int index) const
 	{
-		PX_ASSERT(index >= 0 && index <= 1);
+		PX_SHARED_ASSERT(index >= 0 && index <= 1);
 
 		return reinterpret_cast<const float*>(this)[index];
 	}

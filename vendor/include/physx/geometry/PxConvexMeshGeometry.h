@@ -23,7 +23,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Copyright (c) 2008-2018 NVIDIA Corporation. All rights reserved.
+// Copyright (c) 2008-2019 NVIDIA Corporation. All rights reserved.
 // Copyright (c) 2004-2008 AGEIA Technologies, Inc. All rights reserved.
 // Copyright (c) 2001-2004 NovodeX AG. All rights reserved.  
 
@@ -89,7 +89,7 @@ public:
 		PxGeometry	(PxGeometryType::eCONVEXMESH),
 		scale		(PxMeshScale(1.0f)),
 		convexMesh	(NULL),
-		maxMargin	(3.4e38f)
+		meshFlags	(PxConvexMeshGeometryFlag::eTIGHT_BOUNDS)
 	{}
 
 	/**
@@ -97,18 +97,15 @@ public:
 	\param[in] mesh		Mesh pointer. May be NULL, though this will not make the object valid for shape construction.
 	\param[in] scaling	Scale factor.
 	\param[in] flags	Mesh flags.
-	\param[in] margin	The maximum margin. Used to limit how much PCM shrinks the geometry by in collision detection.
 	\
 	*/
 	PX_INLINE PxConvexMeshGeometry(	PxConvexMesh* mesh, 
 									const PxMeshScale& scaling = PxMeshScale(),
-									PxConvexMeshGeometryFlags flags = PxConvexMeshGeometryFlags(),
-									float margin = 3.4e38f) :
+									PxConvexMeshGeometryFlags flags = PxConvexMeshGeometryFlag::eTIGHT_BOUNDS) :
 		PxGeometry	(PxGeometryType::eCONVEXMESH),
 		scale		(scaling),
 		convexMesh	(mesh),
-		maxMargin	(margin),
-		meshFlags(flags)
+		meshFlags	(flags)
 	{
 	}
 
@@ -127,7 +124,6 @@ public:
 public:
 	PxMeshScale					scale;				//!< The scaling transformation (from vertex space to shape space).
 	PxConvexMesh*				convexMesh;			//!< A reference to the convex mesh object.
-	PxReal						maxMargin;			//!< Max shrunk amount permitted by PCM contact gen
 	PxConvexMeshGeometryFlags	meshFlags;			//!< Mesh flags.
 	PxPadding<3>				paddingFromFlags;	//!< padding for mesh flags
 };
@@ -143,9 +139,7 @@ PX_INLINE bool PxConvexMeshGeometry::isValid() const
 		return false;
 	if(!convexMesh)
 		return false;
-	if (maxMargin < 0.0f)
-		return false;
-
+	
 	return true;
 }
 
