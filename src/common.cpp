@@ -219,6 +219,60 @@ struct array {
 	}
 };
 
+struct string {
+	char* ptr;
+	uint32 len;
+	uint32 capacity;
+
+	char* begin() const { return ptr; }
+	char* end() const { return ptr + len; }
+
+	bool operator==(const string& s) {
+		if (len != s.len) {
+			return false;
+		}
+		else {
+			return !memcmp(ptr, s.ptr, len);
+		}
+	}
+
+	bool operator!=(const string& s) {
+		return !(*this == s);
+	}
+
+	bool operator==(const char* s) {
+		uint64 s_len = strlen(s);
+		if (len != s_len) {
+			return false;
+		}
+		else {
+			return !memcmp(ptr, s, len);
+		}
+	}
+
+	bool operator!=(const char* s) {
+		return !(*this == s);
+	}
+
+	void append(const string& s) {
+		append(s.ptr, s.len);
+	}
+
+	void append(const char* s, uint32 slen) {
+		uint32 old_len = len;
+		len += slen;
+		if (len >= capacity) {
+			capacity = max(len * 2, 32u);
+			char* new_ptr = new char[capacity]();
+			memcpy(new_ptr, ptr, old_len);
+			delete[] ptr;
+			ptr = new_ptr;
+		}
+		memcpy(ptr + old_len, s, slen);
+		ptr[len] = '\0';
+	}
+};
+
 template <typename T, uint32 N>
 void array_fill(T(&array)[N], const T& value) {
 	for (uint32 i = 0; i < N; i += 1) {
@@ -318,38 +372,6 @@ void ring_buffer_write(ring_buffer<T>* rb, T elem) {
 	else {
 		rb->size = 0;
 	}
-}
-
-struct string {
-	const char* ptr;
-	uint32 len;
-};
-
-bool operator==(const string& s1, const string& s2) {
-	if (s1.len != s2.len) {
-		return false;
-	}
-	else {
-		return !memcmp(s1.ptr, s2.ptr, s1.len);
-	}
-}
-
-bool operator!=(const string& s1, const string& s2) {
-	return !(s1 == s2);
-}
-
-bool operator==(const string& s1, const char* s2) {
-	uint64 s2_len = strlen(s2);
-	if (s1.len != s2_len) {
-		return false;
-	}
-	else {
-		return !memcmp(s1.ptr, s2, s1.len);
-	}
-}
-
-bool operator!=(const string& s1, const char* s2) {
-	return !(s1 == s2);
 }
 
 uint32 murmur3_32(const void* key, uint32 len) {

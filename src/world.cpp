@@ -180,7 +180,7 @@ struct model {
 	transform transform;
 	collision collision;
 	physx::PxGeometryHolder px_geometry_holder;
-	char file[32];
+	char file_name[64];
 };
 
 struct terrain_vertex {
@@ -528,16 +528,15 @@ void world_init(world* world, d3d12* d3d12) {
 	}
 }
 
-bool world_add_model(world* world, d3d12* d3d12, const char* model_file, transform transform, collision collision) {
-	const char* file_name = get_file_name(model_file);
+bool world_add_model(world* world, d3d12* d3d12, const char* file_name, transform transform, collision collision) {
 	for (auto& model : world->models) {
-		if (!strcmp(model.file, file_name)) {
+		if (!strcmp(model.file_name, file_name)) {
 			return false;
 		}
 	}
 
 	file_mapping model_file_mapping = {};
-	if (!file_mapping_open(model_file, &model_file_mapping, true)) {
+	if (!file_mapping_open(file_name, &model_file_mapping, true)) {
 		return false;
 	}
 	auto close_model_file_mapping = scope_exit([&] { file_mapping_close(model_file_mapping); });
@@ -549,7 +548,7 @@ bool world_add_model(world* world, d3d12* d3d12, const char* model_file, transfo
 
 	model* model = world->models.append({});
 
-	snprintf(model->file, sizeof(model->file), "%s", file_name);
+	snprintf(model->file_name, sizeof(model->file_name), "%s", file_name);
 	model->transform = transform;
 	model->collision = collision;
 	model->px_geometry_holder = physx::PxGeometryHolder();
@@ -941,125 +940,44 @@ bool world_load_from_file(world* world, d3d12* d3d12, const char* file_name) {
 	return true;
 }
 
-bool world_save_to_file(world* world, const char* file) {
-	//using namespace flatbuffers;
+bool world_save_to_file(world* world, const char* file_name) {
+	string file_data = { new char[512], 0, 512 };
+	auto delete_file_data = scope_exit([&] { delete[] file_data.ptr; });
 
-	//FlatBufferBuilder fb_builder;
+	char buffer[1024] = {};
 
-	//XMFLOAT3 editor_camera_position;
-	//XMFLOAT3 editor_camera_view;
-	//XMStoreFloat3(&editor_camera_position, editor_settings->camera_position);
-	//XMStoreFloat3(&editor_camera_view, editor_settings->camera_view);
+	for (auto& l : world->direct_lights) {
+		int len = snprintf(buffer, sizeof(buffer), "directional_light: %f %f %f %f %f %f\n", l.dir[0], l.dir[1], l.dir[2], l.color[0], l.color[1], l.color[2]);
+		if (len < 0 || len >= sizeof(buffer)) {
+			return false;
+		}
+		file_data.append(buffer, len);
+	}
+	for (auto& l : world->sphere_lights) {
+		int len = snprintf(buffer, sizeof(buffer), "spherical_light: %f %f %f %f %f %f %f\n", l.position[0], l.position[1], l.position[2], l.color[0], l.color[1], l.color[2], l.radius);
+		if (len < 0 || len >= sizeof(buffer)) {
+			return false;
+		}
+		file_data.append(buffer, len);
+	}
+	for (auto& m : world->models) {
+		int len = snprintf(buffer, sizeof(buffer), "model: %s\n", m.file_name);
+		if (len < 0 || len >= sizeof(buffer)) {
+			return false;
+		}
+		file_data.append(buffer, len);
+	}
 
-	//Vec3 fb_camera_position(editor_camera_position.x, editor_camera_position.y, editor_camera_position.z);
-	//Vec3 fb_camera_view(editor_camera_view.x, editor_camera_view.y, editor_camera_view.z);
+	FILE *file = fopen(file_name, "w");
+	if (!file) {
+		return false;
+	}
+	auto close_file = scope_exit([&] { fclose(file); });
 
-	//Vec3 fb_direct_light_position(m_unpack3(world->direct_lights[0].position));
-	//Vec3 fb_direct_light_dir(m_unpack3(world->direct_lights[0].dir));
-	//Vec3 fb_direct_light_color(m_unpack3(world->direct_lights[0].color));
-	//Offset<DirectLight> fb_direct_light = CreateDirectLight(fb_builder, &fb_direct_light_position, &fb_direct_light_dir, &fb_direct_light_color);
-
-	//Offset<Vector<Offset<SphereLight>>> fb_sphere_lights = 0;
-	//{
-	//	Offset<SphereLight>* sphere_lights = new Offset<SphereLight>[world->sphere_lights.size];
-	//	for (uint32 i = 0; i < world->sphere_lights.size; i += 1) {
-	//		Vec3 position(m_unpack3(world->sphere_lights[i].position));
-	//		Vec3 color(m_unpack3(world->sphere_lights[i].color));
-	//		sphere_lights[i] = CreateSphereLight(fb_builder, &position, &color, 0, 0);
-	//	}
-	//	fb_sphere_lights = fb_builder.CreateVector(sphere_lights, world->sphere_lights.size);
-	//	delete[] sphere_lights;
-	//}
-
-	//Offset<Vector<Offset<Model>>> fb_models = 0;
-	//{
-	//	Offset<Model>* models = new Offset<Model>[world->models.size];
-	//	for (uint32 i = 0; i < world->models.size; i += 1) {
-	//		model* model = &world->models[i];
-	//		auto file = fb_builder.CreateString(model->file);
-	//		Transform transform;
-	//		memcpy(&transform, &model->transform, sizeof(struct transform));
-	//		CollisionShape collision_shape_type = CollisionShape_NONE;
-	//		Offset<void> collision_shape = 0;
-	//		if (model->collision.type == collision_type_sphere) {
-	//			collision_shape_type = CollisionShape_Sphere;
-	//			collision_shape = fb_builder.CreateStruct(Sphere(model->collision.sphere.radius)).Union();
-	//		}
-	//		else if (model->collision.type == collision_type_box) {
-	//			collision_shape_type = CollisionShape_Box;
-	//			collision_shape = fb_builder.CreateStruct(Box(Vec3(m_unpack3(model->collision.box.extents)))).Union();
-	//		}
-	//		else if (model->collision.type == collision_type_capsule) {
-	//			collision_shape_type = CollisionShape_Capsule;
-	//			collision_shape = fb_builder.CreateStruct(Capsule(model->collision.capsule.radius, model->collision.capsule.height)).Union();
-	//		}
-	//		models[i] = CreateModel(fb_builder, file, &transform, collision_shape_type, collision_shape);
-	//	}
-	//	fb_models = fb_builder.CreateVector(models, world->models.size);
-	//	delete[] models;
-	//}
-	//Offset<Player> fb_player = 0;
-	//{
-	//	Transform transform;
-	//	memcpy(&transform, &world->player.transform, sizeof(struct transform));
-	//	fb_player = CreatePlayer(fb_builder, world->player.model_index, &transform);
-	//}
-	//Offset<Vector<Offset<StaticObject>>> fb_static_objects = 0;
-	//{
-	//	std::vector<Offset<StaticObject>> static_objects(world->static_object_count);
-	//	for (uint32 i = 0; i < world->static_object_count; i += 1) {
-	//		auto static_object = &world->static_objects[i];
-	//		auto id = fb_builder.CreateString(static_object->id.ptr);
-	//		Transform transform;
-	//		memcpy(&transform, &static_object->transform, sizeof(struct transform));
-	//		static_objects[i] = CreateStaticObject(fb_builder, id, static_object->model_index, &transform);
-	//	}
-	//	fb_static_objects = fb_builder.CreateVector<Offset<StaticObject>>(static_objects);
-	//}
-	//Offset<Vector<Offset<DynamicObject>>> fb_dynamic_objects = 0;
-	//{
-	//	std::vector<Offset<DynamicObject>> dynamic_objects(world->dynamic_object_count);
-	//	for (uint32 i = 0; i < world->dynamic_object_count; i += 1) {
-	//		auto dynamic_object = &world->dynamic_objects[i];
-	//		auto id = fb_builder.CreateString(dynamic_object->id.ptr);
-	//		Transform transform;
-	//		memcpy(&transform, &dynamic_object->transform, sizeof(struct transform));
-	//		float mass = 0;
-	//		dynamic_objects[i] = CreateDynamicObject(fb_builder, id, dynamic_object->model_index, &transform, mass);
-	//	}
-	//	fb_dynamic_objects = fb_builder.CreateVector<Offset<DynamicObject>>(dynamic_objects);
-	//}
-	//Offset<Vector<Offset<Terrain>>> fb_terrains = 0;
-	//{
-	//	std::vector<Offset<Terrain>> terrains(world->terrain_count);
-	//	for (uint32 i = 0; i < world->terrain_count; i += 1) {
-	//		auto terrain = &world->terrains[i];
-	//		auto file = fb_builder.CreateString(terrain->file);
-	//		terrains[i] = CreateTerrain(fb_builder, file);
-	//	}
-	//	fb_terrains = fb_builder.CreateVector<Offset<Terrain>>(terrains);
-	//}
-	//Offset<Vector<Offset<Skybox>>> fb_skyboxes = 0;
-	//{
-	//	std::vector<Offset<Skybox>> skyboxes(world->skybox_count);
-	//	for (uint32 i = 0; i < world->skybox_count; i += 1) {
-	//		auto skybox = &world->skyboxes[i];
-	//		auto file = fb_builder.CreateString(skybox->file);
-	//		skyboxes[i] = CreateSkybox(fb_builder, file);
-	//	}
-	//	fb_skyboxes = fb_builder.CreateVector<Offset<Skybox>>(skyboxes);
-	//}
-
-	//auto fb_world = CreateWorld(fb_builder, &fb_camera_position, &fb_camera_view, fb_direct_light, fb_sphere_lights, fb_models);
-	//FinishWorldBuffer(fb_builder, fb_world);
-
-	//file_mapping save_file_mapping;
-	//if (!file_mapping_create(file, fb_builder.GetSize(), &save_file_mapping)) {
-	//	return false;
-	//}
-	//memcpy(save_file_mapping.ptr, fb_builder.GetBufferPointer(), fb_builder.GetSize());
-	//file_mapping_flush(save_file_mapping);
-	//file_mapping_close(save_file_mapping);
+	size_t n = fwrite(file_data.ptr, 1, file_data.len, file);
+	if (n < file_data.len) {
+		return false;
+	}
 
 	return true;
 }

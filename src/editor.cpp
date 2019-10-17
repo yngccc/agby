@@ -816,7 +816,7 @@ void editor_pop_undo(editor* editor, world* world) {
 			} break;
 			case transformable_type_model: {
 				for (auto& model : world->models) {
-					if (!strcmp(model.file, op->id)) {
+					if (!strcmp(model.file_name, op->id)) {
 						model.transform = op->original_transform;
 						break;
 					}
@@ -1357,10 +1357,10 @@ void editor_bottom_menu(editor* editor) {
 }
 
 void editor_edit_window_model_transform(world* world, uint32* model_index, transform* transform) {
-	const char* model_file = *model_index < world->models.size ? world->models[*model_index].file : nullptr;
+	const char* model_file = *model_index < world->models.size ? world->models[*model_index].file_name : nullptr;
 	if (ImGui::BeginCombo("model", model_file)) {
 		for (uint32 i = 0; i < world->models.size; i += 1) {
-			if (ImGui::Selectable(world->models[i].file, *model_index == i)) {
+			if (ImGui::Selectable(world->models[i].file_name, *model_index == i)) {
 				*model_index = i;
 			}
 		}
@@ -1455,10 +1455,10 @@ void editor_edit_window_model_tab(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::Checkbox("Adjust", &editor->adjust_model);
 	ImGui::Separator();
 	model* model = editor->model_index < world->models.size ? &world->models[editor->model_index] : nullptr;
-	const char* file = model ? model->file : nullptr;
+	const char* file = model ? model->file_name : nullptr;
 	if (ImGui::BeginCombo("models", file)) {
 		for (uint32 i = 0; i < world->models.size; i += 1) {
-			if (ImGui::Selectable(world->models[i].file, editor->model_index == i)) {
+			if (ImGui::Selectable(world->models[i].file_name, editor->model_index == i)) {
 				editor->model_index = i;
 				model = &world->models[i];
 			}
@@ -1682,7 +1682,7 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 				}
 				for (uint32 i = 0; i < world->models.size; i += 1) {
 					bool selected = editor->selected_object_type == selectable_object_model && editor->selected_object_index == i;
-					if (ImGui::Selectable(world->models[i].file, selected)) {
+					if (ImGui::Selectable(world->models[i].file_name, selected)) {
 						editor->selected_object_type = selectable_object_model;
 						editor->selected_object_index = i;
 					}
