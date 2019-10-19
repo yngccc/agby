@@ -295,40 +295,6 @@ struct world {
 	ID3D12Resource* default_emissive_texture;
 	ID3D12Resource* default_height_texture;
 
-	ID3D12Resource* gbuffer_render_targets[5];
-	ID3D12Resource* render_target;
-	ID3D12Resource* depth_target;
-	ID3D12DescriptorHeap* render_target_descriptor_heap;
-	ID3D12DescriptorHeap* depth_target_descriptor_heap;
-	D3D12_CPU_DESCRIPTOR_HANDLE gbuffer_render_target_cpu_descriptor_handles[m_countof(gbuffer_render_targets)];
-	D3D12_CPU_DESCRIPTOR_HANDLE render_target_cpu_descriptor_handle;
-	D3D12_CPU_DESCRIPTOR_HANDLE depth_target_cpu_descriptor_handle;
-
-	ID3D12Resource* frame_constants_buffer;
-	uint32 frame_constants_buffer_size;
-	uint32 frame_constants_buffer_capacity;
-
-	ID3D12DescriptorHeap* frame_descriptor_heap;
-	uint32 frame_descriptor_handle_count;
-
-	array<ID3D12Resource*> dxr_bottom_acceleration_buffers;
-	ID3D12Resource* dxr_top_acceleration_buffer;
-
-	ID3D12RootSignature* dxr_shadow_global_root_sig;
-	ID3D12StateObject* dxr_shadow_pipeline_state;
-	ID3D12Resource* dxr_shadow_shader_table;
-	uint32 dxr_shadow_shader_table_entry_size;
-	ID3D12Resource* dxr_shadow_output_texture_array;
-
-	ID3D12RootSignature* dxr_ao_global_root_sig;
-	ID3D12StateObject* dxr_ao_pipeline_state;
-	ID3D12Resource* dxr_ao_shader_table;
-	uint32 dxr_ao_shader_table_entry_size;
-	ID3D12Resource* dxr_ao_output_texture;
-
-	// top acceleration buffer | gbuffer position texture | gbuffer normal texture | shadow output textures | ao output texture
-	ID3D12DescriptorHeap* dxr_descriptor_heap;
-
 	physx::PxFoundation* px_foundation;
 	physx::PxPvd* px_pvd;
 	physx::PxPvdTransport* px_pvd_transport;
@@ -421,62 +387,6 @@ void world_init(world* world, d3d12* d3d12) {
 		d3d12_copy_texture_2d(d3d12, world->default_metallic_texture, default_metallic_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		d3d12_copy_texture_2d(d3d12, world->default_emissive_texture, (uint8*)default_emissive_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		d3d12_copy_texture_2d(d3d12, world->default_height_texture, default_height_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	}
-	{
-		DXGI_SWAP_CHAIN_DESC swap_chain_desc;
-		d3d12->swap_chain->GetDesc(&swap_chain_desc);
-		uint32 width = swap_chain_desc.BufferDesc.Width;
-		uint32 height = swap_chain_desc.BufferDesc.Height;
-
-		world->render_target = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->depth_target = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_D32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-
-		world->render_target->SetName(L"render_target");
-		world->depth_target->SetName(L"depth_target");
-
-		world->gbuffer_render_targets[0] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->gbuffer_render_targets[1] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->gbuffer_render_targets[2] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->gbuffer_render_targets[3] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R8G8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		world->gbuffer_render_targets[4] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-
-		world->gbuffer_render_targets[0]->SetName(L"gbuffer_diffuse_render_target");
-		world->gbuffer_render_targets[1]->SetName(L"gbuffer_position_render_target");
-		world->gbuffer_render_targets[2]->SetName(L"gbuffer_normal_render_target");
-		world->gbuffer_render_targets[3]->SetName(L"gbuffer_roughness_metallic_render_target");
-		world->gbuffer_render_targets[4]->SetName(L"gbuffer_emissive_render_target");
-
-		D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {};
-		heap_desc.NumDescriptors = 8;
-		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&world->render_target_descriptor_heap)));
-		world->render_target_cpu_descriptor_handle = world->render_target_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-		d3d12->device->CreateRenderTargetView(world->render_target, nullptr, world->render_target_cpu_descriptor_handle);
-
-		uint32 render_target_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		for (uint32 i = 0; i < m_countof(world->gbuffer_render_targets); i += 1) {
-			world->gbuffer_render_target_cpu_descriptor_handles[i] = { world->render_target_cpu_descriptor_handle.ptr + (i + 1) * render_target_descriptor_handle_size };
-			d3d12->device->CreateRenderTargetView(world->gbuffer_render_targets[i], nullptr, world->gbuffer_render_target_cpu_descriptor_handles[i]);
-		}
-
-		heap_desc.NumDescriptors = 1;
-		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&world->depth_target_descriptor_heap)));
-		world->depth_target_cpu_descriptor_handle = world->depth_target_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-		d3d12->device->CreateDepthStencilView(world->depth_target, nullptr, world->depth_target_cpu_descriptor_handle);
-	}
-	{
-		world->frame_constants_buffer_size = 0;
-		world->frame_constants_buffer_capacity = m_megabytes(32);
-		world->frame_constants_buffer = d3d12_create_buffer(d3d12, world->frame_constants_buffer_capacity, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
-
-		D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {};
-		heap_desc.NumDescriptors = 1000000;
-		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&world->frame_descriptor_heap)));
 	}
 	{
 		static physx::PxDefaultAllocator allocator_callback;
@@ -698,7 +608,7 @@ bool world_add_model(world* world, d3d12* d3d12, const char* file_name, transfor
 	return true;
 }
 
-bool world_add_terrain(world* world, d3d* d3d, const char* terrain_file) {
+bool world_add_terrain(world* world, d3d12* d3d12, const char* terrain_file) {
 	const char* file_name = get_file_name(terrain_file);
 	for (auto& terrain : world->terrains) {
 		if (!strcmp(terrain.file, file_name)) {
@@ -741,8 +651,8 @@ bool world_add_terrain(world* world, d3d* d3d, const char* terrain_file) {
 		texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 		texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 		D3D11_SUBRESOURCE_DATA subresource_data = { height_texture_data, height_texture_width * 2, 0 };
-		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &subresource_data, &terrain->height_texture));
-		m_d3d_assert(d3d->device->CreateShaderResourceView(terrain->height_texture, nullptr, &terrain->height_texture_view));
+		//m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &subresource_data, &terrain->height_texture));
+		//m_d3d_assert(d3d->device->CreateShaderResourceView(terrain->height_texture, nullptr, &terrain->height_texture_view));
 
 		terrain->height_texture_data = new int16[height_texture_width * height_texture_height]();
 		memcpy(terrain->height_texture_data, height_texture_data, height_texture_size);
@@ -764,8 +674,8 @@ bool world_add_terrain(world* world, d3d* d3d, const char* terrain_file) {
 		texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 		texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 		D3D11_SUBRESOURCE_DATA subresource_data = { diffuse_texture_data, diffuse_texture_width * 2, 0 };
-		m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &subresource_data, &terrain->diffuse_texture));
-		m_d3d_assert(d3d->device->CreateShaderResourceView(terrain->diffuse_texture, nullptr, &terrain->diffuse_texture_view));
+		//m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, &subresource_data, &terrain->diffuse_texture));
+		//m_d3d_assert(d3d->device->CreateShaderResourceView(terrain->diffuse_texture, nullptr, &terrain->diffuse_texture_view));
 
 		terrain->diffuse_texture_uv_repeat = 1.0f;
 
@@ -801,7 +711,7 @@ bool world_add_terrain(world* world, d3d* d3d, const char* terrain_file) {
 			buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
 			buffer_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 			D3D11_SUBRESOURCE_DATA vertex_buffer_data = { vertices, 0, 0 };
-			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &terrain->vertex_buffer));
+			//m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &terrain->vertex_buffer));
 		}
 		{
 			uint32* indices = new uint32[index_count]();
@@ -824,14 +734,14 @@ bool world_add_terrain(world* world, d3d* d3d, const char* terrain_file) {
 			buffer_desc.Usage = D3D11_USAGE_IMMUTABLE;
 			buffer_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
 			D3D11_SUBRESOURCE_DATA vertex_buffer_data = { indices, 0, 0 };
-			m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &terrain->index_buffer));
+			//m_d3d_assert(d3d->device->CreateBuffer(&buffer_desc, &vertex_buffer_data, &terrain->index_buffer));
 			terrain->index_count = index_count;
 		}
 	}
 	return true;
 }
 
-bool world_add_skybox(world* world, d3d* d3d, const char* skybox_file) {
+bool world_add_skybox(world* world, d3d12* d3d12, const char* skybox_file) {
 	const char* file_name = get_file_name(skybox_file);
 	for (auto& skybox : world->skyboxes) {
 		if (!strcmp(skybox.file, file_name)) {
@@ -870,428 +780,15 @@ bool world_add_skybox(world* world, d3d* d3d, const char* skybox_file) {
 	for (uint32 i = 0; i < 6; i += 1) {
 		subresource_data[i] = { cubemap_data + i * cubemap_face_size, gpk_skybox->cubemap_width / gpk_skybox->cubemap_format_block_dimension * gpk_skybox->cubemap_format_block_size, 0 };
 	}
-	m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, subresource_data, &skybox->cube_texture));
-	m_d3d_assert(d3d->device->CreateShaderResourceView(skybox->cube_texture, nullptr, &skybox->cube_texture_view));
+	//m_d3d_assert(d3d->device->CreateTexture2D(&texture_desc, subresource_data, &skybox->cube_texture));
+	//m_d3d_assert(d3d->device->CreateShaderResourceView(skybox->cube_texture, nullptr, &skybox->cube_texture_view));
 
 	return true;
 }
 
-bool world_load_from_file(world* world, d3d12* d3d12, const char* file_name) {
-	file_tokenizer ft;
-	if (!file_tokenizer_init(&ft, file_name)) {
-		return false;
-	}
-	auto delete_ft = scope_exit([&] { file_tokenizer_delete(ft); });
-
-	token object;
-	while (ft.get_token(&object)) {
-		if (!strncmp(object.ptr, "directional_light:", object.len)) {
-			token x, y, z, r, g, b;
-			if (!ft.get_token(&x) || !ft.get_token(&y) || !ft.get_token(&z) ||
-				!ft.get_token(&r) || !ft.get_token(&g) || !ft.get_token(&b)) {
-				return false;
-			}
-			float fx, fy, fz, fr, fg, fb;
-			if (!x.to_float(&fx) || !y.to_float(&fy) || !z.to_float(&fz) ||
-				!r.to_float(&fr) || !g.to_float(&fg) || !b.to_float(&fb)) {
-				return false;
-			}
-			printf("directional_light: %f %f %f %f %f %f\n", fx, fy, fz, fr, fg, fb);
-			direct_light l;
-			l.position = { 0, 0, 0 };
-			l.dir = vec3_normalize({ fx, fy, fz });
-			l.color = { fr, fg, fb };
-			world->direct_lights.append(l);
-		}
-		else if (!strncmp(object.ptr, "spherical_light:", object.len)) {
-			token x, y, z, r, g, b, radius;
-			if (!ft.get_token(&x) || !ft.get_token(&y) || !ft.get_token(&z) ||
-				!ft.get_token(&r) || !ft.get_token(&g) || !ft.get_token(&b) ||
-				!ft.get_token(&radius)) {
-				return false;
-			}
-			float fx, fy, fz, fr, fg, fb, fradius;
-			if (!x.to_float(&fx) || !y.to_float(&fy) || !z.to_float(&fz) ||
-				!r.to_float(&fr) || !g.to_float(&fg) || !b.to_float(&fb) ||
-				!radius.to_float(&fradius)) {
-				return false;
-			}
-			printf("spherical_light: %f %f %f %f %f %f %f\n", fx, fy, fz, fr, fg, fb, fradius);
-			sphere_light l;
-			l.position = { fx, fy, fz };
-			l.color = { fr, fg, fb };
-			l.radius = fradius;
-			world->sphere_lights.append(l);
-		}
-		else if (!strncmp(object.ptr, "model:", object.len)) {
-			token file;
-			if (!ft.get_token(&file)) {
-				return false;
-			}
-			printf("model: %.*s\n", file.len, file.ptr);
-			char c = file.ptr[file.len];
-			file.ptr[file.len] = '\0';
-			auto restore_char = scope_exit([&] { file.ptr[file.len] = c; });
-			if (!world_add_model(world, d3d12, file.ptr, transform_identity(), collision{ collision_type_none })) {
-				return false;
-			}
-		}
-	}
-	return true;
-}
-
-bool world_save_to_file(world* world, const char* file_name) {
-	string file_data = { new char[512], 0, 512 };
-	auto delete_file_data = scope_exit([&] { delete[] file_data.ptr; });
-
-	char buffer[1024] = {};
-
-	for (auto& l : world->direct_lights) {
-		int len = snprintf(buffer, sizeof(buffer), "directional_light: %f %f %f %f %f %f\n", l.dir[0], l.dir[1], l.dir[2], l.color[0], l.color[1], l.color[2]);
-		if (len < 0 || len >= sizeof(buffer)) {
-			return false;
-		}
-		file_data.append(buffer, len);
-	}
-	for (auto& l : world->sphere_lights) {
-		int len = snprintf(buffer, sizeof(buffer), "spherical_light: %f %f %f %f %f %f %f\n", l.position[0], l.position[1], l.position[2], l.color[0], l.color[1], l.color[2], l.radius);
-		if (len < 0 || len >= sizeof(buffer)) {
-			return false;
-		}
-		file_data.append(buffer, len);
-	}
-	for (auto& m : world->models) {
-		int len = snprintf(buffer, sizeof(buffer), "model: %s\n", m.file_name);
-		if (len < 0 || len >= sizeof(buffer)) {
-			return false;
-		}
-		file_data.append(buffer, len);
-	}
-
-	FILE *file = fopen(file_name, "w");
-	if (!file) {
-		return false;
-	}
-	auto close_file = scope_exit([&] { fclose(file); });
-
-	size_t n = fwrite(file_data.ptr, 1, file_data.len, file);
-	if (n < file_data.len) {
-		return false;
-	}
-
-	return true;
-}
-
-const wchar_t* dxr_ray_gen_str = L"ray_gen";
-const wchar_t* dxr_any_hit_str = L"any_hit";
-const wchar_t* dxr_closest_hit_str = L"closest_hit";
-const wchar_t* dxr_miss_str = L"miss";
-const wchar_t* dxr_hit_group_str = L"hit_group";
-
-void dxr_init_pipeline_state(world* world, d3d12* d3d12) {
-	{
-		hlsl_bytecode_file bytecode_file("hlsl/shadow.rt.bytecode");
-		D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
-		{
-			D3D12_EXPORT_DESC export_descs[3] = { {dxr_ray_gen_str}, {dxr_miss_str}, {dxr_any_hit_str} };
-			D3D12_DXIL_LIBRARY_DESC dxil_lib_desc = {};
-			dxil_lib_desc.DXILLibrary.pShaderBytecode = bytecode_file.bytecode.pShaderBytecode;
-			dxil_lib_desc.DXILLibrary.BytecodeLength = bytecode_file.bytecode.BytecodeLength;
-			dxil_lib_desc.NumExports = m_countof(export_descs);
-			dxil_lib_desc.pExports = export_descs;
-			state_subobjects[0].Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
-			state_subobjects[0].pDesc = &dxil_lib_desc;
-		}
-		{
-			D3D12_HIT_GROUP_DESC hit_group_desc = {};
-			hit_group_desc.HitGroupExport = dxr_hit_group_str;
-			hit_group_desc.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
-			hit_group_desc.AnyHitShaderImport = dxr_any_hit_str;
-			state_subobjects[1].Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
-			state_subobjects[1].pDesc = &hit_group_desc;
-		}
-		{
-			D3D12_DESCRIPTOR_RANGE ranges[2] = {};
-			ranges[1].NumDescriptors = 3;
-			ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-			ranges[1].OffsetInDescriptorsFromTableStart = 0;
-			ranges[0].NumDescriptors = 1;
-			ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-			ranges[0].OffsetInDescriptorsFromTableStart = 3;
-
-			D3D12_ROOT_PARAMETER root_params[1] = {};
-			root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			root_params[0].DescriptorTable.NumDescriptorRanges = m_countof(ranges);
-			root_params[0].DescriptorTable.pDescriptorRanges = ranges;
-
-			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
-			root_sig_desc.NumParameters = m_countof(root_params);
-			root_sig_desc.pParameters = root_params;
-			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-			ID3D12RootSignature* root_sig = nullptr;
-			ID3DBlob* sig_blob = nullptr;
-			ID3DBlob* error_blob = nullptr;
-			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
-			sig_blob->Release();
-			state_subobjects[2].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-			state_subobjects[2].pDesc = &root_sig;
-
-			const wchar_t* export_names[1] = { dxr_ray_gen_str };
-			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-			association.NumExports = m_countof(export_names);
-			association.pExports = export_names;
-			association.pSubobjectToAssociate = &state_subobjects[2];
-			state_subobjects[3].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-			state_subobjects[3].pDesc = &association;
-		}
-		{
-			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
-			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-			ID3D12RootSignature* root_sig = nullptr;
-			ID3DBlob* sig_blob = nullptr;
-			ID3DBlob* error_blob = nullptr;
-			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
-			sig_blob->Release();
-			state_subobjects[4].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-			state_subobjects[4].pDesc = &root_sig;
-
-			const wchar_t* export_names[2] = { dxr_miss_str, dxr_any_hit_str };
-			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-			association.NumExports = m_countof(export_names);
-			association.pExports = export_names;
-			association.pSubobjectToAssociate = &state_subobjects[4];
-			state_subobjects[5].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-			state_subobjects[5].pDesc = &association;
-		}
-		{
-			D3D12_RAYTRACING_SHADER_CONFIG shader_config = {};
-			shader_config.MaxPayloadSizeInBytes = sizeof(float);
-			shader_config.MaxAttributeSizeInBytes = 2 * sizeof(float);
-			state_subobjects[6].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
-			state_subobjects[6].pDesc = &shader_config;
-
-			const wchar_t* export_names[3] = { dxr_miss_str, dxr_any_hit_str, dxr_ray_gen_str };
-			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-			association.NumExports = m_countof(export_names);
-			association.pExports = export_names;
-			association.pSubobjectToAssociate = &state_subobjects[6];
-			state_subobjects[7].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-			state_subobjects[7].pDesc = &association;
-		}
-		{
-			D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_config = {};
-			pipeline_config.MaxTraceRecursionDepth = 1;
-			state_subobjects[8].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
-			state_subobjects[8].pDesc = &pipeline_config;
-		}
-		{
-			D3D12_ROOT_PARAMETER root_params[1] = {};
-			root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-			root_params[0].Descriptor.ShaderRegister = 0;
-			D3D12_ROOT_SIGNATURE_DESC global_root_sig_desc = {};
-			global_root_sig_desc.NumParameters = m_countof(root_params);
-			global_root_sig_desc.pParameters = root_params;
-			ID3DBlob* global_root_sig_blob = nullptr;
-			ID3DBlob* global_root_sig_error = nullptr;
-			m_d3d_assert(D3D12SerializeRootSignature(&global_root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &global_root_sig_blob, &global_root_sig_error));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, global_root_sig_blob->GetBufferPointer(), global_root_sig_blob->GetBufferSize(), IID_PPV_ARGS(&world->dxr_shadow_global_root_sig)));
-			global_root_sig_blob->Release();
-			state_subobjects[9].Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
-			state_subobjects[9].pDesc = &world->dxr_shadow_global_root_sig;
-		}
-		D3D12_STATE_OBJECT_DESC state_object_desc = {};
-		state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
-		state_object_desc.NumSubobjects = m_countof(state_subobjects);
-		state_object_desc.pSubobjects = state_subobjects;
-		m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_shadow_pipeline_state)));
-	}
-	{
-		hlsl_bytecode_file bytecode_file("hlsl/ao.rt.bytecode");
-		D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
-		{
-			D3D12_EXPORT_DESC export_descs[3] = { {dxr_ray_gen_str}, {dxr_miss_str}, {dxr_any_hit_str} };
-			D3D12_DXIL_LIBRARY_DESC dxil_lib_desc = {};
-			dxil_lib_desc.DXILLibrary.pShaderBytecode = bytecode_file.bytecode.pShaderBytecode;
-			dxil_lib_desc.DXILLibrary.BytecodeLength = bytecode_file.bytecode.BytecodeLength;
-			dxil_lib_desc.NumExports = m_countof(export_descs);
-			dxil_lib_desc.pExports = export_descs;
-			state_subobjects[0].Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
-			state_subobjects[0].pDesc = &dxil_lib_desc;
-		}
-		{
-			D3D12_HIT_GROUP_DESC hit_group_desc = {};
-			hit_group_desc.HitGroupExport = dxr_hit_group_str;
-			hit_group_desc.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
-			hit_group_desc.AnyHitShaderImport = dxr_any_hit_str;
-			state_subobjects[1].Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
-			state_subobjects[1].pDesc = &hit_group_desc;
-		}
-		{
-			D3D12_DESCRIPTOR_RANGE ranges[2] = {};
-			ranges[1].NumDescriptors = 3;
-			ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-			ranges[1].OffsetInDescriptorsFromTableStart = 0;
-			ranges[0].NumDescriptors = 1;
-			ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-			ranges[0].OffsetInDescriptorsFromTableStart = 4;
-
-			D3D12_ROOT_PARAMETER root_params[1] = {};
-			root_params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-			root_params[0].DescriptorTable.NumDescriptorRanges = m_countof(ranges);
-			root_params[0].DescriptorTable.pDescriptorRanges = ranges;
-
-			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
-			root_sig_desc.NumParameters = m_countof(root_params);
-			root_sig_desc.pParameters = root_params;
-			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-			ID3D12RootSignature* root_sig = nullptr;
-			ID3DBlob* sig_blob = nullptr;
-			ID3DBlob* error_blob = nullptr;
-			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
-			sig_blob->Release();
-			state_subobjects[2].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-			state_subobjects[2].pDesc = &root_sig;
-
-			const wchar_t* export_names[1] = { dxr_ray_gen_str };
-			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-			association.NumExports = m_countof(export_names);
-			association.pExports = export_names;
-			association.pSubobjectToAssociate = &state_subobjects[2];
-			state_subobjects[3].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-			state_subobjects[3].pDesc = &association;
-		}
-		{
-			D3D12_ROOT_SIGNATURE_DESC root_sig_desc = {};
-			root_sig_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-			ID3D12RootSignature* root_sig = nullptr;
-			ID3DBlob* sig_blob = nullptr;
-			ID3DBlob* error_blob = nullptr;
-			m_d3d_assert(D3D12SerializeRootSignature(&root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, &error_blob));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&root_sig)));
-			sig_blob->Release();
-			state_subobjects[4].Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-			state_subobjects[4].pDesc = &root_sig;
-
-			const wchar_t* export_names[2] = { dxr_miss_str, dxr_any_hit_str };
-			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-			association.NumExports = m_countof(export_names);
-			association.pExports = export_names;
-			association.pSubobjectToAssociate = &state_subobjects[4];
-			state_subobjects[5].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-			state_subobjects[5].pDesc = &association;
-		}
-		{
-			D3D12_RAYTRACING_SHADER_CONFIG shader_config = {};
-			shader_config.MaxPayloadSizeInBytes = sizeof(float);
-			shader_config.MaxAttributeSizeInBytes = 2 * sizeof(float);
-			state_subobjects[6].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
-			state_subobjects[6].pDesc = &shader_config;
-
-			const wchar_t* export_names[3] = { dxr_miss_str, dxr_any_hit_str, dxr_ray_gen_str };
-			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association = {};
-			association.NumExports = m_countof(export_names);
-			association.pExports = export_names;
-			association.pSubobjectToAssociate = &state_subobjects[6];
-			state_subobjects[7].Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-			state_subobjects[7].pDesc = &association;
-		}
-		{
-			D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_config = {};
-			pipeline_config.MaxTraceRecursionDepth = 1;
-			state_subobjects[8].Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
-			state_subobjects[8].pDesc = &pipeline_config;
-		}
-		{
-			D3D12_ROOT_SIGNATURE_DESC global_root_sig_desc = {};
-			ID3DBlob* global_root_sig_blob = nullptr;
-			ID3DBlob* global_root_sig_error = nullptr;
-			m_d3d_assert(D3D12SerializeRootSignature(&global_root_sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &global_root_sig_blob, &global_root_sig_error));
-			m_d3d_assert(d3d12->device->CreateRootSignature(0, global_root_sig_blob->GetBufferPointer(), global_root_sig_blob->GetBufferSize(), IID_PPV_ARGS(&world->dxr_ao_global_root_sig)));
-			global_root_sig_blob->Release();
-			state_subobjects[9].Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
-			state_subobjects[9].pDesc = &world->dxr_ao_global_root_sig;
-		}
-		D3D12_STATE_OBJECT_DESC state_object_desc = {};
-		state_object_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
-		state_object_desc.NumSubobjects = m_countof(state_subobjects);
-		state_object_desc.pSubobjects = state_subobjects;
-		m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&world->dxr_ao_pipeline_state)));
-	}
-}
-
-void dxr_init_shader_resources(world* world, d3d12* d3d12, window* window) {
-	world->dxr_shadow_output_texture_array = d3d12_create_texture_2d(d3d12, window->width, window->height, 4, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	world->dxr_shadow_output_texture_array->SetName(L"dxr_shadow_output_texture_array");
-
-	world->dxr_ao_output_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	world->dxr_ao_output_texture->SetName(L"dxr_ao_output_texture");
-
-	D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
-	descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	descriptor_heap_desc.NumDescriptors = 16;
-	descriptor_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	m_d3d_assert(d3d12->device->CreateDescriptorHeap(&descriptor_heap_desc, IID_PPV_ARGS(&world->dxr_descriptor_heap)));
-
-	D3D12_CPU_DESCRIPTOR_HANDLE dxr_cpu_descriptor_handle = world->dxr_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-	uint32 dxr_cpu_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
-	d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
-
-	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
-	uav_desc.Format = DXGI_FORMAT_R8_UNORM;
-	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
-	uav_desc.Texture2DArray.ArraySize = 4;
-	d3d12->device->CreateUnorderedAccessView(world->dxr_shadow_output_texture_array, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
-	uav_desc.Format = DXGI_FORMAT_R8_UNORM;
-	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-	uav_desc.Texture2DArray.ArraySize = 1;
-	d3d12->device->CreateUnorderedAccessView(world->dxr_ao_output_texture, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 4 * dxr_cpu_descriptor_handle_size });
-}
-
-void dxr_init_shader_table(world* world, d3d12* d3d12) {
-	{
-		world->dxr_shadow_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
-		world->dxr_shadow_shader_table_entry_size = round_up(world->dxr_shadow_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
-
-		world->dxr_shadow_shader_table = d3d12_create_buffer(d3d12, world->dxr_shadow_shader_table_entry_size * 3, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
-
-		uint8* shader_table_ptr = nullptr;
-		m_d3d_assert(world->dxr_shadow_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
-		ID3D12StateObjectProperties* state_object_properties = nullptr;
-		world->dxr_shadow_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
-		memcpy(shader_table_ptr, state_object_properties->GetShaderIdentifier(dxr_ray_gen_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-		uint64 gpu_descriptor_handle = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
-		*(uint64*)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = gpu_descriptor_handle;
-		memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-		memcpy(shader_table_ptr + world->dxr_shadow_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-		world->dxr_shadow_shader_table->Unmap(0, nullptr);
-	}
-	{
-		world->dxr_ao_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
-		world->dxr_ao_shader_table_entry_size = round_up(world->dxr_ao_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
-
-		world->dxr_ao_shader_table = d3d12_create_buffer(d3d12, world->dxr_ao_shader_table_entry_size * 3, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
-
-		uint8* shader_table_ptr = nullptr;
-		m_d3d_assert(world->dxr_ao_shader_table->Map(0, nullptr, (void**)&shader_table_ptr));
-		ID3D12StateObjectProperties* state_object_properties = nullptr;
-		world->dxr_ao_pipeline_state->QueryInterface(IID_PPV_ARGS(&state_object_properties));
-		memcpy(shader_table_ptr, state_object_properties->GetShaderIdentifier(dxr_ray_gen_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-		uint64 gpu_descriptor_handle = world->dxr_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr;
-		*(uint64*)(shader_table_ptr + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES) = gpu_descriptor_handle;
-		memcpy(shader_table_ptr + world->dxr_ao_shader_table_entry_size, state_object_properties->GetShaderIdentifier(dxr_miss_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-		memcpy(shader_table_ptr + world->dxr_ao_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-		world->dxr_ao_shader_table->Unmap(0, nullptr);
-	}
-}
-
-void dxr_build_acceleration_buffers(world* world, d3d12* d3d12) {
-	for (auto& buffer : world->dxr_bottom_acceleration_buffers) buffer->Release();
-	if (world->dxr_top_acceleration_buffer) world->dxr_top_acceleration_buffer->Release();
+void world_build_dxr_acceleration_buffers(world* world, d3d12* d3d12) {
+	for (auto& buffer : d3d12->dxr_bottom_acceleration_buffers) buffer->Release();
+	if (d3d12->dxr_top_acceleration_buffer) d3d12->dxr_top_acceleration_buffer->Release();
 
 	m_d3d_assert(d3d12->command_allocator->Reset());
 	m_d3d_assert(d3d12->command_list->Reset(d3d12->command_allocator, nullptr));
@@ -1367,8 +864,8 @@ void dxr_build_acceleration_buffers(world* world, d3d12* d3d12) {
 	}
 	node_transform_mats->Unmap(0, nullptr);
 
-	auto bottom_acceleration_scratch_buffers = array<ID3D12Resource*>{new ID3D12Resource* [world->models.size], world->models.size, world->models.size};
-	auto bottom_acceleration_buffers = array<ID3D12Resource*>{new ID3D12Resource* [world->models.size], world->models.size, world->models.size};
+	auto bottom_acceleration_scratch_buffers = array<ID3D12Resource*>{new ID3D12Resource*[world->models.size], world->models.size, world->models.size};
+	auto bottom_acceleration_buffers = array<ID3D12Resource*>{new ID3D12Resource*[world->models.size], world->models.size, world->models.size};
 	auto delete_buffers = scope_exit([&] { delete[] bottom_acceleration_scratch_buffers.elems; });
 	for (uint32 i = 0; i < world->models.size; i += 1) {
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
@@ -1449,38 +946,38 @@ void dxr_build_acceleration_buffers(world* world, d3d12* d3d12) {
 	if (model_instance_descs_buffer) model_instance_descs_buffer->Release();
 	if (node_transform_mats) node_transform_mats->Release();
 
-	world->dxr_bottom_acceleration_buffers = bottom_acceleration_buffers;
-	world->dxr_top_acceleration_buffer = top_acceleration_buffer;
+	d3d12->dxr_bottom_acceleration_buffers = bottom_acceleration_buffers;
+	d3d12->dxr_top_acceleration_buffer = top_acceleration_buffer;
 
-	if (world->dxr_top_acceleration_buffer) {
+	if (d3d12->dxr_top_acceleration_buffer) {
 		D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
 		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
 		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srv_desc.RaytracingAccelerationStructure.Location = world->dxr_top_acceleration_buffer->GetGPUVirtualAddress();
-		D3D12_CPU_DESCRIPTOR_HANDLE dxr_cpu_descriptor_handle = world->dxr_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+		srv_desc.RaytracingAccelerationStructure.Location = d3d12->dxr_top_acceleration_buffer->GetGPUVirtualAddress();
+		D3D12_CPU_DESCRIPTOR_HANDLE dxr_cpu_descriptor_handle = d3d12->dxr_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
 		uint32 dxr_cpu_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		d3d12->device->CreateShaderResourceView(nullptr, &srv_desc, { dxr_cpu_descriptor_handle.ptr + dxr_cpu_descriptor_handle_size * 0 });
 	}
 }
 
 void world_render_commands(world* world, d3d12* d3d12, world_render_params* params) {
-	world->frame_constants_buffer_size = 0;
+	d3d12->frame_constants_buffer_size = 0;
 	uint8* frame_constants_buffer = nullptr;
-	world->frame_constants_buffer->Map(0, nullptr, (void**)&frame_constants_buffer);
-	auto unmap_constant_buffer = scope_exit([&] { world->frame_constants_buffer->Unmap(0, nullptr); });
-	D3D12_GPU_VIRTUAL_ADDRESS frame_constants_buffer_gpu_address = world->frame_constants_buffer->GetGPUVirtualAddress();
+	d3d12->frame_constants_buffer->Map(0, nullptr, (void**)&frame_constants_buffer);
+	auto unmap_constant_buffer = scope_exit([&] { d3d12->frame_constants_buffer->Unmap(0, nullptr); });
+	D3D12_GPU_VIRTUAL_ADDRESS frame_constants_buffer_gpu_address = d3d12->frame_constants_buffer->GetGPUVirtualAddress();
 
-	world->frame_descriptor_handle_count = 0;
+	d3d12->frame_descriptor_handle_count = 0;
 	const uint32 frame_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	const D3D12_CPU_DESCRIPTOR_HANDLE frame_first_cpu_descriptor_handle = world->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-	const D3D12_GPU_DESCRIPTOR_HANDLE frame_first_gpu_descriptor_handle = world->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+	const D3D12_CPU_DESCRIPTOR_HANDLE frame_first_cpu_descriptor_handle = d3d12->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+	const D3D12_GPU_DESCRIPTOR_HANDLE frame_first_gpu_descriptor_handle = d3d12->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
 
 	auto frame_constants_buffer_append = [&](void* data, uint32 data_size, uint32* offset) {
 		if (offset) {
-			*offset = world->frame_constants_buffer_size;
+			*offset = d3d12->frame_constants_buffer_size;
 		}
-		memcpy(frame_constants_buffer + world->frame_constants_buffer_size, data, data_size);
-		world->frame_constants_buffer_size += round_up(data_size, 256u);
+		memcpy(frame_constants_buffer + d3d12->frame_constants_buffer_size, data, data_size);
+		d3d12->frame_constants_buffer_size += round_up(data_size, 256u);
 	};
 
 	DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
@@ -1490,27 +987,27 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 	d3d12->command_list->RSSetViewports(1, &viewport);
 	d3d12->command_list->RSSetScissorRects(1, &scissor);
 
-	d3d12->command_list->ClearDepthStencilView(world->depth_target_cpu_descriptor_handle, D3D12_CLEAR_FLAG_DEPTH, 0, 0, 0, nullptr);
+	d3d12->command_list->ClearDepthStencilView(d3d12->depth_target_cpu_descriptor_handle, D3D12_CLEAR_FLAG_DEPTH, 0, 0, 0, nullptr);
 
 	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
+	d3d12->command_list->SetDescriptorHeaps(1, &d3d12->frame_descriptor_heap);
 	{
-		D3D12_RESOURCE_BARRIER barriers[m_countof(world->gbuffer_render_targets)] = {};
+		D3D12_RESOURCE_BARRIER barriers[m_countof(d3d12->gbuffer_render_targets)] = {};
 		for (uint32 i = 0; i < m_countof(barriers); i += 1) {
 			barriers[i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 			barriers[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-			barriers[i].Transition.pResource = world->gbuffer_render_targets[i];
+			barriers[i].Transition.pResource = d3d12->gbuffer_render_targets[i];
 			barriers[i].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 			barriers[i].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		}
 		d3d12->command_list->ResourceBarrier(m_countof(barriers), barriers);
 
 		d3d12->command_list->SetPipelineState(d3d12->gbuffer_pipeline_state);
-		d3d12->command_list->OMSetRenderTargets(m_countof(world->gbuffer_render_targets), world->gbuffer_render_target_cpu_descriptor_handles, false, &world->depth_target_cpu_descriptor_handle);
+		d3d12->command_list->OMSetRenderTargets(m_countof(d3d12->gbuffer_render_targets), d3d12->gbuffer_render_target_cpu_descriptor_handles, false, &d3d12->depth_target_cpu_descriptor_handle);
 		d3d12->command_list->SetGraphicsRootSignature(d3d12->gbuffer_root_signature);
 
 		float clear_color[4] = { 0, 0, 0, 0 };
-		for (auto& gbuffer : world->gbuffer_render_target_cpu_descriptor_handles) {
+		for (auto& gbuffer : d3d12->gbuffer_render_target_cpu_descriptor_handles) {
 			d3d12->command_list->ClearRenderTargetView(gbuffer, clear_color, 0, nullptr);
 		}
 
@@ -1533,14 +1030,14 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		uint32 default_material_constants_offset = 0;
 		frame_constants_buffer_append(&default_material_constants, sizeof(default_material_constants), &default_material_constants_offset);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE default_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
-		D3D12_GPU_DESCRIPTOR_HANDLE default_material_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
+		D3D12_CPU_DESCRIPTOR_HANDLE default_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
+		D3D12_GPU_DESCRIPTOR_HANDLE default_material_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
 		d3d12->device->CreateShaderResourceView(world->default_diffuse_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 0 });
 		d3d12->device->CreateShaderResourceView(world->default_normal_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 1 });
 		d3d12->device->CreateShaderResourceView(world->default_roughness_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 2 });
 		d3d12->device->CreateShaderResourceView(world->default_metallic_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 3 });
 		d3d12->device->CreateShaderResourceView(world->default_emissive_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 4 });
-		world->frame_descriptor_handle_count += 5;
+		d3d12->frame_descriptor_handle_count += 5;
 
 		for (uint32 i = 0; i < world->models.size; i += 1) {
 			model* model = &world->models[i];
@@ -1548,9 +1045,9 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 			uint32 model_mat_offset = 0;
 			frame_constants_buffer_append(&model_mat, sizeof(model_mat), &model_mat_offset);
 
-			uint32 first_material_constants_offset = world->frame_constants_buffer_size;
-			D3D12_CPU_DESCRIPTOR_HANDLE first_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
-			D3D12_GPU_DESCRIPTOR_HANDLE first_material_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
+			uint32 first_material_constants_offset = d3d12->frame_constants_buffer_size;
+			D3D12_CPU_DESCRIPTOR_HANDLE first_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
+			D3D12_GPU_DESCRIPTOR_HANDLE first_material_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
 			for (uint32 i = 0; i < model->material_count; i += 1) {
 				model_material* material = &model->materials[i];
 				material_constants material_constants = {
@@ -1573,8 +1070,8 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 				d3d12->device->CreateShaderResourceView(emissive_texture, nullptr, { first_material_cpu_descriptor_handle.ptr + 4 * frame_descriptor_handle_size });
 				first_material_cpu_descriptor_handle.ptr += frame_descriptor_handle_size * 5;
 			}
-			first_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
-			world->frame_descriptor_handle_count += model->material_count * 5;
+			first_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
+			d3d12->frame_descriptor_handle_count += model->material_count * 5;
 
 			for (uint32 i = 0; i < model->scene_count; i += 1) {
 				model_scene* scene = &model->scenes[i];
@@ -1662,18 +1159,18 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 			break;
 		}
 	}
-	if (world->dxr_top_acceleration_buffer) {
+	if (d3d12->dxr_support && d3d12->dxr_top_acceleration_buffer) {
 		D3D12_RESOURCE_BARRIER barrier = {};
 		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		barrier.Transition.pResource = world->dxr_shadow_output_texture_array;
+		barrier.Transition.pResource = d3d12->dxr_shadow_output_texture_array;
 		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 
-		d3d12->command_list->SetPipelineState1(world->dxr_shadow_pipeline_state);
-		d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
-		d3d12->command_list->SetComputeRootSignature(world->dxr_shadow_global_root_sig);
+		d3d12->command_list->SetPipelineState1(d3d12->dxr_shadow_pipeline_state);
+		d3d12->command_list->SetDescriptorHeaps(1, &d3d12->dxr_descriptor_heap);
+		d3d12->command_list->SetComputeRootSignature(d3d12->dxr_shadow_global_root_sig);
 
 		uint32 constants_offset = 0;
 		frame_constants_buffer_append(&lights_info, sizeof(lights_info), &constants_offset);
@@ -1685,14 +1182,14 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		rays_desc.Width = swap_chain_desc.BufferDesc.Width;
 		rays_desc.Height = swap_chain_desc.BufferDesc.Height;
 		rays_desc.Depth = 1;
-		rays_desc.RayGenerationShaderRecord.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress();
-		rays_desc.RayGenerationShaderRecord.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.MissShaderTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + world->dxr_shadow_shader_table_entry_size;
-		rays_desc.MissShaderTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.MissShaderTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.HitGroupTable.StartAddress = world->dxr_shadow_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_shadow_shader_table_entry_size;
-		rays_desc.HitGroupTable.StrideInBytes = world->dxr_shadow_shader_table_entry_size;
-		rays_desc.HitGroupTable.SizeInBytes = world->dxr_shadow_shader_table_entry_size;
+		rays_desc.RayGenerationShaderRecord.StartAddress = d3d12->dxr_shadow_shader_table->GetGPUVirtualAddress();
+		rays_desc.RayGenerationShaderRecord.SizeInBytes = d3d12->dxr_shadow_shader_table_entry_size;
+		rays_desc.MissShaderTable.StartAddress = d3d12->dxr_shadow_shader_table->GetGPUVirtualAddress() + d3d12->dxr_shadow_shader_table_entry_size;
+		rays_desc.MissShaderTable.StrideInBytes = d3d12->dxr_shadow_shader_table_entry_size;
+		rays_desc.MissShaderTable.SizeInBytes = d3d12->dxr_shadow_shader_table_entry_size;
+		rays_desc.HitGroupTable.StartAddress = d3d12->dxr_shadow_shader_table->GetGPUVirtualAddress() + 2 * d3d12->dxr_shadow_shader_table_entry_size;
+		rays_desc.HitGroupTable.StrideInBytes = d3d12->dxr_shadow_shader_table_entry_size;
+		rays_desc.HitGroupTable.SizeInBytes = d3d12->dxr_shadow_shader_table_entry_size;
 
 		d3d12->command_list->DispatchRays(&rays_desc);
 
@@ -1700,18 +1197,18 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 	}
-	if (world->dxr_top_acceleration_buffer) {
+	if (d3d12->dxr_support && d3d12->dxr_top_acceleration_buffer) {
 		D3D12_RESOURCE_BARRIER barrier = {};
 		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		barrier.Transition.pResource = world->dxr_ao_output_texture;
+		barrier.Transition.pResource = d3d12->dxr_ao_output_texture;
 		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 
-		d3d12->command_list->SetPipelineState1(world->dxr_ao_pipeline_state);
-		d3d12->command_list->SetDescriptorHeaps(1, &world->dxr_descriptor_heap);
-		d3d12->command_list->SetComputeRootSignature(world->dxr_ao_global_root_sig);
+		d3d12->command_list->SetPipelineState1(d3d12->dxr_ao_pipeline_state);
+		d3d12->command_list->SetDescriptorHeaps(1, &d3d12->dxr_descriptor_heap);
+		d3d12->command_list->SetComputeRootSignature(d3d12->dxr_ao_global_root_sig);
 
 		D3D12_DISPATCH_RAYS_DESC rays_desc = {};
 		DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
@@ -1719,14 +1216,14 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		rays_desc.Width = swap_chain_desc.BufferDesc.Width;
 		rays_desc.Height = swap_chain_desc.BufferDesc.Height;
 		rays_desc.Depth = 1;
-		rays_desc.RayGenerationShaderRecord.StartAddress = world->dxr_ao_shader_table->GetGPUVirtualAddress();
-		rays_desc.RayGenerationShaderRecord.SizeInBytes = world->dxr_ao_shader_table_entry_size;
-		rays_desc.MissShaderTable.StartAddress = world->dxr_ao_shader_table->GetGPUVirtualAddress() + world->dxr_ao_shader_table_entry_size;
-		rays_desc.MissShaderTable.StrideInBytes = world->dxr_ao_shader_table_entry_size;
-		rays_desc.MissShaderTable.SizeInBytes = world->dxr_ao_shader_table_entry_size;
-		rays_desc.HitGroupTable.StartAddress = world->dxr_ao_shader_table->GetGPUVirtualAddress() + 2 * world->dxr_ao_shader_table_entry_size;
-		rays_desc.HitGroupTable.StrideInBytes = world->dxr_ao_shader_table_entry_size;
-		rays_desc.HitGroupTable.SizeInBytes = world->dxr_ao_shader_table_entry_size;
+		rays_desc.RayGenerationShaderRecord.StartAddress = d3d12->dxr_ao_shader_table->GetGPUVirtualAddress();
+		rays_desc.RayGenerationShaderRecord.SizeInBytes = d3d12->dxr_ao_shader_table_entry_size;
+		rays_desc.MissShaderTable.StartAddress = d3d12->dxr_ao_shader_table->GetGPUVirtualAddress() + d3d12->dxr_ao_shader_table_entry_size;
+		rays_desc.MissShaderTable.StrideInBytes = d3d12->dxr_ao_shader_table_entry_size;
+		rays_desc.MissShaderTable.SizeInBytes = d3d12->dxr_ao_shader_table_entry_size;
+		rays_desc.HitGroupTable.StartAddress = d3d12->dxr_ao_shader_table->GetGPUVirtualAddress() + 2 * d3d12->dxr_ao_shader_table_entry_size;
+		rays_desc.HitGroupTable.StrideInBytes = d3d12->dxr_ao_shader_table_entry_size;
+		rays_desc.HitGroupTable.SizeInBytes = d3d12->dxr_ao_shader_table_entry_size;
 
 		d3d12->command_list->DispatchRays(&rays_desc);
 
@@ -1738,24 +1235,24 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		D3D12_RESOURCE_BARRIER barrier = {};
 		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		barrier.Transition.pResource = world->render_target;
+		barrier.Transition.pResource = d3d12->render_target;
 		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 
 		d3d12->command_list->SetPipelineState(d3d12->gbuffer_direct_lit_pipeline_state);
-		d3d12->command_list->OMSetRenderTargets(1, &world->render_target_cpu_descriptor_handle, false, nullptr);
+		d3d12->command_list->OMSetRenderTargets(1, &d3d12->render_target_cpu_descriptor_handle, false, nullptr);
 		d3d12->command_list->SetGraphicsRootSignature(d3d12->gbuffer_direct_lit_root_signature);
-		d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
+		d3d12->command_list->SetDescriptorHeaps(1, &d3d12->frame_descriptor_heap);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE render_target_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
-		D3D12_GPU_DESCRIPTOR_HANDLE render_target_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + world->frame_descriptor_handle_count * frame_descriptor_handle_size };
-		for (uint32 i = 0; i < m_countof(world->gbuffer_render_targets); i += 1) {
-			d3d12->device->CreateShaderResourceView(world->gbuffer_render_targets[i], nullptr, { render_target_cpu_descriptor_handle.ptr + i * frame_descriptor_handle_size });
-			world->frame_descriptor_handle_count += 1;
+		D3D12_CPU_DESCRIPTOR_HANDLE render_target_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
+		D3D12_GPU_DESCRIPTOR_HANDLE render_target_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
+		for (uint32 i = 0; i < m_countof(d3d12->gbuffer_render_targets); i += 1) {
+			d3d12->device->CreateShaderResourceView(d3d12->gbuffer_render_targets[i], nullptr, { render_target_cpu_descriptor_handle.ptr + i * frame_descriptor_handle_size });
+			d3d12->frame_descriptor_handle_count += 1;
 		}
-		d3d12->device->CreateShaderResourceView(world->dxr_shadow_output_texture_array, nullptr, { render_target_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * m_countof(world->gbuffer_render_targets) });
-		world->frame_descriptor_handle_count += 1;
+		d3d12->device->CreateShaderResourceView(d3d12->dxr_shadow_output_texture_array, nullptr, { render_target_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * m_countof(d3d12->gbuffer_render_targets) });
+		d3d12->frame_descriptor_handle_count += 1;
 
 		struct constants {
 			XMVECTOR camera_position;
@@ -1775,6 +1272,117 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 	}
+}
+
+bool world_load_from_file(world* world, d3d12* d3d12, const char* file_name) {
+	file_tokenizer ft;
+	if (!file_tokenizer_init(&ft, file_name)) {
+		return false;
+	}
+	auto delete_ft = scope_exit([&] { file_tokenizer_delete(ft); });
+
+	token object;
+	while (ft.get_token(&object)) {
+		if (!strncmp(object.ptr, "directional_light:", object.len)) {
+			token x, y, z, r, g, b;
+			if (!ft.get_token(&x) || !ft.get_token(&y) || !ft.get_token(&z) ||
+				!ft.get_token(&r) || !ft.get_token(&g) || !ft.get_token(&b)) {
+				return false;
+			}
+			float fx, fy, fz, fr, fg, fb;
+			if (!x.to_float(&fx) || !y.to_float(&fy) || !z.to_float(&fz) ||
+				!r.to_float(&fr) || !g.to_float(&fg) || !b.to_float(&fb)) {
+				return false;
+			}
+			printf("directional_light: %f %f %f %f %f %f\n", fx, fy, fz, fr, fg, fb);
+			direct_light l;
+			l.position = { 0, 0, 0 };
+			l.dir = vec3_normalize({ fx, fy, fz });
+			l.color = { fr, fg, fb };
+			world->direct_lights.append(l);
+		}
+		else if (!strncmp(object.ptr, "spherical_light:", object.len)) {
+			token x, y, z, r, g, b, radius;
+			if (!ft.get_token(&x) || !ft.get_token(&y) || !ft.get_token(&z) ||
+				!ft.get_token(&r) || !ft.get_token(&g) || !ft.get_token(&b) ||
+				!ft.get_token(&radius)) {
+				return false;
+			}
+			float fx, fy, fz, fr, fg, fb, fradius;
+			if (!x.to_float(&fx) || !y.to_float(&fy) || !z.to_float(&fz) ||
+				!r.to_float(&fr) || !g.to_float(&fg) || !b.to_float(&fb) ||
+				!radius.to_float(&fradius)) {
+				return false;
+			}
+			printf("spherical_light: %f %f %f %f %f %f %f\n", fx, fy, fz, fr, fg, fb, fradius);
+			sphere_light l;
+			l.position = { fx, fy, fz };
+			l.color = { fr, fg, fb };
+			l.radius = fradius;
+			world->sphere_lights.append(l);
+		}
+		else if (!strncmp(object.ptr, "model:", object.len)) {
+			token file;
+			if (!ft.get_token(&file)) {
+				return false;
+			}
+			printf("model: %.*s\n", file.len, file.ptr);
+			char c = file.ptr[file.len];
+			file.ptr[file.len] = '\0';
+			auto restore_char = scope_exit([&] { file.ptr[file.len] = c; });
+			if (!world_add_model(world, d3d12, file.ptr, transform_identity(), collision{ collision_type_none })) {
+				return false;
+			}
+		}
+	}
+	
+	if (d3d12->dxr_support) {
+		world_build_dxr_acceleration_buffers(world, d3d12);
+	}
+	
+	return true;
+}
+
+bool world_save_to_file(world* world, const char* file_name) {
+	string file_data = { new char[512], 0, 512 };
+	auto delete_file_data = scope_exit([&] { delete[] file_data.ptr; });
+
+	char buffer[1024] = {};
+
+	for (auto& l : world->direct_lights) {
+		int len = snprintf(buffer, sizeof(buffer), "directional_light: %f %f %f %f %f %f\n", l.dir[0], l.dir[1], l.dir[2], l.color[0], l.color[1], l.color[2]);
+		if (len < 0 || len >= sizeof(buffer)) {
+			return false;
+		}
+		file_data.append(buffer, len);
+	}
+	for (auto& l : world->sphere_lights) {
+		int len = snprintf(buffer, sizeof(buffer), "spherical_light: %f %f %f %f %f %f %f\n", l.position[0], l.position[1], l.position[2], l.color[0], l.color[1], l.color[2], l.radius);
+		if (len < 0 || len >= sizeof(buffer)) {
+			return false;
+		}
+		file_data.append(buffer, len);
+	}
+	for (auto& m : world->models) {
+		int len = snprintf(buffer, sizeof(buffer), "model: %s\n", m.file_name);
+		if (len < 0 || len >= sizeof(buffer)) {
+			return false;
+		}
+		file_data.append(buffer, len);
+	}
+
+	FILE *file = fopen(file_name, "w");
+	if (!file) {
+		return false;
+	}
+	auto close_file = scope_exit([&] { fclose(file); });
+
+	size_t n = fwrite(file_data.ptr, 1, file_data.len, file);
+	if (n < file_data.len) {
+		return false;
+	}
+
+	return true;
 }
 
 //uint32 world_append_constant_buffer(world *world, void *data, uint32 data_size) {

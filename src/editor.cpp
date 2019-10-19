@@ -313,8 +313,14 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 }
 
 bool editor_load_settings(editor* editor) {
+	const char *editor_settings_file_name = "editor_settings.txt";
+
+	if (!file_exists(editor_settings_file_name)) {
+		return true;
+	}
+
 	file_tokenizer ft;
-	if (!file_tokenizer_init(&ft, "editor_settings.txt")) {
+	if (!file_tokenizer_init(&ft, editor_settings_file_name)) {
 		return false;
 	}
 	auto delete_ft = scope_exit([&] { file_tokenizer_delete(ft);  });
@@ -636,15 +642,15 @@ void editor_blit_imgui_render_commands(editor* editor, world* world, d3d12* d3d1
 	d3d12->command_list->RSSetScissorRects(1, &scissor);
 
 	uint32 world_frame_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_CPU_DESCRIPTOR_HANDLE world_frame_cpu_descriptor_handle = { world->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart().ptr + world->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
-	D3D12_GPU_DESCRIPTOR_HANDLE world_frame_gpu_descriptor_handle = { world->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr + world->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
-	d3d12->device->CreateShaderResourceView(world->render_target, nullptr, world_frame_cpu_descriptor_handle);
+	D3D12_CPU_DESCRIPTOR_HANDLE world_frame_cpu_descriptor_handle = { d3d12->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart().ptr + d3d12->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
+	D3D12_GPU_DESCRIPTOR_HANDLE world_frame_gpu_descriptor_handle = { d3d12->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr + d3d12->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
+	d3d12->device->CreateShaderResourceView(d3d12->render_target, nullptr, world_frame_cpu_descriptor_handle);
 	d3d12->device->CreateShaderResourceView(d3d12->dither_texture, nullptr, { world_frame_cpu_descriptor_handle.ptr + world_frame_descriptor_handle_size });
-	world->frame_descriptor_handle_count += 2;
+	d3d12->frame_descriptor_handle_count += 2;
 
 	d3d12->command_list->SetPipelineState(d3d12->blit_to_swap_chain_pipeline_state);
 	d3d12->command_list->SetGraphicsRootSignature(d3d12->blit_to_swap_chain_root_signature);
-	d3d12->command_list->SetDescriptorHeaps(1, &world->frame_descriptor_heap);
+	d3d12->command_list->SetDescriptorHeaps(1, &d3d12->frame_descriptor_heap);
 	d3d12->command_list->SetGraphicsRootDescriptorTable(0, world_frame_gpu_descriptor_handle);
 	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	d3d12->command_list->DrawInstanced(3, 1, 0, 0);
@@ -1670,7 +1676,9 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 						if (open_file_dialog(file, sizeof(file))) {
 							if (world_add_model(world, d3d12, file, transform_identity(), collision{ collision_type_none })) {
 								editor->model_index = (uint32)world->models.size - 1;
-								dxr_build_acceleration_buffers(world, d3d12);
+								if (d3d12->dxr_support) {
+									world_build_dxr_acceleration_buffers(world, d3d12);
+								}
 							}
 							else {
 								snprintf(editor->error_msg, sizeof(editor->error_msg), "Import model failed\nFile: %s", file);
@@ -1710,7 +1718,7 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::PopID();
 }
 
-void editor_memories_window(editor* editor, world* world) {
+void editor_memories_window(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::SetNextWindowPos(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.85f, editor->top_menu_bar_height }, ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.15f, ImGui::GetIO().DisplaySize.y * 0.2f }, ImGuiCond_Always);
 	ImGui::PushID("memory_usage_window");
@@ -1727,7 +1735,7 @@ void editor_memories_window(editor* editor, world* world) {
 		ImGui::Text("System Memory");
 		imgui_render_memory(editor->world_frame_memory_arena_size, world->frame_memory_arena.capacity, "world frame arena");
 		ImGui::Text("GPU Memory");
-		imgui_render_memory(world->frame_constants_buffer_size, world->frame_constants_buffer_capacity, "world frame constants");
+		imgui_render_memory(d3d12->frame_constants_buffer_size, d3d12->frame_constants_buffer_capacity, "world frame constants");
 	}
 	ImGui::End();
 	ImGui::PopID();
@@ -2045,13 +2053,13 @@ void editor_check_undo(editor* editor, world* world) {
 	}
 }
 
-void append_extra_model_constants(editor* editor, world* world, d3d* d3d) {
+void append_extra_model_constants(editor* editor, world* world, d3d12* d3d12) {
 	//if (editor->adjust_model && editor->model_index < world->model_count) {
 	//	world_add_model_render_data(world, d3d, editor->model_index, transform_identity(), 0, 0, true);
 	//}
 }
 
-void append_terrain_brush_constants(editor* editor, world* world, d3d* d3d) {
+void append_terrain_brush_constants(editor* editor, world* world, d3d12* d3d12) {
 	//if (editor->terrain_brush_tool_active) {
 	//	m_debug_assert(world->terrain_index < world->terrain_count);
 	//	terrain *terrain = &world->terrains[world->terrain_index];
@@ -2069,7 +2077,7 @@ void append_terrain_brush_constants(editor* editor, world* world, d3d* d3d) {
 	//}
 }
 
-void render_terrain_brush(editor* editor, world* world, d3d* d3d) {
+void render_terrain_brush(editor* editor, world* world, d3d12* d3d12) {
 	//if (editor->terrain_brush_tool_active) {
 	//	editor->terrain_brush_tool_active = false;
 	//	m_debug_assert(world->terrain_index < world->terrain_count);
@@ -2113,11 +2121,6 @@ int main(int argc, char** argv) {
 		m_assert(editor_load_world(editor, world, d3d12, world_file));
 	}
 
-	dxr_init_pipeline_state(world, d3d12);
-	dxr_init_shader_resources(world, d3d12, window);
-	dxr_init_shader_table(world, d3d12);
-	dxr_build_acceleration_buffers(world, d3d12);
-
 	window_message_channel.window = window;
 	window_message_channel.d3d12 = d3d12;
 	window_message_channel.initialized = true;
@@ -2152,7 +2155,7 @@ int main(int argc, char** argv) {
 		editor_top_menu(editor, world, d3d12);
 		editor_bottom_menu(editor);
 		editor_objects_window(editor, world, d3d12);
-		editor_memories_window(editor, world);
+		editor_memories_window(editor, world, d3d12);
 		editor_frame_statistic_window(editor, window);
 		editor_update_camera(editor, window);
 		editor_tool_gizmo(editor, world, window);
