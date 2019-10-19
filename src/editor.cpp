@@ -330,8 +330,8 @@ bool editor_load_settings(editor* editor) {
 		if (!strncmp(tk.ptr, "camera_position:", tk.len)) {
 			token tx, ty, tz;
 			float fx, fy, fz;
-			if (!ft.get_token(&tx) || !tx.to_float(&fx) || 
-				!ft.get_token(&ty) || !ty.to_float(&fy) || 
+			if (!ft.get_token(&tx) || !tx.to_float(&fx) ||
+				!ft.get_token(&ty) || !ty.to_float(&fy) ||
 				!ft.get_token(&tz) || !tz.to_float(&fz)) {
 				return false;
 			}
@@ -340,8 +340,8 @@ bool editor_load_settings(editor* editor) {
 		else if (!strncmp(tk.ptr, "camera_view:", tk.len)) {
 			token tx, ty, tz;
 			float fx, fy, fz;
-			if (!ft.get_token(&tx) || !tx.to_float(&fx) || 
-				!ft.get_token(&ty) || !ty.to_float(&fy) || 
+			if (!ft.get_token(&tx) || !tx.to_float(&fx) ||
+				!ft.get_token(&ty) || !ty.to_float(&fy) ||
 				!ft.get_token(&tz) || !tz.to_float(&fz)) {
 				return false;
 			}
@@ -625,33 +625,25 @@ void editor_blit_imgui_render_commands(editor* editor, world* world, d3d12* d3d1
 	D3D12_RESOURCE_BARRIER barrier = {};
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-	barrier.Transition.pResource = d3d12->swap_chain_render_targets[d3d12->swap_chain_buffer_index];
+	barrier.Transition.pResource = d3d12->swap_chain_textures[d3d12->swap_chain_buffer_index];
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	d3d12->command_list->ResourceBarrier(1, &barrier);
 
-	D3D12_CPU_DESCRIPTOR_HANDLE swap_chain_render_target_handle = d3d12->swap_chain_render_targets_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-	swap_chain_render_target_handle.ptr += d3d12->swap_chain_buffer_index * d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	float swap_chain_clear_color[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-	d3d12->command_list->ClearRenderTargetView(swap_chain_render_target_handle, swap_chain_clear_color, 0, nullptr);
-	d3d12->command_list->OMSetRenderTargets(1, &swap_chain_render_target_handle, false, nullptr);
+	d3d12->command_list->ClearRenderTargetView(d3d12->swap_chain_texture_descriptors[d3d12->swap_chain_buffer_index], swap_chain_clear_color, 0, nullptr);
+	d3d12->command_list->OMSetRenderTargets(1, &d3d12->swap_chain_texture_descriptors[d3d12->swap_chain_buffer_index], false, nullptr);
 
 	D3D12_VIEWPORT viewport = { 0.0f, 0.0f, (float)window->width, (float)window->height, 0.0f, 1.0f };
 	RECT scissor = { 0, 0, (LONG)window->width, (LONG)window->height };
 	d3d12->command_list->RSSetViewports(1, &viewport);
 	d3d12->command_list->RSSetScissorRects(1, &scissor);
 
-	uint32 world_frame_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_CPU_DESCRIPTOR_HANDLE world_frame_cpu_descriptor_handle = { d3d12->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart().ptr + d3d12->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
-	D3D12_GPU_DESCRIPTOR_HANDLE world_frame_gpu_descriptor_handle = { d3d12->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart().ptr + d3d12->frame_descriptor_handle_count * world_frame_descriptor_handle_size };
-	d3d12->device->CreateShaderResourceView(d3d12->render_target, nullptr, world_frame_cpu_descriptor_handle);
-	d3d12->device->CreateShaderResourceView(d3d12->dither_texture, nullptr, { world_frame_cpu_descriptor_handle.ptr + world_frame_descriptor_handle_size });
-	d3d12->frame_descriptor_handle_count += 2;
-
 	d3d12->command_list->SetPipelineState(d3d12->blit_to_swap_chain_pipeline_state);
 	d3d12->command_list->SetGraphicsRootSignature(d3d12->blit_to_swap_chain_root_signature);
-	d3d12->command_list->SetDescriptorHeaps(1, &d3d12->frame_descriptor_heap);
-	d3d12->command_list->SetGraphicsRootDescriptorTable(0, world_frame_gpu_descriptor_handle);
+	d3d12->command_list->SetDescriptorHeaps(1, &d3d12->cbv_srv_uav_descriptor_heap);
+	d3d12->command_list->SetGraphicsRootDescriptorTable(0, d3d12->render_texture_srv_descriptor);
+	d3d12->command_list->SetGraphicsRootDescriptorTable(1, d3d12->dither_texture_srv_descriptor);
 	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	d3d12->command_list->DrawInstanced(3, 1, 0, 0);
 
@@ -1676,7 +1668,7 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 						if (open_file_dialog(file, sizeof(file))) {
 							if (world_add_model(world, d3d12, file, transform_identity(), collision{ collision_type_none })) {
 								editor->model_index = (uint32)world->models.size - 1;
-								if (d3d12->dxr_support) {
+								if (d3d12->dxr_enabled) {
 									world_build_dxr_acceleration_buffers(world, d3d12);
 								}
 							}
@@ -2128,19 +2120,20 @@ int main(int argc, char** argv) {
 
 	while (!editor->quit) {
 		timer_start(&editor->timer);
-		auto record_frame_timing = scope_exit([&] {
-			timer_stop(&editor->timer);
-			editor->last_frame_time = timer_get_duration(editor->timer);
-			static uint32 frame_count = 0;
-			static double frame_time = 0;
-			frame_count += 1;
-			frame_time += editor->last_frame_time;
-			if (frame_time >= 1.0) {
-				editor->coarse_frame_time = frame_time / frame_count;
-				ring_buffer_write(&editor->frame_time_ring_buffer, (float)editor->coarse_frame_time);
-				frame_count = 0;
-				frame_time = 0;
-			}
+		auto record_frame_timing = scope_exit(
+			[&] {
+				timer_stop(&editor->timer);
+				editor->last_frame_time = timer_get_duration(editor->timer);
+				static uint32 frame_count = 0;
+				static double frame_time = 0;
+				frame_count += 1;
+				frame_time += editor->last_frame_time;
+				if (frame_time >= 1.0) {
+					editor->coarse_frame_time = frame_time / frame_count;
+					ring_buffer_write(&editor->frame_time_ring_buffer, (float)editor->coarse_frame_time);
+					frame_count = 0;
+					frame_time = 0;
+				}
 			});
 
 		window->raw_mouse_dx = 0;
@@ -2162,6 +2155,7 @@ int main(int argc, char** argv) {
 		editor_check_undo(editor, world);
 		ImGui::Render();
 
+		d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
 		m_d3d_assert(d3d12->command_allocator->Reset());
 		m_d3d_assert(d3d12->command_list->Reset(d3d12->command_allocator, nullptr));
 
@@ -2175,12 +2169,11 @@ int main(int argc, char** argv) {
 
 		editor_blit_imgui_render_commands(editor, world, d3d12, window);
 
-		d3d12->command_list->Close();
+		m_d3d_assert(d3d12->command_list->Close());
 		d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
-		m_d3d_assert(d3d12->swap_chain->Present(1, 0));
-
 		d3d12_wait_command_list(d3d12);
-		d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
+
+		m_d3d_assert(d3d12->swap_chain->Present(1, 0));
 	}
 	editor_save_settings(editor);
 	ImGui::DestroyContext(editor->imgui_context);

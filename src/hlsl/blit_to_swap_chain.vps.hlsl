@@ -1,4 +1,4 @@
-Texture2D<float4> src_texture : register(t0);
+Texture2D<float4> render_texture : register(t0);
 Texture2D<float> dither_texture : register(t1);
 
 sampler texture_sampler : register(s0);
@@ -36,7 +36,7 @@ float3 aces_film_tone_map(float3 x) {
 
 ps_output pixel_shader(vs_output vs_output) {
 	ps_output output;
-	output.color = src_texture.Sample(texture_sampler, vs_output.texcoord);
+	output.color = render_texture.Sample(texture_sampler, vs_output.texcoord);
 	output.color.rgb = aces_film_tone_map(output.color.rgb);
 	float dither = dither_texture.Sample(dither_sampler, vs_output.position.xy / 8.0) / 32.0 - (1.0 / 128.0);
 	output.color.rgb += float3(dither, dither, dither);

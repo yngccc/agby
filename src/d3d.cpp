@@ -18,7 +18,7 @@
 #define m_d3d_assert(d3d_call) \
 { \
 	HRESULT hr = d3d_call; \
-	if (FAILED(hr)) { \
+	if (hr != S_OK) { \
 		const char *err_msg = _com_error(hr).ErrorMessage(); \
 		if (IsDebuggerPresent()) { \
 			__debugbreak(); \
@@ -45,7 +45,6 @@ const uint32 d3d12_swap_chain_buffer_count = 2;
 
 struct d3d12 {
 	ID3D12Device5* device;
-	IDXGISwapChain4* swap_chain;
 	IDXGIAdapter1* adapter;
 	IDXGIFactory5* factory;
 	IDXGIDebug* dxgi_debug;
@@ -58,28 +57,44 @@ struct d3d12 {
 	uint64 command_list_fence_value;
 	HANDLE command_list_fence_event;
 
-	ID3D12Resource* swap_chain_render_targets[d3d12_swap_chain_buffer_count];
-	uint32 swap_chain_buffer_index;
-	ID3D12DescriptorHeap* swap_chain_render_targets_descriptor_heap;
+	ID3D12DescriptorHeap* rtv_descriptor_heap;
+	uint32 rtv_descriptor_count;
+	uint32 rtv_descriptor_capacity;
+	uint32 rtv_descriptor_size;
 
-	ID3D12Resource* gbuffer_render_targets[5];
-	ID3D12Resource* render_target;
-	ID3D12Resource* depth_target;
-	ID3D12DescriptorHeap* render_target_descriptor_heap;
-	ID3D12DescriptorHeap* depth_target_descriptor_heap;
-	D3D12_CPU_DESCRIPTOR_HANDLE gbuffer_render_target_cpu_descriptor_handles[m_countof(gbuffer_render_targets)];
-	D3D12_CPU_DESCRIPTOR_HANDLE render_target_cpu_descriptor_handle;
-	D3D12_CPU_DESCRIPTOR_HANDLE depth_target_cpu_descriptor_handle;
+	ID3D12DescriptorHeap* dsv_descriptor_heap;
+	uint32 dsv_descriptor_count;
+	uint32 dsv_descriptor_capacity;
+	uint32 dsv_descriptor_size;
+
+	ID3D12DescriptorHeap* cbv_srv_uav_descriptor_heap;
+	uint32 cbv_srv_uav_descriptor_count;
+	uint32 cbv_srv_uav_descriptor_capacity;
+	uint32 cbv_srv_uav_descriptor_size;
+
+	IDXGISwapChain4* swap_chain;
+	ID3D12Resource* swap_chain_textures[d3d12_swap_chain_buffer_count];
+	D3D12_CPU_DESCRIPTOR_HANDLE swap_chain_texture_descriptors[d3d12_swap_chain_buffer_count];
+	uint32 swap_chain_buffer_index;
 
 	ID3D12Resource* frame_constants_buffer;
 	uint32 frame_constants_buffer_size;
 	uint32 frame_constants_buffer_capacity;
 
-	ID3D12DescriptorHeap* frame_descriptor_heap;
-	uint32 frame_descriptor_handle_count;
-
 	ID3D12Resource* copy_buffer;
+
+	ID3D12Resource* gbuffer_textures[5];
+	D3D12_CPU_DESCRIPTOR_HANDLE gbuffer_texture_rtv_descriptors[m_countof(gbuffer_textures)];
+
+	ID3D12Resource* render_texture;
+	D3D12_CPU_DESCRIPTOR_HANDLE render_texture_rtv_descriptor;
+	D3D12_GPU_DESCRIPTOR_HANDLE render_texture_srv_descriptor;
+
+	ID3D12Resource* depth_texture;
+	D3D12_CPU_DESCRIPTOR_HANDLE depth_texture_dsv_descriptor;
+
 	ID3D12Resource* dither_texture;
+	D3D12_GPU_DESCRIPTOR_HANDLE dither_texture_srv_descriptor;
 
 	ID3D12RootSignature* blit_to_swap_chain_root_signature;
 	ID3D12PipelineState* blit_to_swap_chain_pipeline_state;
@@ -88,7 +103,7 @@ struct d3d12 {
 	ID3D12RootSignature* gbuffer_direct_lit_root_signature;
 	ID3D12PipelineState* gbuffer_direct_lit_pipeline_state;
 
-	bool dxr_support;
+	bool dxr_enabled;
 
 	array<ID3D12Resource*> dxr_bottom_acceleration_buffers;
 	ID3D12Resource* dxr_top_acceleration_buffer;
@@ -124,8 +139,8 @@ struct hlsl_bytecode_file {
 
 void d3d12_wait_command_list(d3d12* d3d12) {
 	d3d12->command_list_fence_value += 1;
-	d3d12->command_queue->Signal(d3d12->command_list_fence, d3d12->command_list_fence_value);
-	d3d12->command_list_fence->SetEventOnCompletion(d3d12->command_list_fence_value, d3d12->command_list_fence_event);
+	m_d3d_assert(d3d12->command_queue->Signal(d3d12->command_list_fence, d3d12->command_list_fence_value));
+	m_d3d_assert(d3d12->command_list_fence->SetEventOnCompletion(d3d12->command_list_fence_value, d3d12->command_list_fence_event));
 	WaitForSingleObject(d3d12->command_list_fence_event, INFINITE);
 }
 
@@ -162,7 +177,7 @@ void d3d12_copy_buffer(d3d12* d3d12, ID3D12Resource* dst_buffer, const void* src
 
 	uint8* copy_buffer_ptr = nullptr;
 	D3D12_RANGE copy_range = { 0, dst_buffer_desc.Width };
-	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void**)& copy_buffer_ptr));
+	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void**)&copy_buffer_ptr));
 	memcpy(copy_buffer_ptr, src_buffer, dst_buffer_desc.Width);
 	d3d12->copy_buffer->Unmap(0, &copy_range);
 
@@ -179,7 +194,7 @@ void d3d12_copy_buffer(d3d12* d3d12, ID3D12Resource* dst_buffer, const void* src
 	d3d12->command_list->CopyBufferRegion(dst_buffer, 0, d3d12->copy_buffer, 0, dst_buffer_desc.Width);
 	d3d12->command_list->ResourceBarrier(1, &barrier);
 	m_d3d_assert(d3d12->command_list->Close());
-	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList * *)& d3d12->command_list);
+	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
 
 	d3d12_wait_command_list(d3d12);
 }
@@ -234,7 +249,7 @@ void d3d12_copy_texture_2d(d3d12* d3d12, ID3D12Resource* dst_texture, uint8* src
 
 	uint8* copy_buffer_ptr = nullptr;
 	D3D12_RANGE copy_range = { 0, total_size };
-	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void**)& copy_buffer_ptr));
+	m_d3d_assert(d3d12->copy_buffer->Map(0, &copy_range, (void**)&copy_buffer_ptr));
 	uint64 dst_texture_offset = 0;
 	uint64 src_texture_offset = 0;
 	for (uint32 i = 0; i < texture_desc.MipLevels; i += 1) {
@@ -273,149 +288,90 @@ void d3d12_copy_texture_2d(d3d12* d3d12, ID3D12Resource* dst_texture, uint8* src
 	d3d12->command_list->ResourceBarrier(1, &barrier);
 
 	m_d3d_assert(d3d12->command_list->Close());
-	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList * *)& d3d12->command_list);
+	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
 
 	d3d12_wait_command_list(d3d12);
+}
+
+void d3d12_append_rtv_descriptor(d3d12* d3d12, ID3D12Resource* resource, D3D12_CPU_DESCRIPTOR_HANDLE* cpu_descriptor_ptr, D3D12_GPU_DESCRIPTOR_HANDLE* gpu_descriptor_ptr) {
+	m_assert(d3d12->rtv_descriptor_count < d3d12->rtv_descriptor_capacity);
+	D3D12_CPU_DESCRIPTOR_HANDLE cpu_descriptor = d3d12->rtv_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+	cpu_descriptor.ptr += d3d12->rtv_descriptor_count * d3d12->rtv_descriptor_size;
+	d3d12->device->CreateRenderTargetView(resource, nullptr, cpu_descriptor);
+	if (cpu_descriptor_ptr) {
+		*cpu_descriptor_ptr = cpu_descriptor;
+	}
+	if (gpu_descriptor_ptr) {
+		D3D12_GPU_DESCRIPTOR_HANDLE gpu_descriptor = d3d12->rtv_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+		gpu_descriptor.ptr += d3d12->rtv_descriptor_count * d3d12->rtv_descriptor_size;
+		*gpu_descriptor_ptr = gpu_descriptor;
+	}
+	d3d12->rtv_descriptor_count += 1;
+}
+
+void d3d12_append_dsv_descriptor(d3d12* d3d12, ID3D12Resource* resource, D3D12_CPU_DESCRIPTOR_HANDLE* cpu_descriptor_ptr, D3D12_GPU_DESCRIPTOR_HANDLE* gpu_descriptor_ptr) {
+	m_assert(d3d12->dsv_descriptor_count < d3d12->dsv_descriptor_capacity);
+	D3D12_CPU_DESCRIPTOR_HANDLE cpu_descriptor = d3d12->dsv_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+	cpu_descriptor.ptr += d3d12->dsv_descriptor_count * d3d12->dsv_descriptor_size;
+	d3d12->device->CreateDepthStencilView(resource, nullptr, cpu_descriptor);
+	if (cpu_descriptor_ptr) {
+		*cpu_descriptor_ptr = cpu_descriptor;
+	}
+	if (gpu_descriptor_ptr) {
+		D3D12_GPU_DESCRIPTOR_HANDLE gpu_descriptor = d3d12->dsv_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+		gpu_descriptor.ptr += d3d12->dsv_descriptor_count * d3d12->dsv_descriptor_size;
+		*gpu_descriptor_ptr = gpu_descriptor;
+	}
+	d3d12->dsv_descriptor_count += 1;
+}
+
+void d3d12_append_srv_descriptor(d3d12* d3d12, ID3D12Resource* resource, D3D12_CPU_DESCRIPTOR_HANDLE* cpu_descriptor_ptr, D3D12_GPU_DESCRIPTOR_HANDLE* gpu_descriptor_ptr) {
+	m_assert(d3d12->cbv_srv_uav_descriptor_count < d3d12->cbv_srv_uav_descriptor_capacity);
+	D3D12_CPU_DESCRIPTOR_HANDLE cpu_descriptor = d3d12->cbv_srv_uav_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+	cpu_descriptor.ptr += d3d12->cbv_srv_uav_descriptor_count * d3d12->cbv_srv_uav_descriptor_size;
+	d3d12->device->CreateShaderResourceView(resource, nullptr, cpu_descriptor);
+	if (cpu_descriptor_ptr) {
+		*cpu_descriptor_ptr = cpu_descriptor;
+	}
+	if (gpu_descriptor_ptr) {
+		D3D12_GPU_DESCRIPTOR_HANDLE gpu_descriptor = d3d12->cbv_srv_uav_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+		gpu_descriptor.ptr += d3d12->cbv_srv_uav_descriptor_count * d3d12->cbv_srv_uav_descriptor_size;
+		*gpu_descriptor_ptr = gpu_descriptor;
+	}
+	d3d12->cbv_srv_uav_descriptor_count += 1;
 }
 
 void d3d12_resize_swap_chain(d3d12* d3d12, uint32 width, uint32 height) {
 	d3d12_wait_command_list(d3d12);
 	for (uint32 i = 0; i < d3d12_swap_chain_buffer_count; i += 1) {
-		d3d12->swap_chain_render_targets[i]->Release();
+		d3d12->swap_chain_textures[i]->Release();
 	}
-	d3d12->swap_chain->ResizeBuffers(d3d12_swap_chain_buffer_count, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
-	D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = d3d12->swap_chain_render_targets_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+	m_d3d_assert(d3d12->swap_chain->ResizeBuffers(d3d12_swap_chain_buffer_count, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
 	for (uint32 i = 0; i < d3d12_swap_chain_buffer_count; i += 1) {
-		m_d3d_assert(d3d12->swap_chain->GetBuffer(i, IID_PPV_ARGS(&d3d12->swap_chain_render_targets[i])));
-		d3d12->device->CreateRenderTargetView(d3d12->swap_chain_render_targets[i], nullptr, rtv_handle);
-		rtv_handle.ptr += d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		m_d3d_set_name(d3d12->swap_chain_render_targets[i], "swap chain backbuffer #%u", i);
+		d3d12->swap_chain->GetBuffer(i, IID_PPV_ARGS(&d3d12->swap_chain_textures[i]));
+		d3d12->device->CreateRenderTargetView(d3d12->swap_chain_textures[i], nullptr, d3d12->swap_chain_texture_descriptors[i]);
 	}
-	d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
-}
-
-void d3d12_init_resources(d3d12* d3d12, window* window) {
-	{
-		DXGI_SWAP_CHAIN_DESC swap_chain_desc;
-		d3d12->swap_chain->GetDesc(&swap_chain_desc);
-		uint32 width = swap_chain_desc.BufferDesc.Width;
-		uint32 height = swap_chain_desc.BufferDesc.Height;
-
-		d3d12->render_target = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12->depth_target = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_D32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-
-		d3d12->render_target->SetName(L"render_target");
-		d3d12->depth_target->SetName(L"depth_target");
-
-		d3d12->gbuffer_render_targets[0] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12->gbuffer_render_targets[1] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12->gbuffer_render_targets[2] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12->gbuffer_render_targets[3] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R8G8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12->gbuffer_render_targets[4] = d3d12_create_texture_2d(d3d12, width, height, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-
-		d3d12->gbuffer_render_targets[0]->SetName(L"gbuffer_diffuse_render_target");
-		d3d12->gbuffer_render_targets[1]->SetName(L"gbuffer_position_render_target");
-		d3d12->gbuffer_render_targets[2]->SetName(L"gbuffer_normal_render_target");
-		d3d12->gbuffer_render_targets[3]->SetName(L"gbuffer_roughness_metallic_render_target");
-		d3d12->gbuffer_render_targets[4]->SetName(L"gbuffer_emissive_render_target");
-
-		D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {};
-		heap_desc.NumDescriptors = 8;
-		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&d3d12->render_target_descriptor_heap)));
-		d3d12->render_target_cpu_descriptor_handle = d3d12->render_target_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-		d3d12->device->CreateRenderTargetView(d3d12->render_target, nullptr, d3d12->render_target_cpu_descriptor_handle);
-
-		uint32 render_target_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		for (uint32 i = 0; i < m_countof(d3d12->gbuffer_render_targets); i += 1) {
-			d3d12->gbuffer_render_target_cpu_descriptor_handles[i] = { d3d12->render_target_cpu_descriptor_handle.ptr + (i + 1) * render_target_descriptor_handle_size };
-			d3d12->device->CreateRenderTargetView(d3d12->gbuffer_render_targets[i], nullptr, d3d12->gbuffer_render_target_cpu_descriptor_handles[i]);
-		}
-
-		heap_desc.NumDescriptors = 1;
-		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&d3d12->depth_target_descriptor_heap)));
-		d3d12->depth_target_cpu_descriptor_handle = d3d12->depth_target_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-		d3d12->device->CreateDepthStencilView(d3d12->depth_target, nullptr, d3d12->depth_target_cpu_descriptor_handle);
-	}
-	{
-		d3d12->frame_constants_buffer_size = 0;
-		d3d12->frame_constants_buffer_capacity = m_megabytes(32);
-		d3d12->frame_constants_buffer = d3d12_create_buffer(d3d12, d3d12->frame_constants_buffer_capacity, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
-
-		D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {};
-		heap_desc.NumDescriptors = 1000000;
-		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&d3d12->frame_descriptor_heap)));
-	}
-	{
-		uint32 copy_buffer_size = m_megabytes(32);
-		D3D12_HEAP_PROPERTIES heap_props = { D3D12_HEAP_TYPE_UPLOAD };
-		D3D12_RESOURCE_DESC copy_buffer_desc = { D3D12_RESOURCE_DIMENSION_BUFFER, 0, copy_buffer_size, 1, 1, 1, DXGI_FORMAT_UNKNOWN, {1, 0}, D3D12_TEXTURE_LAYOUT_ROW_MAJOR };
-		m_d3d_assert(d3d12->device->CreateCommittedResource(&heap_props, D3D12_HEAP_FLAG_NONE, &copy_buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, IID_PPV_ARGS(&d3d12->copy_buffer)));
-
-		uint8 dither_texture[] = {
-			0, 32,  8, 40,  2, 34, 10, 42,   /* 8x8 Bayer ordered dithering  */
-			48, 16, 56, 24, 50, 18, 58, 26,  /* pattern.  Each input pixel   */
-			12, 44,  4, 36, 14, 46,  6, 38,  /* is scaled to the 0..63 range */
-			60, 28, 52, 20, 62, 30, 54, 22,  /* before looking in this table */
-			3, 35, 11, 43,  1, 33,  9, 41,   /* to determine the action.     */
-			51, 19, 59, 27, 49, 17, 57, 25,
-			15, 47,  7, 39, 13, 45,  5, 37,
-			63, 31, 55, 23, 61, 29, 53, 21
-		};
-		ID3D12Resource* d3d12_create_texture_2d(struct d3d12*, uint32, uint32, uint32, uint32, DXGI_FORMAT, D3D12_HEAP_TYPE, D3D12_RESOURCE_FLAGS, D3D12_RESOURCE_STATES);
-		void d3d12_copy_texture_2d(struct d3d12*, ID3D12Resource*, uint8*, D3D12_RESOURCE_STATES);
-		d3d12->dither_texture = d3d12_create_texture_2d(d3d12, 8, 8, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		d3d12_copy_texture_2d(d3d12, d3d12->dither_texture, dither_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	}
-	if (d3d12->dxr_support) {
-		d3d12->dxr_shadow_output_texture_array = d3d12_create_texture_2d(d3d12, window->width, window->height, 4, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12->dxr_shadow_output_texture_array->SetName(L"dxr_shadow_output_texture_array");
-
-		d3d12->dxr_ao_output_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12->dxr_ao_output_texture->SetName(L"dxr_ao_output_texture");
-
-		D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
-		descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		descriptor_heap_desc.NumDescriptors = 16;
-		descriptor_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&descriptor_heap_desc, IID_PPV_ARGS(&d3d12->dxr_descriptor_heap)));
-
-		D3D12_CPU_DESCRIPTOR_HANDLE dxr_cpu_descriptor_handle = d3d12->dxr_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-		uint32 dxr_cpu_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-		d3d12->device->CreateShaderResourceView(d3d12->gbuffer_render_targets[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
-		d3d12->device->CreateShaderResourceView(d3d12->gbuffer_render_targets[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
-
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
-		uav_desc.Format = DXGI_FORMAT_R8_UNORM;
-		uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
-		uav_desc.Texture2DArray.ArraySize = 4;
-		d3d12->device->CreateUnorderedAccessView(d3d12->dxr_shadow_output_texture_array, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
-		uav_desc.Format = DXGI_FORMAT_R8_UNORM;
-		uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		uav_desc.Texture2DArray.ArraySize = 1;
-		d3d12->device->CreateUnorderedAccessView(d3d12->dxr_ao_output_texture, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 4 * dxr_cpu_descriptor_handle_size });
-	}
-
 }
 
 void d3d12_init_pipelines(d3d12* d3d12) {
 	{
-		D3D12_DESCRIPTOR_RANGE desc_ranges[1] = {};
+		D3D12_DESCRIPTOR_RANGE desc_ranges[2] = {};
 		desc_ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		desc_ranges[0].NumDescriptors = 2;
+		desc_ranges[0].NumDescriptors = 1;
 		desc_ranges[0].BaseShaderRegister = 0;
+		desc_ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		desc_ranges[1].NumDescriptors = 1;
+		desc_ranges[1].BaseShaderRegister = 1;
 
-		D3D12_ROOT_PARAMETER params[1] = {};
+		D3D12_ROOT_PARAMETER params[2] = {};
 		params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		params[0].DescriptorTable.NumDescriptorRanges = m_countof(desc_ranges);
-		params[0].DescriptorTable.pDescriptorRanges = desc_ranges;
+		params[0].DescriptorTable.NumDescriptorRanges = 1;
+		params[0].DescriptorTable.pDescriptorRanges = &desc_ranges[0];
 		params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+		params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		params[1].DescriptorTable.NumDescriptorRanges = 1;
+		params[1].DescriptorTable.pDescriptorRanges = &desc_ranges[1];
+		params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
 		D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
 		samplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -600,7 +556,7 @@ void d3d12_init_pipelines(d3d12* d3d12) {
 	const wchar_t* dxr_closest_hit_str = L"closest_hit";
 	const wchar_t* dxr_miss_str = L"miss";
 	const wchar_t* dxr_hit_group_str = L"hit_group";
-	if (d3d12->dxr_support) {
+	if (d3d12->dxr_enabled) {
 		hlsl_bytecode_file bytecode_file("hlsl/shadow.rt.bytecode");
 		D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
 		{
@@ -718,7 +674,7 @@ void d3d12_init_pipelines(d3d12* d3d12) {
 		state_object_desc.pSubobjects = state_subobjects;
 		m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&d3d12->dxr_shadow_pipeline_state)));
 	}
-	if (d3d12->dxr_support) {
+	if (d3d12->dxr_enabled) {
 		hlsl_bytecode_file bytecode_file("hlsl/ao.rt.bytecode");
 		D3D12_STATE_SUBOBJECT state_subobjects[10] = {};
 		{
@@ -831,7 +787,7 @@ void d3d12_init_pipelines(d3d12* d3d12) {
 		state_object_desc.pSubobjects = state_subobjects;
 		m_d3d_assert(d3d12->device->CreateStateObject(&state_object_desc, IID_PPV_ARGS(&d3d12->dxr_ao_pipeline_state)));
 	}
-	if (d3d12->dxr_support) {
+	if (d3d12->dxr_enabled) {
 		d3d12->dxr_shadow_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
 		d3d12->dxr_shadow_shader_table_entry_size = round_up(d3d12->dxr_shadow_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 
@@ -848,7 +804,7 @@ void d3d12_init_pipelines(d3d12* d3d12) {
 		memcpy(shader_table_ptr + d3d12->dxr_shadow_shader_table_entry_size * 2, state_object_properties->GetShaderIdentifier(dxr_hit_group_str), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 		d3d12->dxr_shadow_shader_table->Unmap(0, nullptr);
 	}
-	if (d3d12->dxr_support) {
+	if (d3d12->dxr_enabled) {
 		d3d12->dxr_ao_shader_table_entry_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + 8;
 		d3d12->dxr_ao_shader_table_entry_size = round_up(d3d12->dxr_ao_shader_table_entry_size, (uint32)D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 
@@ -868,76 +824,172 @@ void d3d12_init_pipelines(d3d12* d3d12) {
 }
 
 void d3d12_init(d3d12* d3d12, window* window) {
-	uint32 dxgi_factory_flags = 0;
+	{ // device
+		uint32 dxgi_factory_flags = 0;
 
-	ID3D12Debug1* debug_controller = nullptr;
-	m_d3d_assert(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)));
-	debug_controller->EnableDebugLayer();
-	debug_controller->SetEnableGPUBasedValidation(true);
-	debug_controller->SetEnableSynchronizedCommandQueueValidation(true);
-	dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
-	debug_controller->Release();
+		ID3D12Debug1* debug_controller = nullptr;
+		m_d3d_assert(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)));
+		debug_controller->EnableDebugLayer();
+		debug_controller->SetEnableGPUBasedValidation(true);
+		debug_controller->SetEnableSynchronizedCommandQueueValidation(true);
+		dxgi_factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
+		debug_controller->Release();
 
-	m_d3d_assert(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&d3d12->dxgi_debug)));
-	m_d3d_assert(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&d3d12->dxgi_info_queue)));
-	d3d12->dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, true);
-	d3d12->dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, true);
+		m_d3d_assert(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&d3d12->dxgi_debug)));
+		m_d3d_assert(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&d3d12->dxgi_info_queue)));
+		d3d12->dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, true);
+		d3d12->dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, true);
+		d3d12->dxgi_info_queue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, true);
 
-	m_d3d_assert(CreateDXGIFactory2(dxgi_factory_flags, IID_PPV_ARGS(&d3d12->factory)));
+		m_d3d_assert(CreateDXGIFactory2(dxgi_factory_flags, IID_PPV_ARGS(&d3d12->factory)));
 
-	for (uint32 i = 0; d3d12->factory->EnumAdapters1(i, &d3d12->adapter) != DXGI_ERROR_NOT_FOUND; i += 1) {
-		DXGI_ADAPTER_DESC1 adapter_desc;
-		d3d12->adapter->GetDesc1(&adapter_desc);
-		if (!(adapter_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
-			if (SUCCEEDED(D3D12CreateDevice(d3d12->adapter, D3D_FEATURE_LEVEL_12_0, _uuidof(ID3D12Device), nullptr))) {
-				break;
+		for (uint32 i = 0; d3d12->factory->EnumAdapters1(i, &d3d12->adapter) != DXGI_ERROR_NOT_FOUND; i += 1) {
+			DXGI_ADAPTER_DESC1 adapter_desc;
+			d3d12->adapter->GetDesc1(&adapter_desc);
+			if (!(adapter_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
+				if (SUCCEEDED(D3D12CreateDevice(d3d12->adapter, D3D_FEATURE_LEVEL_12_0, _uuidof(ID3D12Device), nullptr))) {
+					break;
+				}
 			}
 		}
+		m_d3d_assert(D3D12CreateDevice(d3d12->adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12->device)));
 	}
-	m_d3d_assert(D3D12CreateDevice(d3d12->adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d12->device)));
+	{ // features
+		D3D12_FEATURE_DATA_D3D12_OPTIONS5 features = {};
+		m_d3d_assert(d3d12->device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &features, sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS5)));
+		d3d12->dxr_enabled = features.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
+	}
+	{ // command queues, fences
+		D3D12_COMMAND_QUEUE_DESC queue_desc = {};
+		queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+		queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+		m_d3d_assert(d3d12->device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&d3d12->command_queue)));
+		m_d3d_assert(d3d12->device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&d3d12->command_allocator)));
+		m_d3d_assert(d3d12->device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, d3d12->command_allocator, nullptr, IID_PPV_ARGS(&d3d12->command_list)));
+		d3d12->command_list->Close();
 
-	D3D12_FEATURE_DATA_D3D12_OPTIONS5 features = {};
-	m_d3d_assert(d3d12->device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &features, sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS5)));
-	d3d12->dxr_support = features.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
+		m_d3d_assert(d3d12->device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&d3d12->command_list_fence)));
+		d3d12->command_list_fence_value = 0;
+		d3d12->command_list_fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+		m_assert(d3d12->command_list_fence_event);
+	}
+	{ // descriptor heaps
+		D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {};
+		heap_desc.NumDescriptors = 16;
+		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&d3d12->rtv_descriptor_heap)));
+		d3d12->rtv_descriptor_count = 0;
+		d3d12->rtv_descriptor_capacity = heap_desc.NumDescriptors;
+		d3d12->rtv_descriptor_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-	D3D12_COMMAND_QUEUE_DESC queue_desc = {};
-	queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-	queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-	m_d3d_assert(d3d12->device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&d3d12->command_queue)));
-	m_d3d_assert(d3d12->device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&d3d12->command_allocator)));
-	m_d3d_assert(d3d12->device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, d3d12->command_allocator, nullptr, IID_PPV_ARGS(&d3d12->command_list)));
-	d3d12->command_list->Close();
+		heap_desc.NumDescriptors = 4;
+		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&d3d12->dsv_descriptor_heap)));
+		d3d12->dsv_descriptor_count = 0;
+		d3d12->dsv_descriptor_capacity = heap_desc.NumDescriptors;
+		d3d12->dsv_descriptor_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
-	m_d3d_assert(d3d12->device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&d3d12->command_list_fence)));
-	d3d12->command_list_fence_value = 0;
-	d3d12->command_list_fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-	m_assert(d3d12->command_list_fence_event);
+		heap_desc.NumDescriptors = 1000000;
+		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&d3d12->cbv_srv_uav_descriptor_heap)));
+		d3d12->cbv_srv_uav_descriptor_count = 0;
+		d3d12->cbv_srv_uav_descriptor_capacity = heap_desc.NumDescriptors;
+		d3d12->cbv_srv_uav_descriptor_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+	{ // swap chain
+		DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {};
+		swap_chain_desc.Width = window->width;
+		swap_chain_desc.Height = window->height;
+		swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		swap_chain_desc.SampleDesc.Count = 1;
+		swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		swap_chain_desc.BufferCount = d3d12_swap_chain_buffer_count;
+		swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+		m_d3d_assert(d3d12->factory->CreateSwapChainForHwnd(d3d12->command_queue, window->handle, &swap_chain_desc, nullptr, nullptr, (IDXGISwapChain1**)&d3d12->swap_chain));
+		for (uint32 i = 0; i < d3d12_swap_chain_buffer_count; i += 1) {
+			d3d12->swap_chain->GetBuffer(i, IID_PPV_ARGS(&d3d12->swap_chain_textures[i]));
+			d3d12_append_rtv_descriptor(d3d12, d3d12->swap_chain_textures[i], &d3d12->swap_chain_texture_descriptors[i], nullptr);
+		}
+	}
+	{ // buffers
+		d3d12->frame_constants_buffer_size = 0;
+		d3d12->frame_constants_buffer_capacity = m_megabytes(32);
+		d3d12->frame_constants_buffer = d3d12_create_buffer(d3d12, d3d12->frame_constants_buffer_capacity, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
-	DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {};
-	swap_chain_desc.Width = window->width;
-	swap_chain_desc.Height = window->height;
-	swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	swap_chain_desc.SampleDesc.Count = 1;
-	swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	swap_chain_desc.BufferCount = d3d12_swap_chain_buffer_count;
-	swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-	m_d3d_assert(d3d12->factory->CreateSwapChainForHwnd(d3d12->command_queue, window->handle, &swap_chain_desc, nullptr, nullptr, (IDXGISwapChain1 * *)& d3d12->swap_chain));
-	d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
+		uint32 copy_buffer_size = m_megabytes(32);
+		d3d12->copy_buffer = d3d12_create_buffer(d3d12, copy_buffer_size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+	}
+	{ // textures
+		d3d12->render_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->render_texture->SetName(L"render_target");
+		d3d12_append_rtv_descriptor(d3d12, d3d12->render_texture, &d3d12->render_texture_rtv_descriptor, nullptr);
+		d3d12_append_srv_descriptor(d3d12, d3d12->render_texture, nullptr, &d3d12->render_texture_srv_descriptor);
 
-	D3D12_DESCRIPTOR_HEAP_DESC rtv_descriptor_heap_desc = {};
-	rtv_descriptor_heap_desc.NumDescriptors = d3d12_swap_chain_buffer_count;
-	rtv_descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-	rtv_descriptor_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	m_d3d_assert(d3d12->device->CreateDescriptorHeap(&rtv_descriptor_heap_desc, IID_PPV_ARGS(&d3d12->swap_chain_render_targets_descriptor_heap)));
-	D3D12_CPU_DESCRIPTOR_HANDLE rtv_handle = d3d12->swap_chain_render_targets_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-	for (uint32 i = 0; i < d3d12_swap_chain_buffer_count; i += 1) {
-		m_d3d_assert(d3d12->swap_chain->GetBuffer(i, IID_PPV_ARGS(&d3d12->swap_chain_render_targets[i])));
-		d3d12->device->CreateRenderTargetView(d3d12->swap_chain_render_targets[i], nullptr, rtv_handle);
-		rtv_handle.ptr += d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-		m_d3d_set_name(d3d12->swap_chain_render_targets[i], "swap chain backbuffer #%u", i);
+		d3d12->depth_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_D32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		d3d12->depth_texture->SetName(L"depth_target");
+		d3d12_append_dsv_descriptor(d3d12, d3d12->depth_texture, &d3d12->depth_texture_dsv_descriptor, nullptr);
+
+		d3d12->gbuffer_textures[0] = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->gbuffer_textures[1] = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->gbuffer_textures[2] = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->gbuffer_textures[3] = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R8G8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->gbuffer_textures[4] = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->gbuffer_textures[0]->SetName(L"gbuffer_diffuse_render_target");
+		d3d12->gbuffer_textures[1]->SetName(L"gbuffer_position_render_target");
+		d3d12->gbuffer_textures[2]->SetName(L"gbuffer_normal_render_target");
+		d3d12->gbuffer_textures[3]->SetName(L"gbuffer_roughness_metallic_render_target");
+		d3d12->gbuffer_textures[4]->SetName(L"gbuffer_emissive_render_target");
+		for (uint32 i = 0; i < m_countof(d3d12->gbuffer_textures); i += 1) {
+			d3d12_append_rtv_descriptor(d3d12, d3d12->gbuffer_textures[i], &d3d12->gbuffer_texture_rtv_descriptors[i], nullptr);
+		}
+
+		uint8 dither_texture[] = {
+			0, 32,  8, 40,  2, 34, 10, 42,   /* 8x8 Bayer ordered dithering  */
+			48, 16, 56, 24, 50, 18, 58, 26,  /* pattern.  Each input pixel   */
+			12, 44,  4, 36, 14, 46,  6, 38,  /* is scaled to the 0..63 range */
+			60, 28, 52, 20, 62, 30, 54, 22,  /* before looking in this table */
+			3, 35, 11, 43,  1, 33,  9, 41,   /* to determine the action.     */
+			51, 19, 59, 27, 49, 17, 57, 25,
+			15, 47,  7, 39, 13, 45,  5, 37,
+			63, 31, 55, 23, 61, 29, 53, 21
+		};
+		d3d12->dither_texture = d3d12_create_texture_2d(d3d12, 8, 8, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		d3d12_copy_texture_2d(d3d12, d3d12->dither_texture, dither_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12_append_srv_descriptor(d3d12, d3d12->dither_texture, nullptr, &d3d12->dither_texture_srv_descriptor);
+	}
+	if (d3d12->dxr_enabled) {
+		d3d12->dxr_shadow_output_texture_array = d3d12_create_texture_2d(d3d12, window->width, window->height, 4, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->dxr_shadow_output_texture_array->SetName(L"dxr_shadow_output_texture_array");
+
+		d3d12->dxr_ao_output_texture = d3d12_create_texture_2d(d3d12, window->width, window->height, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->dxr_ao_output_texture->SetName(L"dxr_ao_output_texture");
+
+		D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
+		descriptor_heap_desc.NumDescriptors = 16;
+		descriptor_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		descriptor_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&descriptor_heap_desc, IID_PPV_ARGS(&d3d12->dxr_descriptor_heap)));
+
+		D3D12_CPU_DESCRIPTOR_HANDLE dxr_cpu_descriptor_handle = d3d12->dxr_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+		uint32 dxr_cpu_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		d3d12->device->CreateShaderResourceView(d3d12->gbuffer_textures[1], nullptr, { dxr_cpu_descriptor_handle.ptr + 1 * dxr_cpu_descriptor_handle_size });
+		d3d12->device->CreateShaderResourceView(d3d12->gbuffer_textures[2], nullptr, { dxr_cpu_descriptor_handle.ptr + 2 * dxr_cpu_descriptor_handle_size });
+
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
+		uav_desc.Format = DXGI_FORMAT_R8_UNORM;
+		uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+		uav_desc.Texture2DArray.ArraySize = 4;
+		d3d12->device->CreateUnorderedAccessView(d3d12->dxr_shadow_output_texture_array, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 3 * dxr_cpu_descriptor_handle_size });
+		uav_desc.Format = DXGI_FORMAT_R8_UNORM;
+		uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+		uav_desc.Texture2DArray.ArraySize = 1;
+		d3d12->device->CreateUnorderedAccessView(d3d12->dxr_ao_output_texture, nullptr, &uav_desc, { dxr_cpu_descriptor_handle.ptr + 4 * dxr_cpu_descriptor_handle_size });
 	}
 
-	d3d12_init_resources(d3d12, window);
 	d3d12_init_pipelines(d3d12);
 }
 

@@ -143,18 +143,19 @@ struct model_animation {
 };
 
 struct model_material {
-	char name[sizeof(gpk_model_material::name)];
 	uint32 diffuse_texture_index;
-	vec4 diffuse_factor;
 	uint32 normal_texture_index;
 	uint32 roughness_texture_index;
-	float roughness_factor;
 	uint32 metallic_texture_index;
-	float metallic_factor;
 	uint32 emissive_texture_index;
+	D3D12_GPU_DESCRIPTOR_HANDLE texture_srv_descriptors;
+	vec4 diffuse_factor;
+	float roughness_factor;
+	float metallic_factor;
 	vec3 emissive_factor;
 	float transparency;
 	float index_of_refraction;
+	char name[sizeof(gpk_model_material::name)];
 };
 
 struct model_texture {
@@ -294,6 +295,7 @@ struct world {
 	ID3D12Resource* default_metallic_texture;
 	ID3D12Resource* default_emissive_texture;
 	ID3D12Resource* default_height_texture;
+	D3D12_GPU_DESCRIPTOR_HANDLE default_material_srv_descriptors;
 
 	physx::PxFoundation* px_foundation;
 	physx::PxPvd* px_pvd;
@@ -387,6 +389,12 @@ void world_init(world* world, d3d12* d3d12) {
 		d3d12_copy_texture_2d(d3d12, world->default_metallic_texture, default_metallic_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		d3d12_copy_texture_2d(d3d12, world->default_emissive_texture, (uint8*)default_emissive_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		d3d12_copy_texture_2d(d3d12, world->default_height_texture, default_height_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+		d3d12_append_srv_descriptor(d3d12, world->default_diffuse_texture, nullptr, &world->default_material_srv_descriptors);
+		d3d12_append_srv_descriptor(d3d12, world->default_normal_texture, nullptr, nullptr);
+		d3d12_append_srv_descriptor(d3d12, world->default_roughness_texture, nullptr, nullptr);
+		d3d12_append_srv_descriptor(d3d12, world->default_metallic_texture, nullptr, nullptr);
+		d3d12_append_srv_descriptor(d3d12, world->default_emissive_texture, nullptr, nullptr);
 	}
 	{
 		static physx::PxDefaultAllocator allocator_callback;
@@ -589,16 +597,27 @@ bool world_add_model(world* world, d3d12* d3d12, const char* file_name, transfor
 		model_material* model_material = &model->materials[i];
 		array_copy(model_material->name, gpk_model_material->name);
 		model_material->diffuse_texture_index = gpk_model_material->diffuse_image_index;
-		model_material->diffuse_factor = gpk_model_material->diffuse_factor;
 		model_material->normal_texture_index = gpk_model_material->normal_image_index;
 		model_material->roughness_texture_index = gpk_model_material->roughness_image_index;
-		model_material->roughness_factor = gpk_model_material->roughness_factor;
 		model_material->metallic_texture_index = gpk_model_material->metallic_image_index;
-		model_material->metallic_factor = gpk_model_material->metallic_factor;
 		model_material->emissive_texture_index = gpk_model_material->emissive_image_index;
+		model_material->diffuse_factor = gpk_model_material->diffuse_factor;
+		model_material->roughness_factor = gpk_model_material->roughness_factor;
+		model_material->metallic_factor = gpk_model_material->metallic_factor;
 		model_material->emissive_factor = gpk_model_material->emissive_factor;
 		model_material->transparency = gpk_model_material->transparency;
 		model_material->index_of_refraction = gpk_model_material->index_of_refraction;
+
+		ID3D12Resource* diffuse_texture = model_material->diffuse_texture_index < model->texture_count ? model->textures[model_material->diffuse_texture_index].texture : world->default_diffuse_texture;
+		ID3D12Resource* normal_texture = model_material->normal_texture_index < model->texture_count ? model->textures[model_material->normal_texture_index].texture : world->default_normal_texture;
+		ID3D12Resource* roughness_texture = model_material->roughness_texture_index < model->texture_count ? model->textures[model_material->roughness_texture_index].texture : world->default_roughness_texture;
+		ID3D12Resource* metallic_texture = model_material->metallic_texture_index < model->texture_count ? model->textures[model_material->metallic_texture_index].texture : world->default_metallic_texture;
+		ID3D12Resource* emissive_texture = model_material->emissive_texture_index < model->texture_count ? model->textures[model_material->emissive_texture_index].texture : world->default_emissive_texture;
+		d3d12_append_srv_descriptor(d3d12, diffuse_texture, nullptr, &model_material->texture_srv_descriptors);
+		d3d12_append_srv_descriptor(d3d12, normal_texture, nullptr, nullptr);
+		d3d12_append_srv_descriptor(d3d12, roughness_texture, nullptr, nullptr);
+		d3d12_append_srv_descriptor(d3d12, metallic_texture, nullptr, nullptr);
+		d3d12_append_srv_descriptor(d3d12, emissive_texture, nullptr, nullptr);
 	}
 	for (uint32 i = 0; i < model->node_count; i += 1) {
 		if (model->nodes[i].mesh_index < model->mesh_count) {
@@ -964,14 +983,8 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 	d3d12->frame_constants_buffer_size = 0;
 	uint8* frame_constants_buffer = nullptr;
 	d3d12->frame_constants_buffer->Map(0, nullptr, (void**)&frame_constants_buffer);
-	auto unmap_constant_buffer = scope_exit([&] { d3d12->frame_constants_buffer->Unmap(0, nullptr); });
+	auto unmap_frame_constants_buffer = scope_exit([&] { d3d12->frame_constants_buffer->Unmap(0, nullptr); });
 	D3D12_GPU_VIRTUAL_ADDRESS frame_constants_buffer_gpu_address = d3d12->frame_constants_buffer->GetGPUVirtualAddress();
-
-	d3d12->frame_descriptor_handle_count = 0;
-	const uint32 frame_descriptor_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	const D3D12_CPU_DESCRIPTOR_HANDLE frame_first_cpu_descriptor_handle = d3d12->frame_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-	const D3D12_GPU_DESCRIPTOR_HANDLE frame_first_gpu_descriptor_handle = d3d12->frame_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
-
 	auto frame_constants_buffer_append = [&](void* data, uint32 data_size, uint32* offset) {
 		if (offset) {
 			*offset = d3d12->frame_constants_buffer_size;
@@ -987,27 +1000,27 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 	d3d12->command_list->RSSetViewports(1, &viewport);
 	d3d12->command_list->RSSetScissorRects(1, &scissor);
 
-	d3d12->command_list->ClearDepthStencilView(d3d12->depth_target_cpu_descriptor_handle, D3D12_CLEAR_FLAG_DEPTH, 0, 0, 0, nullptr);
+	d3d12->command_list->ClearDepthStencilView(d3d12->depth_texture_dsv_descriptor, D3D12_CLEAR_FLAG_DEPTH, 0, 0, 0, nullptr);
 
 	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	d3d12->command_list->SetDescriptorHeaps(1, &d3d12->frame_descriptor_heap);
+	d3d12->command_list->SetDescriptorHeaps(1, &d3d12->cbv_srv_uav_descriptor_heap);
 	{
-		D3D12_RESOURCE_BARRIER barriers[m_countof(d3d12->gbuffer_render_targets)] = {};
+		D3D12_RESOURCE_BARRIER barriers[m_countof(d3d12->gbuffer_textures)] = {};
 		for (uint32 i = 0; i < m_countof(barriers); i += 1) {
 			barriers[i].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 			barriers[i].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-			barriers[i].Transition.pResource = d3d12->gbuffer_render_targets[i];
+			barriers[i].Transition.pResource = d3d12->gbuffer_textures[i];
 			barriers[i].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 			barriers[i].Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		}
 		d3d12->command_list->ResourceBarrier(m_countof(barriers), barriers);
 
 		d3d12->command_list->SetPipelineState(d3d12->gbuffer_pipeline_state);
-		d3d12->command_list->OMSetRenderTargets(m_countof(d3d12->gbuffer_render_targets), d3d12->gbuffer_render_target_cpu_descriptor_handles, false, &d3d12->depth_target_cpu_descriptor_handle);
+		d3d12->command_list->OMSetRenderTargets(m_countof(d3d12->gbuffer_textures), d3d12->gbuffer_texture_rtv_descriptors, false, &d3d12->depth_texture_dsv_descriptor);
 		d3d12->command_list->SetGraphicsRootSignature(d3d12->gbuffer_root_signature);
 
 		float clear_color[4] = { 0, 0, 0, 0 };
-		for (auto& gbuffer : d3d12->gbuffer_render_target_cpu_descriptor_handles) {
+		for (auto& gbuffer : d3d12->gbuffer_texture_rtv_descriptors) {
 			d3d12->command_list->ClearRenderTargetView(gbuffer, clear_color, 0, nullptr);
 		}
 
@@ -1030,15 +1043,6 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		uint32 default_material_constants_offset = 0;
 		frame_constants_buffer_append(&default_material_constants, sizeof(default_material_constants), &default_material_constants_offset);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE default_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
-		D3D12_GPU_DESCRIPTOR_HANDLE default_material_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
-		d3d12->device->CreateShaderResourceView(world->default_diffuse_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 0 });
-		d3d12->device->CreateShaderResourceView(world->default_normal_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 1 });
-		d3d12->device->CreateShaderResourceView(world->default_roughness_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 2 });
-		d3d12->device->CreateShaderResourceView(world->default_metallic_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 3 });
-		d3d12->device->CreateShaderResourceView(world->default_emissive_texture, nullptr, { default_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * 4 });
-		d3d12->frame_descriptor_handle_count += 5;
-
 		for (uint32 i = 0; i < world->models.size; i += 1) {
 			model* model = &world->models[i];
 			mat4 model_mat = mat4_identity();
@@ -1046,8 +1050,6 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 			frame_constants_buffer_append(&model_mat, sizeof(model_mat), &model_mat_offset);
 
 			uint32 first_material_constants_offset = d3d12->frame_constants_buffer_size;
-			D3D12_CPU_DESCRIPTOR_HANDLE first_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
-			D3D12_GPU_DESCRIPTOR_HANDLE first_material_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
 			for (uint32 i = 0; i < model->material_count; i += 1) {
 				model_material* material = &model->materials[i];
 				material_constants material_constants = {
@@ -1057,22 +1059,7 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 					material->roughness_factor
 				};
 				frame_constants_buffer_append(&material_constants, sizeof(material_constants), nullptr);
-
-				ID3D12Resource* diffuse_texture = material->diffuse_texture_index < model->texture_count ? model->textures[material->diffuse_texture_index].texture : world->default_diffuse_texture;
-				ID3D12Resource* normal_texture = material->normal_texture_index < model->texture_count ? model->textures[material->normal_texture_index].texture : world->default_normal_texture;
-				ID3D12Resource* roughness_texture = material->roughness_texture_index < model->texture_count ? model->textures[material->roughness_texture_index].texture : world->default_roughness_texture;
-				ID3D12Resource* metallic_texture = material->metallic_texture_index < model->texture_count ? model->textures[material->metallic_texture_index].texture : world->default_metallic_texture;
-				ID3D12Resource* emissive_texture = material->emissive_texture_index < model->texture_count ? model->textures[material->emissive_texture_index].texture : world->default_emissive_texture;
-				d3d12->device->CreateShaderResourceView(diffuse_texture, nullptr, { first_material_cpu_descriptor_handle.ptr });
-				d3d12->device->CreateShaderResourceView(normal_texture, nullptr, { first_material_cpu_descriptor_handle.ptr + frame_descriptor_handle_size });
-				d3d12->device->CreateShaderResourceView(roughness_texture, nullptr, { first_material_cpu_descriptor_handle.ptr + 2 * frame_descriptor_handle_size });
-				d3d12->device->CreateShaderResourceView(metallic_texture, nullptr, { first_material_cpu_descriptor_handle.ptr + 3 * frame_descriptor_handle_size });
-				d3d12->device->CreateShaderResourceView(emissive_texture, nullptr, { first_material_cpu_descriptor_handle.ptr + 4 * frame_descriptor_handle_size });
-				first_material_cpu_descriptor_handle.ptr += frame_descriptor_handle_size * 5;
 			}
-			first_material_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
-			d3d12->frame_descriptor_handle_count += model->material_count * 5;
-
 			for (uint32 i = 0; i < model->scene_count; i += 1) {
 				model_scene* scene = &model->scenes[i];
 				for (uint32 i = 0; i < scene->node_index_count; i += 1) {
@@ -1092,17 +1079,16 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 							for (uint32 i = 0; i < mesh->primitive_count; i += 1) {
 								model_mesh_primitive* primitive = &mesh->primitives[i];
 								uint32 primitive_constants_offset = default_material_constants_offset;
-								D3D12_GPU_DESCRIPTOR_HANDLE material_gpu_descriptor_handle = default_material_gpu_descriptor_handle;
+								D3D12_GPU_DESCRIPTOR_HANDLE material_gpu_descriptor_handle = world->default_material_srv_descriptors;
 								if (primitive->material_index < model->material_count) {
 									primitive_constants_offset = first_material_constants_offset + primitive->material_index * material_constants_increment_size;
-									material_gpu_descriptor_handle = { first_material_gpu_descriptor_handle.ptr + primitive->material_index * 5 * frame_descriptor_handle_size };
+									material_gpu_descriptor_handle = model->materials[primitive->material_index].texture_srv_descriptors;
 								}
 
 								d3d12->command_list->SetGraphicsRootConstantBufferView(0, frame_constants_buffer_gpu_address + world_constants_offset);
 								d3d12->command_list->SetGraphicsRootConstantBufferView(1, frame_constants_buffer_gpu_address + model_mat_offset);
 								d3d12->command_list->SetGraphicsRootConstantBufferView(2, frame_constants_buffer_gpu_address + node_mat_offset);
 								d3d12->command_list->SetGraphicsRootConstantBufferView(3, frame_constants_buffer_gpu_address + primitive_constants_offset);
-
 								d3d12->command_list->SetGraphicsRootDescriptorTable(4, material_gpu_descriptor_handle);
 
 								D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view = {};
@@ -1159,7 +1145,7 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 			break;
 		}
 	}
-	if (d3d12->dxr_support && d3d12->dxr_top_acceleration_buffer) {
+	if (d3d12->dxr_enabled && d3d12->dxr_top_acceleration_buffer) {
 		D3D12_RESOURCE_BARRIER barrier = {};
 		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		barrier.Transition.pResource = d3d12->dxr_shadow_output_texture_array;
@@ -1197,7 +1183,7 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 	}
-	if (d3d12->dxr_support && d3d12->dxr_top_acceleration_buffer) {
+	if (d3d12->dxr_enabled && d3d12->dxr_top_acceleration_buffer) {
 		D3D12_RESOURCE_BARRIER barrier = {};
 		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		barrier.Transition.pResource = d3d12->dxr_ao_output_texture;
@@ -1235,24 +1221,20 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		D3D12_RESOURCE_BARRIER barrier = {};
 		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		barrier.Transition.pResource = d3d12->render_target;
+		barrier.Transition.pResource = d3d12->render_texture;
 		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 		d3d12->command_list->ResourceBarrier(1, &barrier);
 
 		d3d12->command_list->SetPipelineState(d3d12->gbuffer_direct_lit_pipeline_state);
-		d3d12->command_list->OMSetRenderTargets(1, &d3d12->render_target_cpu_descriptor_handle, false, nullptr);
+		d3d12->command_list->OMSetRenderTargets(1, &d3d12->render_texture_rtv_descriptor, false, nullptr);
 		d3d12->command_list->SetGraphicsRootSignature(d3d12->gbuffer_direct_lit_root_signature);
-		d3d12->command_list->SetDescriptorHeaps(1, &d3d12->frame_descriptor_heap);
+		d3d12->command_list->SetDescriptorHeaps(1, &d3d12->cbv_srv_uav_descriptor_heap);
 
-		D3D12_CPU_DESCRIPTOR_HANDLE render_target_cpu_descriptor_handle = { frame_first_cpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
-		D3D12_GPU_DESCRIPTOR_HANDLE render_target_gpu_descriptor_handle = { frame_first_gpu_descriptor_handle.ptr + d3d12->frame_descriptor_handle_count * frame_descriptor_handle_size };
-		for (uint32 i = 0; i < m_countof(d3d12->gbuffer_render_targets); i += 1) {
-			d3d12->device->CreateShaderResourceView(d3d12->gbuffer_render_targets[i], nullptr, { render_target_cpu_descriptor_handle.ptr + i * frame_descriptor_handle_size });
-			d3d12->frame_descriptor_handle_count += 1;
+		if (d3d12->dxr_enabled) {
+			//d3d12->device->CreateShaderResourceView(d3d12->dxr_shadow_output_texture_array, nullptr, { render_target_cpu_descriptor_handle.ptr + m_countof(d3d12->gbuffer_textures) * frame_descriptor_handle_size });
+			//d3d12->cbv_srv_uav_descriptor_count += 1;
 		}
-		d3d12->device->CreateShaderResourceView(d3d12->dxr_shadow_output_texture_array, nullptr, { render_target_cpu_descriptor_handle.ptr + frame_descriptor_handle_size * m_countof(d3d12->gbuffer_render_targets) });
-		d3d12->frame_descriptor_handle_count += 1;
 
 		struct constants {
 			XMVECTOR camera_position;
@@ -1264,7 +1246,7 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		uint32 constants_offset = 0;
 		frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
 		d3d12->command_list->SetGraphicsRootConstantBufferView(0, frame_constants_buffer_gpu_address + constants_offset);
-		d3d12->command_list->SetGraphicsRootDescriptorTable(1, render_target_gpu_descriptor_handle);
+		d3d12->command_list->SetGraphicsRootDescriptorTable(1, d3d12->render_texture_srv_descriptor);
 
 		d3d12->command_list->DrawInstanced(3, 1, 0, 0);
 
@@ -1335,11 +1317,11 @@ bool world_load_from_file(world* world, d3d12* d3d12, const char* file_name) {
 			}
 		}
 	}
-	
-	if (d3d12->dxr_support) {
+
+	if (d3d12->dxr_enabled) {
 		world_build_dxr_acceleration_buffers(world, d3d12);
 	}
-	
+
 	return true;
 }
 
