@@ -1246,7 +1246,7 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 		uint32 constants_offset = 0;
 		frame_constants_buffer_append(&constants, sizeof(constants), &constants_offset);
 		d3d12->command_list->SetGraphicsRootConstantBufferView(0, frame_constants_buffer_gpu_address + constants_offset);
-		d3d12->command_list->SetGraphicsRootDescriptorTable(1, d3d12->render_texture_srv_descriptor);
+		d3d12->command_list->SetGraphicsRootDescriptorTable(1, d3d12->gbuffer_texture_srv_descriptors[0]);
 
 		d3d12->command_list->DrawInstanced(3, 1, 0, 0);
 

@@ -85,6 +85,7 @@ struct d3d12 {
 
 	ID3D12Resource* gbuffer_textures[5];
 	D3D12_CPU_DESCRIPTOR_HANDLE gbuffer_texture_rtv_descriptors[m_countof(gbuffer_textures)];
+	D3D12_GPU_DESCRIPTOR_HANDLE gbuffer_texture_srv_descriptors[m_countof(gbuffer_textures)];
 
 	ID3D12Resource* render_texture;
 	D3D12_CPU_DESCRIPTOR_HANDLE render_texture_rtv_descriptor;
@@ -944,6 +945,7 @@ void d3d12_init(d3d12* d3d12, window* window) {
 		d3d12->gbuffer_textures[4]->SetName(L"gbuffer_emissive_render_target");
 		for (uint32 i = 0; i < m_countof(d3d12->gbuffer_textures); i += 1) {
 			d3d12_append_rtv_descriptor(d3d12, d3d12->gbuffer_textures[i], &d3d12->gbuffer_texture_rtv_descriptors[i], nullptr);
+			d3d12_append_srv_descriptor(d3d12, d3d12->gbuffer_textures[i], nullptr, &d3d12->gbuffer_texture_srv_descriptors[i]);
 		}
 
 		uint8 dither_texture[] = {
