@@ -204,7 +204,7 @@ struct editor {
 	selectable_object_type selected_object_type;
 	uint32 selected_object_index;
 
-	tool_type tool_type;
+	tool_type current_tool_type;
 	bool terrain_brush_tool_active;
 	vec3 terrain_brush_tool_position;
 	float terrain_brush_tool_radius;
@@ -218,6 +218,41 @@ struct editor {
 
 	edit_operation* redoes[256];
 	uint32 redo_count;
+
+	bool load_settings();
+	void save_settings();
+	void imgui_init(d3d12* d3d12, window* window);
+	void imgui_render_commands(d3d12* d3d12, window* window);
+	void blit_imgui_render_commands(world* world, d3d12* d3d12, window* window);
+	void init(d3d12* d3d12, window* window);
+	bool load_world(world* world, d3d12* d3d12, const char* file);
+	bool save_world(world* world, bool save_as);
+	bool need_saving(world* world);
+	void add_undo(edit_operation operation);
+	void pop_undo(world* world);
+	void check_quit();
+	void check_toggle_fullscreen(window* window);
+	void check_popups(world* world, d3d12* d3d12);
+	void top_menu(world* world, d3d12* d3d12);
+	void bottom_menu();
+	void edit_window_model_transform(world* world, uint32* model_index, transform* transform);
+	void edit_window_player_tab(world* world);
+	void edit_window_static_object_tab(world* world);
+	void edit_window_dynamic_object_tab(world* world);
+	void edit_window_model_tab(world* world, d3d12* d3d12);
+	void direct_light_properties(direct_light* direct_light);
+	void sphere_light_properties(sphere_light* sphere_light);
+	void edit_window_terrain_tab(world* world);
+	void edit_window_skybox_tab(world* world);
+	void objects_window(world* world, d3d12* d3d12);
+	void memories_window(world* world, d3d12* d3d12);
+	void frame_statistic_window(window* window);
+	void update_camera(window* window);
+	void tool_gizmo(world* world, window* window);
+	void check_undo(world* world);
+	void append_extra_model_constants(world* world, d3d12* d3d12);
+	void append_terrain_brush_constants(world* world, d3d12* d3d12);
+	void render_terrain_brush(world* world, d3d12* d3d12);
 };
 
 LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -245,7 +280,7 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 			window_set_title(window, "%dx%d", window->width, window->height);
 			ImGui::GetIO().DisplaySize = { (float)window->width, (float)window->height };
 			ImGuizmo::SetRect(0, 0, (float)window->width, (float)window->height);
-			d3d12_resize_swap_chain(d3d12, window->width, window->height);
+			d3d12->resize_swap_chain(window->width, window->height);
 		} break;
 		case WM_SHOWWINDOW: {
 		} break;
@@ -312,7 +347,7 @@ LRESULT window_message_callback(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 	return result;
 }
 
-bool editor_load_settings(editor* editor) {
+bool editor::load_settings() {
 	const char *editor_settings_file_name = "editor_settings.txt";
 
 	if (!file_exists(editor_settings_file_name)) {
@@ -335,7 +370,7 @@ bool editor_load_settings(editor* editor) {
 				!ft.get_token(&tz) || !tz.to_float(&fz)) {
 				return false;
 			}
-			editor->camera_position = XMVectorSet(fx, fy, fz, 0);
+			camera_position = XMVectorSet(fx, fy, fz, 0);
 		}
 		else if (!strncmp(tk.ptr, "camera_view:", tk.len)) {
 			token tx, ty, tz;
@@ -345,7 +380,7 @@ bool editor_load_settings(editor* editor) {
 				!ft.get_token(&tz) || !tz.to_float(&fz)) {
 				return false;
 			}
-			editor->camera_view = XMVectorSet(fx, fy, fz, 0);
+			camera_view = XMVectorSet(fx, fy, fz, 0);
 		}
 		else if (!strncmp(tk.ptr, "camera_move_speed:", tk.len)) {
 			token ts;
@@ -353,7 +388,7 @@ bool editor_load_settings(editor* editor) {
 			if (!ft.get_token(&ts) || !ts.to_float(&fs)) {
 				return false;
 			}
-			editor->camera_move_speed = (uint32)fs;
+			camera_move_speed = (uint32)fs;
 		}
 		else if (!strncmp(tk.ptr, "camera_rotate_speed:", tk.len)) {
 			token ts;
@@ -361,20 +396,19 @@ bool editor_load_settings(editor* editor) {
 			if (!ft.get_token(&ts) || !ts.to_float(&fs)) {
 				return false;
 			}
-			editor->camera_rotate_speed = (uint32)fs;
+			camera_rotate_speed = (uint32)fs;
 		}
 	}
-
 	return true;
 }
 
-void editor_save_settings(editor* editor) {
+void editor::save_settings() {
 	char* text = new char[m_megabytes(1)];
 	uint32 offset = 0;
-	offset += sprintf(text + offset, "camera_position: %f %f %f\n", XMVectorGetX(editor->camera_position), XMVectorGetY(editor->camera_position), XMVectorGetZ(editor->camera_position));
-	offset += sprintf(text + offset, "camera_view: %f %f %f\n", XMVectorGetX(editor->camera_view), XMVectorGetY(editor->camera_view), XMVectorGetZ(editor->camera_view));
-	offset += sprintf(text + offset, "camera_move_speed: %u\n", editor->camera_move_speed);
-	offset += sprintf(text + offset, "camera_rotate_speed: %u\n", editor->camera_rotate_speed);
+	offset += sprintf(text + offset, "camera_position: %f %f %f\n", XMVectorGetX(camera_position), XMVectorGetY(camera_position), XMVectorGetZ(camera_position));
+	offset += sprintf(text + offset, "camera_view: %f %f %f\n", XMVectorGetX(camera_view), XMVectorGetY(camera_view), XMVectorGetZ(camera_view));
+	offset += sprintf(text + offset, "camera_move_speed: %u\n", camera_move_speed);
+	offset += sprintf(text + offset, "camera_rotate_speed: %u\n", camera_rotate_speed);
 	file_mapping fm;
 	m_assert(file_mapping_create("editor_settings.txt", offset, &fm));
 	memcpy(fm.ptr, text, offset);
@@ -383,7 +417,7 @@ void editor_save_settings(editor* editor) {
 	delete[]text;
 }
 
-void imgui_init(editor* editor, d3d12* d3d12, window* window) {
+void editor::imgui_init(d3d12* d3d12, window* window) {
 	{
 		ImGui::CreateContext();
 		ImGui::StyleColorsDark();
@@ -413,28 +447,28 @@ void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 	{
 		uint32 size = m_megabytes(1);
 
-		editor->imgui_vertex_buffer = d3d12_create_buffer(d3d12, size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
-		editor->imgui_vertex_buffer_view.BufferLocation = editor->imgui_vertex_buffer->GetGPUVirtualAddress();
-		editor->imgui_vertex_buffer_view.StrideInBytes = sizeof(ImDrawVert);
-		editor->imgui_vertex_buffer_view.SizeInBytes = size;
-		editor->imgui_vertex_buffer_capacity = size;
+		imgui_vertex_buffer = d3d12->create_buffer(size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		imgui_vertex_buffer_view.BufferLocation = imgui_vertex_buffer->GetGPUVirtualAddress();
+		imgui_vertex_buffer_view.StrideInBytes = sizeof(ImDrawVert);
+		imgui_vertex_buffer_view.SizeInBytes = size;
+		imgui_vertex_buffer_capacity = size;
 
-		editor->imgui_index_buffer = d3d12_create_buffer(d3d12, size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
-		editor->imgui_index_buffer_view.BufferLocation = editor->imgui_index_buffer->GetGPUVirtualAddress();
-		editor->imgui_index_buffer_view.SizeInBytes = size;
-		editor->imgui_index_buffer_view.Format = DXGI_FORMAT_R16_UINT;
-		editor->imgui_index_buffer_capacity = size;
+		imgui_index_buffer = d3d12->create_buffer(size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		imgui_index_buffer_view.BufferLocation = imgui_index_buffer->GetGPUVirtualAddress();
+		imgui_index_buffer_view.SizeInBytes = size;
+		imgui_index_buffer_view.Format = DXGI_FORMAT_R16_UINT;
+		imgui_index_buffer_capacity = size;
 	}
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {};
 		heap_desc.NumDescriptors = 32;
 		heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&editor->imgui_descriptor_heap)));
+		m_d3d_assert(d3d12->device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&imgui_descriptor_heap)));
 	}
 	{
-		D3D12_CPU_DESCRIPTOR_HANDLE descriptor_cpu_heap_handle = editor->imgui_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-		D3D12_GPU_DESCRIPTOR_HANDLE descriptor_gpu_heap_handle = editor->imgui_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
+		D3D12_CPU_DESCRIPTOR_HANDLE descriptor_cpu_heap_handle = imgui_descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+		D3D12_GPU_DESCRIPTOR_HANDLE descriptor_gpu_heap_handle = imgui_descriptor_heap->GetGPUDescriptorHandleForHeapStart();
 		uint32 descriptor_heap_handle_size = d3d12->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		{
 			uint8* texture_data;
@@ -444,9 +478,9 @@ void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 			auto clear_font_tex_data = scope_exit([] {
 				ImGui::GetIO().Fonts->ClearTexData();
 				});
-			editor->imgui_font_texture = d3d12_create_texture_2d(d3d12, texture_width, texture_height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-			d3d12_copy_texture_2d(d3d12, editor->imgui_font_texture, texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-			d3d12->device->CreateShaderResourceView(editor->imgui_font_texture, nullptr, descriptor_cpu_heap_handle);
+			imgui_font_texture = d3d12->create_texture_2d(texture_width, texture_height, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+			d3d12->copy_texture_2d(imgui_font_texture, texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			d3d12->device->CreateShaderResourceView(imgui_font_texture, nullptr, descriptor_cpu_heap_handle);
 			ImGui::GetIO().Fonts->SetTexID((ImTextureID)descriptor_gpu_heap_handle.ptr);
 			descriptor_cpu_heap_handle.ptr += descriptor_heap_handle_size;
 			descriptor_gpu_heap_handle.ptr += descriptor_heap_handle_size;
@@ -456,8 +490,8 @@ void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 			uint8* texture_data = stbi_load(file, &width, &height, &channel, 4);
 			m_assert(texture_data);
 
-			*texture = d3d12_create_texture_2d(d3d12, width, height, 1, 1, fmt, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-			d3d12_copy_texture_2d(d3d12, *texture, texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			*texture = d3d12->create_texture_2d(width, height, 1, 1, fmt, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+			d3d12->copy_texture_2d(*texture, texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 			d3d12->device->CreateShaderResourceView(*texture, nullptr, descriptor_cpu_heap_handle);
 			*texture_gpu_descriptor_handle = descriptor_gpu_heap_handle;
 			descriptor_cpu_heap_handle.ptr += descriptor_heap_handle_size;
@@ -465,10 +499,10 @@ void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 
 			stbi_image_free(texture_data);
 		};
-		load_texture("../assets/icons/select.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->select_icon_texture, &editor->select_icon_texture_gpu_descriptor_handle);
-		load_texture("../assets/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->translate_icon_texture, &editor->translate_icon_texture_gpu_descriptor_handle);
-		load_texture("../assets/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->rotate_icon_texture, &editor->rotate_icon_texture_gpu_descriptor_handle);
-		load_texture("../assets/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &editor->scale_icon_texture, &editor->scale_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/select.png", DXGI_FORMAT_R8G8B8A8_UNORM, &select_icon_texture, &select_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/translate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &translate_icon_texture, &translate_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/rotate.png", DXGI_FORMAT_R8G8B8A8_UNORM, &rotate_icon_texture, &rotate_icon_texture_gpu_descriptor_handle);
+		load_texture("../assets/icons/scale.png", DXGI_FORMAT_R8G8B8A8_UNORM, &scale_icon_texture, &scale_icon_texture_gpu_descriptor_handle);
 	}
 	{
 		D3D12_DESCRIPTOR_RANGE desc_range = {};
@@ -519,7 +553,7 @@ void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 
 		ID3DBlob* sig_blob = nullptr;
 		m_d3d_assert(D3D12SerializeRootSignature(&sig_desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig_blob, nullptr));
-		d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&editor->imgui_root_signature));
+		d3d12->device->CreateRootSignature(0, sig_blob->GetBufferPointer(), sig_blob->GetBufferSize(), IID_PPV_ARGS(&imgui_root_signature));
 		sig_blob->Release();
 
 		D3D12_INPUT_ELEMENT_DESC input_element_descs[] = {
@@ -529,7 +563,7 @@ void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 		};
 
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = {};
-		pso_desc.pRootSignature = editor->imgui_root_signature;
+		pso_desc.pRootSignature = imgui_root_signature;
 		hlsl_bytecode_file vs_file("hlsl/imgui.vps.vs.bytecode");
 		hlsl_bytecode_file ps_file("hlsl/imgui.vps.ps.bytecode");
 		pso_desc.VS = vs_file.bytecode;
@@ -556,18 +590,18 @@ void imgui_init(editor* editor, d3d12* d3d12, window* window) {
 		pso_desc.NumRenderTargets = 1;
 		pso_desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 		pso_desc.SampleDesc.Count = 1;
-		m_d3d_assert(d3d12->device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&editor->imgui_pipeline_state)));
+		m_d3d_assert(d3d12->device->CreateGraphicsPipelineState(&pso_desc, IID_PPV_ARGS(&imgui_pipeline_state)));
 	}
 }
 
-void imgui_render_commands(editor* editor, d3d12* d3d12, window* window) {
+void editor::imgui_render_commands(d3d12* d3d12, window* window) {
 	ImDrawData* imgui_draw_data = ImGui::GetDrawData();
 
 	uint8* vertex_buffer = nullptr;
 	uint8* index_buffer = nullptr;
 	D3D12_RANGE buffer_range = { 0, 0 };
-	m_d3d_assert(editor->imgui_vertex_buffer->Map(0, &buffer_range, (void**)&vertex_buffer));
-	m_d3d_assert(editor->imgui_index_buffer->Map(0, &buffer_range, (void**)&index_buffer));
+	m_d3d_assert(imgui_vertex_buffer->Map(0, &buffer_range, (void**)&vertex_buffer));
+	m_d3d_assert(imgui_index_buffer->Map(0, &buffer_range, (void**)&index_buffer));
 
 	uint32 vertex_buffer_offset = 0;
 	uint32 index_buffer_offset = 0;
@@ -577,28 +611,28 @@ void imgui_render_commands(editor* editor, d3d12* d3d12, window* window) {
 		uint32 indices_size = dlist->IdxBuffer.Size * sizeof(ImDrawIdx);
 		uint32 new_vertex_buffer_offset = vertex_buffer_offset + round_up(vertices_size, (uint32)sizeof(ImDrawVert));
 		uint32 new_index_buffer_offset = index_buffer_offset + round_up(indices_size, (uint32)sizeof(ImDrawIdx));
-		m_assert(new_vertex_buffer_offset < editor->imgui_vertex_buffer_capacity);
-		m_assert(new_index_buffer_offset < editor->imgui_index_buffer_capacity);
+		m_assert(new_vertex_buffer_offset < imgui_vertex_buffer_capacity);
+		m_assert(new_index_buffer_offset < imgui_index_buffer_capacity);
 		memcpy(vertex_buffer + vertex_buffer_offset, dlist->VtxBuffer.Data, vertices_size);
 		memcpy(index_buffer + index_buffer_offset, dlist->IdxBuffer.Data, indices_size);
 		vertex_buffer_offset = new_vertex_buffer_offset;
 		index_buffer_offset = new_index_buffer_offset;
 	}
 
-	editor->imgui_vertex_buffer->Unmap(0, &buffer_range);
-	editor->imgui_index_buffer->Unmap(0, &buffer_range);
+	imgui_vertex_buffer->Unmap(0, &buffer_range);
+	imgui_index_buffer->Unmap(0, &buffer_range);
 
 	uint32 constant_buffer[] = { window->width, window->height };
 	float blend_factor[] = { 0.f, 0.f, 0.f, 0.f };
 
-	d3d12->command_list->SetPipelineState(editor->imgui_pipeline_state);
+	d3d12->command_list->SetPipelineState(imgui_pipeline_state);
 	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	d3d12->command_list->IASetVertexBuffers(0, 1, &editor->imgui_vertex_buffer_view);
-	d3d12->command_list->IASetIndexBuffer(&editor->imgui_index_buffer_view);
+	d3d12->command_list->IASetVertexBuffers(0, 1, &imgui_vertex_buffer_view);
+	d3d12->command_list->IASetIndexBuffer(&imgui_index_buffer_view);
 	d3d12->command_list->OMSetBlendFactor(blend_factor);
-	d3d12->command_list->SetGraphicsRootSignature(editor->imgui_root_signature);
+	d3d12->command_list->SetGraphicsRootSignature(imgui_root_signature);
 	d3d12->command_list->SetGraphicsRoot32BitConstants(0, 2, constant_buffer, 0);
-	d3d12->command_list->SetDescriptorHeaps(1, &editor->imgui_descriptor_heap);
+	d3d12->command_list->SetDescriptorHeaps(1, &imgui_descriptor_heap);
 
 	vertex_buffer_offset = 0;
 	index_buffer_offset = 0;
@@ -621,7 +655,7 @@ void imgui_render_commands(editor* editor, d3d12* d3d12, window* window) {
 	}
 }
 
-void editor_blit_imgui_render_commands(editor* editor, world* world, d3d12* d3d12, window* window) {
+void editor::blit_imgui_render_commands(world* world, d3d12* d3d12, window* window) {
 	D3D12_RESOURCE_BARRIER barrier = {};
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -647,44 +681,44 @@ void editor_blit_imgui_render_commands(editor* editor, world* world, d3d12* d3d1
 	d3d12->command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	d3d12->command_list->DrawInstanced(3, 1, 0, 0);
 
-	imgui_render_commands(editor, d3d12, window);
+	imgui_render_commands(d3d12, window);
 
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 	d3d12->command_list->ResourceBarrier(1, &barrier);
 }
 
-void editor_init(editor* editor, d3d12* d3d12, window* window) {
-	timer_init(&editor->timer);
+void editor::init(d3d12* d3d12, window* window) {
+	timer_init(&timer);
 
-	editor->frame_time_ring_buffer = {};
-	editor->frame_time_ring_buffer.capacity = 200;
-	editor->frame_time_ring_buffer.buffer = new float[editor->frame_time_ring_buffer.capacity];
+	frame_time_ring_buffer = {};
+	frame_time_ring_buffer.capacity = 200;
+	frame_time_ring_buffer.buffer = new float[frame_time_ring_buffer.capacity];
 
-	editor->camera_move_speed = 10;
-	editor->camera_rotate_speed = 10;
-	editor->camera_fovy = degree_to_radian(40);
-	editor->camera_znear = 10000.0f;
-	editor->camera_zfar = 0.1f;
-	editor->camera_position = XMVectorSet(10, 10, 10, 0);
-	editor->camera_view = -XMVector3Normalize(editor->camera_position);
+	camera_move_speed = 10;
+	camera_rotate_speed = 10;
+	camera_fovy = degree_to_radian(40);
+	camera_znear = 10000.0f;
+	camera_zfar = 0.1f;
+	camera_position = XMVectorSet(10, 10, 10, 0);
+	camera_view = -XMVector3Normalize(camera_position);
 
-	editor->static_object_index = UINT32_MAX;
-	editor->dynamic_object_index = UINT32_MAX;
-	editor->model_index = UINT32_MAX;
+	static_object_index = UINT32_MAX;
+	dynamic_object_index = UINT32_MAX;
+	model_index = UINT32_MAX;
 
-	editor->render_reference_grid = true;
-	editor->render_models = true;
-	editor->render_terrain = true;
-	editor->render_skybox = true;
-	editor->render_shadow_proj_box = false;
+	render_reference_grid = true;
+	render_models = true;
+	render_terrain = true;
+	render_skybox = true;
+	render_shadow_proj_box = false;
 
-	editor->terrain_brush_tool_radius = 5;
-	editor->terrain_brush_tool_speed = 2;
+	terrain_brush_tool_radius = 5;
+	terrain_brush_tool_speed = 2;
 
-	imgui_init(editor, d3d12, window);
+	imgui_init(d3d12, window);
 
-	m_assert(editor_load_settings(editor));
+	m_assert(load_settings());
 
 	// { // textures
 	// 	auto create_texture = [&](const char *file, DXGI_FORMAT fmt, ID3D11Texture2D **texture, ID3D11ShaderResourceView **shader_resource_view) {
@@ -739,15 +773,15 @@ void editor_init(editor* editor, d3d12* d3d12, window* window) {
 	// 	});
 }
 
-bool editor_load_world(editor* editor, world* world, d3d12* d3d12, const char* file) {
+bool editor::load_world(world* world, d3d12* d3d12, const char* file) {
 	if (!world_load_from_file(world, d3d12, file)) {
 		return false;
 	}
-	snprintf(editor->world_save_file, sizeof(editor->world_save_file), "%s", file);
+	snprintf(world_save_file, sizeof(world_save_file), "%s", file);
 	return true;
 }
 
-bool editor_save_world(editor* editor, world* world, bool save_as) {
+bool editor::save_world(world* world, bool save_as) {
 	char world_save_file[256] = {};
 	if (save_as) {
 		if (!open_file_dialog(world_save_file, sizeof(world_save_file))) {
@@ -755,40 +789,40 @@ bool editor_save_world(editor* editor, world* world, bool save_as) {
 		}
 	}
 	else {
-		if (!strcmp(editor->world_save_file, "")) {
+		if (!strcmp(world_save_file, "")) {
 			return false;
 		}
 		else {
-			array_copy(world_save_file, editor->world_save_file);
+			array_copy(world_save_file, world_save_file);
 		}
 	}
 	if (!world_save_to_file(world, world_save_file)) {
 		return false;
 	}
-	array_copy(editor->world_save_file, world_save_file);
+	array_copy(world_save_file, world_save_file);
 	return true;
 }
 
-bool editor_need_saving(editor* editor, world* world) {
-	if (editor->undo_count > 0) {
+bool editor::need_saving(world* world) {
+	if (undo_count > 0) {
 		return true;
 	}
 	return false;
 }
 
-void editor_add_undo(editor* editor, edit_operation operation) {
-	if (editor->undo_count >= m_countof(editor->undoes)) {
+void editor::add_undo(edit_operation operation) {
+	if (undo_count >= m_countof(undoes)) {
 		uint32 n = 32;
-		memmove(editor->undoes, editor->undoes + n, (m_countof(editor->undoes) - n) * sizeof(editor->undoes[0]));
-		editor->undo_count = m_countof(editor->undoes) - n;
+		memmove(undoes, undoes + n, (m_countof(undoes) - n) * sizeof(undoes[0]));
+		undo_count = m_countof(undoes) - n;
 	}
-	editor->undoes[editor->undo_count] = operation;
-	editor->undo_count += 1;
+	undoes[undo_count] = operation;
+	undo_count += 1;
 }
 
-void editor_pop_undo(editor* editor, world* world) {
-	if (editor->undo_count > 0) {
-		edit_operation* operation = &editor->undoes[editor->undo_count - 1];
+void editor::pop_undo(world* world) {
+	if (undo_count > 0) {
+		edit_operation* operation = &undoes[undo_count - 1];
 		switch (operation->type) {
 		case edit_operation_object_transform: {
 			transform_operation* op = &operation->transform_operation;
@@ -823,21 +857,21 @@ void editor_pop_undo(editor* editor, world* world) {
 			}
 		} break;
 		}
-		editor->undo_count -= 1;
+		undo_count -= 1;
 	}
 }
 
-void editor_check_quit(editor* editor) {
+void editor::check_quit() {
 	if (window_message_channel.quit) {
 		window_message_channel.quit = false;
-		editor->quit_popup = true;
+		quit_popup = true;
 	}
 	if (ImGui::IsKeyPressed(VK_F4) && ImGui::IsKeyDown(VK_MENU)) {
-		editor->quit_popup = true;
+		quit_popup = true;
 	}
 }
 
-void editor_check_toggle_fullscreen(window* window) {
+void editor::check_toggle_fullscreen(window* window) {
 	if (ImGui::IsKeyPressed(VK_F11)) {
 		static uint32 width = window->width;
 		static uint32 height = window->height;
@@ -852,48 +886,48 @@ void editor_check_toggle_fullscreen(window* window) {
 	}
 }
 
-void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
+void editor::check_popups(world* world, d3d12* d3d12) {
 	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize;
 
-	if (editor->error_popup) {
-		editor->error_popup = false;
+	if (error_popup) {
+		error_popup = false;
 		ImGui::OpenPopup("##error_popup");
 	}
 	if (ImGui::BeginPopupModal("##error_popup", nullptr, window_flags)) {
-		ImGui::Text("%s", editor->error_msg);
+		ImGui::Text("%s", error_msg);
 		if (ImGui::Button("ok")) {
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::EndPopup();
 	}
 
-	if (editor->quit_popup) {
-		editor->quit_popup = false;
+	if (quit_popup) {
+		quit_popup = false;
 		//if (editor_need_saving(editor, world)) {
 		//	ImGui::OpenPopup("##quit_popup");
 		//}
 		//else {
-		//	editor->quit = true;
+		//	quit = true;
 		//}
-		editor_save_world(editor, world, false);
-		editor->quit = true;
+		save_world(world, false);
+		quit = true;
 	}
 	if (ImGui::BeginPopupModal("##quit_popup", nullptr, window_flags)) {
 		ImGui::Text("Save changes?");
 		if (ImGui::Button("Yes")) {
-			if (editor_save_world(editor, world, false)) {
+			if (save_world(world, false)) {
 				ImGui::CloseCurrentPopup();
-				editor->quit = true;
+				quit = true;
 			}
 			else {
-				snprintf(editor->error_msg, sizeof(editor->error_msg), "failed to save world to file: \"%s\"", editor->world_save_file);
-				editor->error_popup = true;
+				snprintf(error_msg, sizeof(error_msg), "failed to save world to file: \"%s\"", world_save_file);
+				error_popup = true;
 			}
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("No")) {
 			ImGui::CloseCurrentPopup();
-			editor->quit = true;
+			quit = true;
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Cancel")) {
@@ -902,8 +936,8 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 		ImGui::EndPopup();
 	}
 
-	if (editor->add_static_object_popup) {
-		editor->add_static_object_popup = false;
+	if (add_static_object_popup) {
+		add_static_object_popup = false;
 		ImGui::OpenPopup("##add_static_object_popup");
 	}
 	if (ImGui::BeginPopupModal("##add_static_object_popup", nullptr, window_flags)) {
@@ -938,7 +972,7 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				editor->static_object_index = (uint32)world->static_objects.size;
+				static_object_index = (uint32)world->static_objects.size;
 				static_object* static_object = world->static_objects.append({});
 				static_object->model_index = UINT32_MAX;
 				static_object->transform = transform_identity();
@@ -957,8 +991,8 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 		ImGui::EndPopup();
 	}
 
-	if (editor->rename_static_object_popup) {
-		editor->rename_static_object_popup = false;
+	if (rename_static_object_popup) {
+		rename_static_object_popup = false;
 		ImGui::OpenPopup("##rename_static_object_popup");
 	}
 	if (ImGui::BeginPopupModal("##rename_static_object_popup", nullptr, window_flags)) {
@@ -979,7 +1013,7 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
 			for (uint32 i = 0; i < world->static_objects.size; i += 1) {
-				if (world->static_objects[i].id == id && i != editor->static_object_index) {
+				if (world->static_objects[i].id == id && i != static_object_index) {
 					duplicate = true;
 					break;
 				}
@@ -993,7 +1027,7 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				static_object* static_object = &world->static_objects[editor->static_object_index];
+				static_object* static_object = &world->static_objects[static_object_index];
 				char* id_cstr = new char[strlen(id) + 1]();
 				strcpy(id_cstr, id);
 				static_object->id = { id_cstr, (uint32)strlen(id) };
@@ -1007,8 +1041,8 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 		ImGui::EndPopup();
 	}
 
-	if (editor->add_dynamic_object_popup) {
-		editor->add_dynamic_object_popup = false;
+	if (add_dynamic_object_popup) {
+		add_dynamic_object_popup = false;
 		ImGui::OpenPopup("##add_dynamic_object_popup");
 	}
 	if (ImGui::BeginPopupModal("##add_dynamic_object_popup", nullptr, window_flags)) {
@@ -1043,7 +1077,7 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				editor->dynamic_object_index = (uint32)world->dynamic_objects.size;
+				dynamic_object_index = (uint32)world->dynamic_objects.size;
 				dynamic_object* dynamic_object = world->dynamic_objects.append({});
 				dynamic_object->model_index = UINT32_MAX;
 				dynamic_object->transform = transform_identity();
@@ -1062,8 +1096,8 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 		ImGui::EndPopup();
 	}
 
-	if (editor->rename_dynamic_object_popup) {
-		editor->rename_dynamic_object_popup = false;
+	if (rename_dynamic_object_popup) {
+		rename_dynamic_object_popup = false;
 		ImGui::OpenPopup("##rename_dynamic_object_popup");
 	}
 	if (ImGui::BeginPopupModal("##rename_dynamic_object_popup", nullptr, window_flags)) {
@@ -1084,7 +1118,7 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 			bool empty_id = id[0] == 0;
 			bool duplicate = false;
 			for (uint32 i = 0; i < world->dynamic_objects.size; i += 1) {
-				if (world->dynamic_objects[i].id == id && i != editor->dynamic_object_index) {
+				if (world->dynamic_objects[i].id == id && i != dynamic_object_index) {
 					duplicate = true;
 					break;
 				}
@@ -1098,7 +1132,7 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 				snprintf(error_msg, sizeof(error_msg), "error: ID already exist");
 			}
 			else {
-				dynamic_object* dynamic_object = &world->dynamic_objects[editor->dynamic_object_index];
+				dynamic_object* dynamic_object = &world->dynamic_objects[dynamic_object_index];
 				char* id_cstr = new char[strlen(id) + 1]();
 				strcpy(id_cstr, id);
 				dynamic_object->id = { id_cstr, (uint32)strlen(id_cstr) };
@@ -1112,8 +1146,8 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 		ImGui::EndPopup();
 	}
 
-	if (editor->new_terrain_popup) {
-		editor->new_terrain_popup = false;
+	if (new_terrain_popup) {
+		new_terrain_popup = false;
 		ImGui::OpenPopup("##new_terrain_popup");
 	}
 	if (ImGui::BeginPopupModal("##new_terrain_popup", nullptr, window_flags)) {
@@ -1205,48 +1239,48 @@ void editor_check_popups(editor* editor, world* world, d3d12* d3d12) {
 	}
 }
 
-void editor_top_menu(editor* editor, world* world, d3d12* d3d12) {
+void editor::top_menu(world* world, d3d12* d3d12) {
 	ImGui::PushID("top_menu_bar");
 	if (ImGui::BeginMainMenuBar()) {
-		editor->top_menu_bar_height = ImGui::GetWindowHeight();
-		editor->top_menu_bar_color = ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg);
+		top_menu_bar_height = ImGui::GetWindowHeight();
+		top_menu_bar_color = ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg);
 		ImGui::PushID("file");
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open")) {
-				if (open_file_dialog(editor->world_save_file, sizeof(editor->world_save_file))) {
-					if (!editor_load_world(editor, world, d3d12, editor->world_save_file)) {
-						snprintf(editor->error_msg, sizeof(editor->error_msg), "failed to load level from file: \"%s\"", editor->world_save_file);
-						editor->error_popup = true;
-						editor->world_save_file[0] = '\0';
+				if (open_file_dialog(world_save_file, sizeof(world_save_file))) {
+					if (!load_world(world, d3d12, world_save_file)) {
+						snprintf(error_msg, sizeof(error_msg), "failed to load level from file: \"%s\"", world_save_file);
+						error_popup = true;
+						world_save_file[0] = '\0';
 					}
 				}
 			}
 			if (ImGui::MenuItem("Save")) {
-				if (!editor_save_world(editor, world, false)) {
-					snprintf(editor->error_msg, sizeof(editor->error_msg), "failed to save world to file: \"%s\"", editor->world_save_file);
-					editor->error_popup = true;
+				if (!save_world(world, false)) {
+					snprintf(error_msg, sizeof(error_msg), "failed to save world to file: \"%s\"", world_save_file);
+					error_popup = true;
 				}
 			}
 			if (ImGui::MenuItem("Save As")) {
-				if (!editor_save_world(editor, world, true)) {
-					snprintf(editor->error_msg, sizeof(editor->error_msg), "failed to save world to file");
-					editor->error_popup = true;
+				if (!save_world(world, true)) {
+					snprintf(error_msg, sizeof(error_msg), "failed to save world to file");
+					error_popup = true;
 				}
 			}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Play")) {
-				if (!editor_save_world(editor, world, false)) {
-					snprintf(editor->error_msg, sizeof(editor->error_msg), "failed to save world to file: \"%s\"", editor->world_save_file);
-					editor->error_popup = true;
+				if (!save_world(world, false)) {
+					snprintf(error_msg, sizeof(error_msg), "failed to save world to file: \"%s\"", world_save_file);
+					error_popup = true;
 				}
 				else {
 					STARTUPINFOA startup_info = { sizeof(startup_info) };
 					PROCESS_INFORMATION process_info;
 					char cmd_line[256] = {};
-					snprintf(cmd_line, sizeof(cmd_line), "game.exe %s", editor->world_save_file);
+					snprintf(cmd_line, sizeof(cmd_line), "game.exe %s", world_save_file);
 					if (!CreateProcessA("game.exe", cmd_line, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup_info, &process_info)) {
-						snprintf(editor->error_msg, sizeof(editor->error_msg), "cannot start game.exe: %s", &get_winapi_err_str()[0]);
-						editor->error_popup = true;
+						snprintf(error_msg, sizeof(error_msg), "cannot start game.exe: %s", &get_winapi_err_str()[0]);
+						error_popup = true;
 					}
 					else {
 						CloseHandle(process_info.hThread);
@@ -1256,21 +1290,21 @@ void editor_top_menu(editor* editor, world* world, d3d12* d3d12) {
 			}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Quit")) {
-				editor->quit_popup = true;
+				quit_popup = true;
 			}
 			ImGui::EndMenu();
 		}
 		ImGui::PopID();
 		ImGui::PushID("view");
 		if (ImGui::BeginMenu("View")) {
-			ImGui::MenuItem("Frame stat window", nullptr, &editor->show_frame_statistic_window);
+			ImGui::MenuItem("Frame stat window", nullptr, &show_frame_statistic_window);
 			ImGui::Separator();
-			ImGui::MenuItem("Models", nullptr, &editor->render_models);
-			ImGui::MenuItem("Terrain", nullptr, &editor->render_terrain);
-			ImGui::MenuItem("Skybox", nullptr, &editor->render_skybox);
+			ImGui::MenuItem("Models", nullptr, &render_models);
+			ImGui::MenuItem("Terrain", nullptr, &render_terrain);
+			ImGui::MenuItem("Skybox", nullptr, &render_skybox);
 			ImGui::Separator();
-			ImGui::MenuItem("Reference Grid", nullptr, &editor->render_reference_grid);
-			ImGui::MenuItem("ShadowProjBox", nullptr, &editor->render_shadow_proj_box);
+			ImGui::MenuItem("Reference Grid", nullptr, &render_reference_grid);
+			ImGui::MenuItem("ShadowProjBox", nullptr, &render_shadow_proj_box);
 			ImGui::EndMenu();
 		}
 		ImGui::PopID();
@@ -1280,8 +1314,8 @@ void editor_top_menu(editor* editor, world* world, d3d12* d3d12) {
 			if (ImGui::BeginMenu("Camera")) {
 				uint32 min = 0;
 				uint32 max = 100;
-				ImGui::SliderScalar("Move Speed", ImGuiDataType_U32, &editor->camera_move_speed, &min, &max);
-				ImGui::SliderScalar("Rotate Speed", ImGuiDataType_U32, &editor->camera_rotate_speed, &min, &max);
+				ImGui::SliderScalar("Move Speed", ImGuiDataType_U32, &camera_move_speed, &min, &max);
+				ImGui::SliderScalar("Rotate Speed", ImGuiDataType_U32, &camera_rotate_speed, &min, &max);
 				ImGui::EndMenu();
 			}
 			ImGui::PopID();
@@ -1295,15 +1329,15 @@ void editor_top_menu(editor* editor, world* world, d3d12* d3d12) {
 
 }
 
-void editor_bottom_menu(editor* editor) {
-	float menu_height = editor->top_menu_bar_height * 1.5f;
+void editor::bottom_menu() {
+	float menu_height = top_menu_bar_height * 1.5f;
 	ImGui::SetNextWindowPos(ImVec2{ 0, ImGui::GetIO().DisplaySize.y - menu_height });
 	ImGui::SetNextWindowSize(ImVec2{ ImGui::GetIO().DisplaySize.x, menu_height });
 	ImGui::PushID("bottom_menu_bar");
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
-	ImGui::PushStyleColor(ImGuiCol_WindowBg, editor->top_menu_bar_color);
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, top_menu_bar_color);
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
 	if (ImGui::Begin("##bottom_menu_bar", nullptr, flags)) {
 		ImGui::Dummy({ ImGui::GetIO().DisplaySize.x / 2, 1 });
@@ -1315,23 +1349,23 @@ void editor_bottom_menu(editor* editor) {
 
 		auto render_tool_button = [&](tool_type type, D3D12_GPU_DESCRIPTOR_HANDLE texture_gpu_descriptor_handle) {
 			ImGui::SameLine();
-			if (editor->tool_type == type) {
+			if (current_tool_type == type) {
 				ImGui::PushStyleColor(ImGuiCol_Button, button_hovered_color);
 				if (ImGui::ImageButton((ImTextureID)texture_gpu_descriptor_handle.ptr, { image_size, image_size }, { 0, 0 }, { 1, 1 }, (int32)image_padding)) {
-					editor->tool_type = type;
+					current_tool_type = type;
 				}
 				ImGui::PopStyleColor();
 			}
 			else {
 				if (ImGui::ImageButton((ImTextureID)texture_gpu_descriptor_handle.ptr, { image_size, image_size }, { 0, 0 }, { 1, 1 }, (int32)image_padding)) {
-					editor->tool_type = type;
+					current_tool_type = type;
 				}
 			}
 		};
-		render_tool_button(tool_type_select, editor->select_icon_texture_gpu_descriptor_handle);
-		render_tool_button(tool_type_translate, editor->translate_icon_texture_gpu_descriptor_handle);
-		render_tool_button(tool_type_rotate, editor->rotate_icon_texture_gpu_descriptor_handle);
-		render_tool_button(tool_type_scale, editor->scale_icon_texture_gpu_descriptor_handle);
+		render_tool_button(tool_type_select, select_icon_texture_gpu_descriptor_handle);
+		render_tool_button(tool_type_translate, translate_icon_texture_gpu_descriptor_handle);
+		render_tool_button(tool_type_rotate, rotate_icon_texture_gpu_descriptor_handle);
+		render_tool_button(tool_type_scale, scale_icon_texture_gpu_descriptor_handle);
 
 		//render_tool_button(tool_type_terrain_bump, editor->terrain_bump_icon_texture_view);
 		//render_tool_button(tool_type_terrain_raise_lower, editor->terrain_raise_lower_icon_texture_view);
@@ -1354,7 +1388,7 @@ void editor_bottom_menu(editor* editor) {
 	ImGui::PopID();
 }
 
-void editor_edit_window_model_transform(world* world, uint32* model_index, transform* transform) {
+void editor::edit_window_model_transform(world* world, uint32* model_index, transform* transform) {
 	const char* model_file = *model_index < world->models.size ? world->models[*model_index].file_name : nullptr;
 	if (ImGui::BeginCombo("model", model_file)) {
 		for (uint32 i = 0; i < world->models.size; i += 1) {
@@ -1375,23 +1409,23 @@ void editor_edit_window_model_transform(world* world, uint32* model_index, trans
 	}
 }
 
-void editor_edit_window_player_tab(editor* editor, world* world) {
+void editor::edit_window_player_tab(world* world) {
 	ImGui::PushID("player_tab");
-	editor_edit_window_model_transform(world, &world->player.model_index, &world->player.transform);
+	edit_window_model_transform(world, &world->player.model_index, &world->player.transform);
 	ImGui::PopID();
 }
 
-void editor_edit_window_static_object_tab(editor* editor, world* world) {
+void editor::edit_window_static_object_tab(world* world) {
 	ImGui::PushID("static_object_tab");
 	if (ImGui::Button("Add")) {
-		editor->add_static_object_popup = true;
+		add_static_object_popup = true;
 	}
-	static_object* static_object = editor->static_object_index < world->static_objects.size ? &world->static_objects[editor->static_object_index] : nullptr;
+	static_object* static_object = static_object_index < world->static_objects.size ? &world->static_objects[static_object_index] : nullptr;
 	const char* id = static_object ? static_object->id.ptr : nullptr;
 	if (ImGui::BeginCombo("static objects", id)) {
 		for (uint32 i = 0; i < world->static_objects.size; i += 1) {
-			if (ImGui::Selectable(world->static_objects[i].id.ptr, editor->static_object_index == i)) {
-				editor->static_object_index = i;
+			if (ImGui::Selectable(world->static_objects[i].id.ptr, static_object_index == i)) {
+				static_object_index = i;
 				static_object = &world->static_objects[i];
 			}
 		}
@@ -1399,26 +1433,26 @@ void editor_edit_window_static_object_tab(editor* editor, world* world) {
 	}
 	if (static_object) {
 		if (ImGui::Button("Rename")) {
-			editor->rename_static_object_popup = true;
+			rename_static_object_popup = true;
 		}
 	}
 	if (static_object) {
-		editor_edit_window_model_transform(world, &static_object->model_index, &static_object->transform);
+		edit_window_model_transform(world, &static_object->model_index, &static_object->transform);
 	}
 	ImGui::PopID();
 }
 
-void editor_edit_window_dynamic_object_tab(editor* editor, world* world) {
+void editor::edit_window_dynamic_object_tab(world* world) {
 	ImGui::PushID("dynamic_object_tab");
 	if (ImGui::Button("Add")) {
-		editor->add_dynamic_object_popup = true;
+		add_dynamic_object_popup = true;
 	}
-	dynamic_object* dynamic_object = editor->dynamic_object_index < world->dynamic_objects.size ? &world->dynamic_objects[editor->dynamic_object_index] : nullptr;
+	dynamic_object* dynamic_object = dynamic_object_index < world->dynamic_objects.size ? &world->dynamic_objects[dynamic_object_index] : nullptr;
 	const char* id = dynamic_object ? dynamic_object->id.ptr : nullptr;
 	if (ImGui::BeginCombo("dynamic objects", id)) {
 		for (uint32 i = 0; i < world->dynamic_objects.size; i += 1) {
-			if (ImGui::Selectable(world->dynamic_objects[i].id.ptr, editor->dynamic_object_index == i)) {
-				editor->dynamic_object_index = i;
+			if (ImGui::Selectable(world->dynamic_objects[i].id.ptr, dynamic_object_index == i)) {
+				dynamic_object_index = i;
 				dynamic_object = &world->dynamic_objects[i];
 			}
 		}
@@ -1426,38 +1460,38 @@ void editor_edit_window_dynamic_object_tab(editor* editor, world* world) {
 	}
 	if (dynamic_object) {
 		if (ImGui::Button("Rename")) {
-			editor->rename_dynamic_object_popup = true;
+			rename_dynamic_object_popup = true;
 		}
 	}
 	if (dynamic_object) {
-		editor_edit_window_model_transform(world, &dynamic_object->model_index, &dynamic_object->transform);
+		edit_window_model_transform(world, &dynamic_object->model_index, &dynamic_object->transform);
 	}
 	ImGui::PopID();
 }
 
-void editor_edit_window_model_tab(editor* editor, world* world, d3d12* d3d12) {
+void editor::edit_window_model_tab(world* world, d3d12* d3d12) {
 	ImGui::PushID("model_tab");
 	if (ImGui::Button("Import")) {
 		char file[256] = {};
 		if (open_file_dialog(file, sizeof(file))) {
 			if (world_add_model(world, d3d12, file, transform_identity(), collision{ collision_type_none })) {
-				editor->model_index = (uint32)world->models.size - 1;
+				model_index = (uint32)world->models.size - 1;
 			}
 			else {
-				snprintf(editor->error_msg, sizeof(editor->error_msg), "Add model failed\nFile: %s", file);
-				editor->error_popup = true;
+				snprintf(error_msg, sizeof(error_msg), "Add model failed\nFile: %s", file);
+				error_popup = true;
 			}
 		}
 	}
 	ImGui::SameLine();
-	ImGui::Checkbox("Adjust", &editor->adjust_model);
+	ImGui::Checkbox("Adjust", &adjust_model);
 	ImGui::Separator();
-	model* model = editor->model_index < world->models.size ? &world->models[editor->model_index] : nullptr;
+	model* model = model_index < world->models.size ? &world->models[model_index] : nullptr;
 	const char* file = model ? model->file_name : nullptr;
 	if (ImGui::BeginCombo("models", file)) {
 		for (uint32 i = 0; i < world->models.size; i += 1) {
-			if (ImGui::Selectable(world->models[i].file_name, editor->model_index == i)) {
-				editor->model_index = i;
+			if (ImGui::Selectable(world->models[i].file_name, model_index == i)) {
+				model_index = i;
 				model = &world->models[i];
 			}
 		}
@@ -1520,7 +1554,7 @@ void editor_edit_window_model_tab(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::PopID();
 }
 
-void editor_direct_light_properties(editor* editor, direct_light* direct_light) {
+void editor::direct_light_properties(direct_light* direct_light) {
 	ImGui::Text("Properties:");
 	ImGui::ColorEdit3("color", &direct_light->color.x);
 	ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
@@ -1533,16 +1567,16 @@ void editor_direct_light_properties(editor* editor, direct_light* direct_light) 
 	}
 }
 
-void editor_sphere_light_properties(editor* editor, sphere_light* sphere_light) {
+void editor::sphere_light_properties(sphere_light* sphere_light) {
 	ImGui::Text("Properties:");
 	ImGui::ColorEdit3("color", &sphere_light->color.x);
 	ImGui::InputFloat3("position", &sphere_light->position.x);
 }
 
-void editor_edit_window_terrain_tab(editor* editor, world* world) {
+void editor::edit_window_terrain_tab(world* world) {
 	ImGui::PushID("terrain_tab");
 	if (ImGui::Button("New")) {
-		editor->new_terrain_popup = true;
+		new_terrain_popup = true;
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Import")) {
@@ -1550,13 +1584,13 @@ void editor_edit_window_terrain_tab(editor* editor, world* world) {
 		if (open_file_dialog(file, sizeof(file))) {
 			if (file_exists(file)) {
 				//if (!add_terrain(world, d3d, file)) {
-				//	editor->error_popup = true;
-				//	snprintf(editor->error_msg, sizeof(editor->error_msg), "Add terrain failed\nFile: %s", file);
+				//	error_popup = true;
+				//	snprintf(error_msg, sizeof(error_msg), "Add terrain failed\nFile: %s", file);
 				//}
 			}
 			else {
-				editor->error_popup = true;
-				snprintf(editor->error_msg, sizeof(editor->error_msg), "File does not exist\nFile: %s", file);
+				error_popup = true;
+				snprintf(error_msg, sizeof(error_msg), "File does not exist\nFile: %s", file);
 			}
 		}
 	}
@@ -1574,7 +1608,7 @@ void editor_edit_window_terrain_tab(editor* editor, world* world) {
 	ImGui::PopID();
 }
 
-void editor_edit_window_skybox_tab(editor* editor, world* world) {
+void editor::edit_window_skybox_tab(world* world) {
 	ImGui::PushID("skybox_tab");
 	if (ImGui::Button("Import")) {
 		char file[256] = {};
@@ -1599,15 +1633,15 @@ void editor_edit_window_skybox_tab(editor* editor, world* world) {
 	ImGui::PopID();
 }
 
-void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
-	ImGui::SetNextWindowPos(ImVec2{ 0, editor->top_menu_bar_height }, ImGuiCond_Always);
+void editor::objects_window(world* world, d3d12* d3d12) {
+	ImGui::SetNextWindowPos(ImVec2{ 0, top_menu_bar_height }, ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.2f, ImGui::GetIO().DisplaySize.y * 0.85f }, ImGuiCond_Always);
 	ImGui::PushID("objects_window");
 	if (ImGui::Begin("Objects", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-		editor->objects_window_pos = ImGui::GetWindowPos();
-		editor->objects_window_size = ImGui::GetWindowSize();
+		objects_window_pos = ImGui::GetWindowPos();
+		objects_window_size = ImGui::GetWindowSize();
 
-		if (ImGui::BeginChild("object_lists", ImVec2(0, editor->objects_window_size.y * 0.4f))) {
+		if (ImGui::BeginChild("object_lists", ImVec2(0, objects_window_size.y * 0.4f))) {
 			if (ImGui::TreeNodeEx("direct lights", ImGuiTreeNodeFlags_DefaultOpen)) {
 				ImGui::OpenPopupOnItemClick("direct lights popup");
 				if (ImGui::BeginPopup("direct lights popup")) {
@@ -1618,12 +1652,12 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 					ImGui::EndPopup();
 				}
 				for (uint32 i = 0; i < world->direct_lights.size; i += 1) {
-					bool selected = editor->selected_object_type == selectable_object_direct_light && editor->selected_object_index == i;
+					bool selected = selected_object_type == selectable_object_direct_light && selected_object_index == i;
 					char index_str[8] = "";
 					itoa(i, index_str, 10);
 					if (ImGui::Selectable(index_str, selected)) {
-						editor->selected_object_type = selectable_object_direct_light;
-						editor->selected_object_index = i;
+						selected_object_type = selectable_object_direct_light;
+						selected_object_index = i;
 					}
 				}
 				ImGui::TreePop();
@@ -1634,18 +1668,18 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 					if (ImGui::Selectable("New")) {
 						sphere_light sphere_light = { {0, 0, 0}, {1, 1, 1}, 1 };
 						world->sphere_lights.append(sphere_light);
-						editor->selected_object_type = selectable_object_sphere_light;
-						editor->selected_object_index = (uint32)world->sphere_lights.size - 1;
+						selected_object_type = selectable_object_sphere_light;
+						selected_object_index = (uint32)world->sphere_lights.size - 1;
 					}
 					ImGui::EndPopup();
 				}
 				for (uint32 i = 0; i < world->sphere_lights.size; i += 1) {
-					bool selected = editor->selected_object_type == selectable_object_sphere_light && editor->selected_object_index == i;
+					bool selected = selected_object_type == selectable_object_sphere_light && selected_object_index == i;
 					char index_str[8] = "";
 					itoa(i, index_str, 10);
 					if (ImGui::Selectable(index_str, selected)) {
-						editor->selected_object_type = selectable_object_sphere_light;
-						editor->selected_object_index = i;
+						selected_object_type = selectable_object_sphere_light;
+						selected_object_index = i;
 					}
 					char popup_id_str[32] = {};
 					snprintf(popup_id_str, sizeof(popup_id_str), "sphere light popup %u", i);
@@ -1653,7 +1687,7 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 					if (ImGui::BeginPopup(popup_id_str)) {
 						if (ImGui::Selectable("Delete")) {
 							world->sphere_lights.remove(i);
-							editor->selected_object_type = selectable_object_none;
+							selected_object_type = selectable_object_none;
 						}
 						ImGui::EndPopup();
 					}
@@ -1667,24 +1701,24 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 						char file[256] = {};
 						if (open_file_dialog(file, sizeof(file))) {
 							if (world_add_model(world, d3d12, file, transform_identity(), collision{ collision_type_none })) {
-								editor->model_index = (uint32)world->models.size - 1;
+								model_index = (uint32)world->models.size - 1;
 								if (d3d12->dxr_enabled) {
 									world_build_dxr_acceleration_buffers(world, d3d12);
 								}
 							}
 							else {
-								snprintf(editor->error_msg, sizeof(editor->error_msg), "Import model failed\nFile: %s", file);
-								editor->error_popup = true;
+								snprintf(error_msg, sizeof(error_msg), "Import model failed\nFile: %s", file);
+								error_popup = true;
 							}
 						}
 					}
 					ImGui::EndPopup();
 				}
 				for (uint32 i = 0; i < world->models.size; i += 1) {
-					bool selected = editor->selected_object_type == selectable_object_model && editor->selected_object_index == i;
+					bool selected = selected_object_type == selectable_object_model && selected_object_index == i;
 					if (ImGui::Selectable(world->models[i].file_name, selected)) {
-						editor->selected_object_type = selectable_object_model;
-						editor->selected_object_index = i;
+						selected_object_type = selectable_object_model;
+						selected_object_index = i;
 					}
 				}
 				ImGui::TreePop();
@@ -1694,13 +1728,13 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 
 		ImGui::PushID("properties");
 		if (ImGui::BeginChild("object_properties")) {
-			if (editor->selected_object_type == selectable_object_direct_light) {
-				direct_light* direct_light = &world->direct_lights[editor->selected_object_index];
-				editor_direct_light_properties(editor, direct_light);
+			if (selected_object_type == selectable_object_direct_light) {
+				direct_light* direct_light = &world->direct_lights[selected_object_index];
+				direct_light_properties(direct_light);
 			}
-			else if (editor->selected_object_type == selectable_object_sphere_light) {
-				sphere_light* sphere_light = &world->sphere_lights[editor->selected_object_index];
-				editor_sphere_light_properties(editor, sphere_light);
+			else if (selected_object_type == selectable_object_sphere_light) {
+				sphere_light* sphere_light = &world->sphere_lights[selected_object_index];
+				sphere_light_properties(sphere_light);
 			}
 		}
 		ImGui::EndChild();
@@ -1710,13 +1744,13 @@ void editor_objects_window(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::PopID();
 }
 
-void editor_memories_window(editor* editor, world* world, d3d12* d3d12) {
-	ImGui::SetNextWindowPos(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.85f, editor->top_menu_bar_height }, ImGuiCond_Always);
+void editor::memories_window(world* world, d3d12* d3d12) {
+	ImGui::SetNextWindowPos(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.85f, top_menu_bar_height }, ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2{ ImGui::GetIO().DisplaySize.x * 0.15f, ImGui::GetIO().DisplaySize.y * 0.2f }, ImGuiCond_Always);
 	ImGui::PushID("memory_usage_window");
 	if (ImGui::Begin("Memory Usage", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-		editor->memory_window_pos = ImGui::GetWindowPos();
-		editor->memory_window_size = ImGui::GetWindowSize();
+		memory_window_pos = ImGui::GetWindowPos();
+		memory_window_size = ImGui::GetWindowSize();
 		auto imgui_render_memory = [](uint64 memory_size, uint64 memory_capacity, const char* memory_name) {
 			char overlay[64] = {};
 			snprintf(overlay, sizeof(overlay), "%s / %s", pretty_print_bytes(memory_size).data(), pretty_print_bytes(memory_capacity).data());
@@ -1725,7 +1759,7 @@ void editor_memories_window(editor* editor, world* world, d3d12* d3d12) {
 			ImGui::Text("%s", memory_name);
 		};
 		ImGui::Text("System Memory");
-		imgui_render_memory(editor->world_frame_memory_arena_size, world->frame_memory_arena.capacity, "world frame arena");
+		imgui_render_memory(world_frame_memory_arena_size, world->frame_memory_arena.capacity, "world frame arena");
 		ImGui::Text("GPU Memory");
 		imgui_render_memory(d3d12->frame_constants_buffer_size, d3d12->frame_constants_buffer_capacity, "world frame constants");
 	}
@@ -1733,81 +1767,81 @@ void editor_memories_window(editor* editor, world* world, d3d12* d3d12) {
 	ImGui::PopID();
 }
 
-float editor_frame_time_ring_buffer_values_getter(void* data, int index) {
+float frame_time_ring_buffer_values_getter(void* data, int index) {
 	editor* editor = (struct editor*)data;
 	return editor->frame_time_ring_buffer.buffer[(editor->frame_time_ring_buffer.read_index + index) % editor->frame_time_ring_buffer.capacity];
 }
 
-void editor_frame_statistic_window(editor* editor, window* window) {
-	if (editor->show_frame_statistic_window) {
+void editor::frame_statistic_window(window* window) {
+	if (show_frame_statistic_window) {
 		ImGui::PushID("frame_statistic_window");
 		ImGui::SetNextWindowPos(ImVec2((float)window->width / 2, (float)window->height / 2), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-		if (ImGui::Begin("Frame statistic", &editor->show_frame_statistic_window)) {
-			ImGui::Text("Frame time: %.3f ms", editor->coarse_frame_time * 1000);
-			ImGui::PlotLines("frame_time_plot", editor_frame_time_ring_buffer_values_getter, editor, editor->frame_time_ring_buffer.size);
+		if (ImGui::Begin("Frame statistic", &show_frame_statistic_window)) {
+			ImGui::Text("Frame time: %.3f ms", coarse_frame_time * 1000);
+			ImGui::PlotLines("frame_time_plot", frame_time_ring_buffer_values_getter, this, frame_time_ring_buffer.size);
 		}
 		ImGui::End();
 		ImGui::PopID();
 	}
 }
 
-void editor_update_camera(editor* editor, window* window) {
+void editor::update_camera(window* window) {
 	if (ImGui::IsMouseClicked(2)) {
 		cursor_pin(true);
-		editor->camera_active = true;
+		camera_active = true;
 	}
 	if (ImGui::IsMouseReleased(2)) {
 		cursor_pin(false);
-		editor->camera_active = false;
+		camera_active = false;
 	}
-	if (editor->camera_active) {
-		float move_distance = (float)editor->last_frame_time * editor->camera_move_speed;
+	if (camera_active) {
+		float move_distance = (float)last_frame_time * camera_move_speed;
 		if (ImGui::IsKeyDown(VK_SHIFT)) {
 			move_distance *= 10;
 		}
 		if (ImGui::IsKeyDown('W')) {
-			editor->camera_position += editor->camera_view * move_distance;
+			camera_position += camera_view * move_distance;
 		}
 		if (ImGui::IsKeyDown('S')) {
-			editor->camera_position -= editor->camera_view * move_distance;
+			camera_position -= camera_view * move_distance;
 		}
 		if (ImGui::IsKeyDown('A')) {
-			editor->camera_position -= XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
+			camera_position -= XMVector3Cross(camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
 		}
 		if (ImGui::IsKeyDown('D')) {
-			editor->camera_position += XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
+			camera_position += XMVector3Cross(camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
 		}
-		float rotate_distance = editor->camera_rotate_speed * 0.1f * (float)editor->last_frame_time;
+		float rotate_distance = camera_rotate_speed * 0.1f * (float)last_frame_time;
 		float dyaw = window->raw_mouse_dx * rotate_distance;
-		editor->camera_view = XMVector3Normalize(XMVector3Transform(editor->camera_view, XMMatrixRotationAxis(XMVectorSet(0, 1, 0, 0), -dyaw)));
+		camera_view = XMVector3Normalize(XMVector3Transform(camera_view, XMMatrixRotationAxis(XMVectorSet(0, 1, 0, 0), -dyaw)));
 
 		float max_pitch = degree_to_radian(80.0f);
-		float pitch = asinf(XMVectorGetY(editor->camera_view));
+		float pitch = asinf(XMVectorGetY(camera_view));
 		float dpitch = -window->raw_mouse_dy * rotate_distance;
 		if ((dpitch + pitch) > -max_pitch && (pitch + dpitch) < max_pitch) {
-			XMVECTOR axis = XMVector3Normalize(XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)));
-			editor->camera_view = XMVector3Normalize(XMVector3Transform(editor->camera_view, XMMatrixRotationAxis(axis, dpitch)));
+			XMVECTOR axis = XMVector3Normalize(XMVector3Cross(camera_view, XMVectorSet(0, 1, 0, 0)));
+			camera_view = XMVector3Normalize(XMVector3Transform(camera_view, XMMatrixRotationAxis(axis, dpitch)));
 		}
 	}
 	else {
-		float move_distance = (float)editor->last_frame_time * 20;
+		float move_distance = (float)last_frame_time * 20;
 		if (ImGui::IsKeyDown(VK_UP) && ImGui::IsKeyDown(VK_CONTROL)) {
-			editor->camera_position += editor->camera_view * move_distance;
+			camera_position += camera_view * move_distance;
 		}
 		if (ImGui::IsKeyDown(VK_DOWN) && ImGui::IsKeyDown(VK_CONTROL)) {
-			editor->camera_position -= editor->camera_view * move_distance;
+			camera_position -= camera_view * move_distance;
 		}
 		if (ImGui::IsKeyDown(VK_LEFT) && ImGui::IsKeyDown(VK_CONTROL)) {
-			editor->camera_position -= XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
+			camera_position -= XMVector3Cross(camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
 		}
 		if (ImGui::IsKeyDown(VK_RIGHT) && ImGui::IsKeyDown(VK_CONTROL)) {
-			editor->camera_position += XMVector3Cross(editor->camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
+			camera_position += XMVector3Cross(camera_view, XMVectorSet(0, 1, 0, 0)) * move_distance;
 		}
 	}
 	{
-		editor->camera_view_mat = XMMatrixLookToRH(editor->camera_position, editor->camera_view, XMVectorSet(0, 1, 0, 0));
-		editor->camera_proj_mat = XMMatrixPerspectiveFovRH(editor->camera_fovy, (float)window->width / (float)window->height, editor->camera_znear, editor->camera_zfar);
-		editor->camera_view_proj_mat = editor->camera_view_mat * editor->camera_proj_mat;
+		camera_view_mat = XMMatrixLookToRH(camera_position, camera_view, XMVectorSet(0, 1, 0, 0));
+		camera_proj_mat = XMMatrixPerspectiveFovRH(camera_fovy, (float)window->width / (float)window->height, camera_znear, camera_zfar);
+		camera_view_proj_mat = camera_view_mat * camera_proj_mat;
 		//if (window_cursor_inside(window)) {
 		//	vec3 world_position = mat4_unproject(vec3{ ImGui::GetMousePos().x, ImGui::GetMousePos().y, 0 }, editor->camera_view_mat, editor->camera_proj_mat, vec4{ 0, 0, (float)window->width, (float)window->height });
 		//	vec3 ray_dir = vec3_normalize(world_position - editor->camera_position);
@@ -1816,12 +1850,12 @@ void editor_update_camera(editor* editor, window* window) {
 	}
 }
 
-void editor_tool_gizmo(editor* editor, world* world, window* window) {
+void editor::tool_gizmo(world* world, window* window) {
 	float aspect = (float)window->width / (float)window->height;
-	float znear = min(editor->camera_znear, editor->camera_zfar);
-	float zfar = max(editor->camera_znear, editor->camera_zfar);
-	mat4 camera_view_mat = mat4_look_at(vec3_from_xmvector(editor->camera_position), vec3_from_xmvector(editor->camera_position + editor->camera_view));
-	mat4 camera_proj_mat = mat4_project(editor->camera_fovy, aspect, znear, zfar);
+	float znear = min(camera_znear, camera_zfar);
+	float zfar = max(camera_znear, camera_zfar);
+	mat4 camera_view_mat = mat4_look_at(vec3_from_xmvector(camera_position), vec3_from_xmvector(camera_position + camera_view));
+	mat4 camera_proj_mat = mat4_project(camera_fovy, aspect, znear, zfar);
 
 	auto render_direct_light = [&](direct_light* dir_light) {
 		vec3 line_verts[2] = { {0, 0, 0}, {0, 0.1f, 0} };
@@ -1853,16 +1887,16 @@ void editor_tool_gizmo(editor* editor, world* world, window* window) {
 		draw_list->AddTriangleFilled(tri_screen_space_verts[0], tri_screen_space_verts[1], tri_screen_space_verts[2], 0xffffffff);
 	};
 
-	if (editor->selected_object_type == selectable_object_direct_light) {
-		direct_light* direct_light = &world->direct_lights[editor->selected_object_index];
-		if (editor->tool_type == tool_type_translate) {
+	if (selected_object_type == selectable_object_direct_light) {
+		direct_light* direct_light = &world->direct_lights[selected_object_index];
+		if (current_tool_type == tool_type_translate) {
 			mat4 transform_mat = mat4_from_translate(direct_light->position);
 			ImGuizmo::BeginFrame();
 			ImGuizmo::Manipulate((const float*)camera_view_mat, (const float*)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float*)transform_mat);
 			direct_light->position = mat4_get_translate(transform_mat);
 			// render_direct_light(direct_light);
 		}
-		else if (editor->tool_type == tool_type_rotate) {
+		else if (current_tool_type == tool_type_rotate) {
 			vec3 default_dir = { 0, 1, 0 };
 			mat4 transform_mat = mat4_from_translate(direct_light->position) * mat4_from_rotate(quat_from_between(default_dir, direct_light->dir));
 			ImGuizmo::BeginFrame();
@@ -1871,9 +1905,9 @@ void editor_tool_gizmo(editor* editor, world* world, window* window) {
 			// render_direct_light(direct_light);
 		}
 	}
-	else if (editor->selected_object_type == selectable_object_sphere_light) {
-		sphere_light* sphere_light = &world->sphere_lights[editor->selected_object_index];
-		if (editor->tool_type == tool_type_translate) {
+	else if (selected_object_type == selectable_object_sphere_light) {
+		sphere_light* sphere_light = &world->sphere_lights[selected_object_index];
+		if (current_tool_type == tool_type_translate) {
 			mat4 transform_mat = mat4_from_translate(sphere_light->position);
 			ImGuizmo::BeginFrame();
 			ImGuizmo::Manipulate((const float*)camera_view_mat, (const float*)camera_proj_mat, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, (float*)transform_mat);
@@ -2039,20 +2073,20 @@ void editor_tool_gizmo(editor* editor, world* world, window* window) {
 	//}
 }
 
-void editor_check_undo(editor* editor, world* world) {
+void editor::check_undo(world* world) {
 	if (ImGui::IsKeyPressed('Z') && ImGui::IsKeyDown(VK_CONTROL)) {
-		editor_pop_undo(editor, world);
+		editor::pop_undo(world);
 	}
 }
 
-void append_extra_model_constants(editor* editor, world* world, d3d12* d3d12) {
-	//if (editor->adjust_model && editor->model_index < world->model_count) {
-	//	world_add_model_render_data(world, d3d, editor->model_index, transform_identity(), 0, 0, true);
+void editor::append_extra_model_constants(world* world, d3d12* d3d12) {
+	//if (adjust_model && model_index < world->model_count) {
+	//	world_add_model_render_data(world, d3d, model_index, transform_identity(), 0, 0, true);
 	//}
 }
 
-void append_terrain_brush_constants(editor* editor, world* world, d3d12* d3d12) {
-	//if (editor->terrain_brush_tool_active) {
+void editor::append_terrain_brush_constants(world* world, d3d12* d3d12) {
+	//if (terrain_brush_tool_active) {
 	//	m_debug_assert(world->terrain_index < world->terrain_count);
 	//	terrain *terrain = &world->terrains[world->terrain_index];
 	//	struct {
@@ -2061,7 +2095,7 @@ void append_terrain_brush_constants(editor* editor, world* world, d3d12* d3d12) 
 	//		uint32 height;
 	//		float max_height;
 	//	} terrain_brush_constants = {
-	//		XMMatrixMultiply(XMMatrixScaling(editor->terrain_brush_tool_radius, 1, editor->terrain_brush_tool_radius), XMMatrixTranslation(m_unpack3(editor->terrain_brush_tool_position))),
+	//		XMMatrixMultiply(XMMatrixScaling(terrain_brush_tool_radius, 1, terrain_brush_tool_radius), XMMatrixTranslation(m_unpack3(editor->terrain_brush_tool_position))),
 	//		terrain->width, terrain->height, terrain->max_height
 	//	};
 	//	uint32 offset = world_append_constant_buffer(world, &terrain_brush_constants, sizeof(terrain_brush_constants));
@@ -2069,9 +2103,9 @@ void append_terrain_brush_constants(editor* editor, world* world, d3d12* d3d12) 
 	//}
 }
 
-void render_terrain_brush(editor* editor, world* world, d3d12* d3d12) {
-	//if (editor->terrain_brush_tool_active) {
-	//	editor->terrain_brush_tool_active = false;
+void editor::render_terrain_brush(world* world, d3d12* d3d12) {
+	//if (terrain_brush_tool_active) {
+	//	terrain_brush_tool_active = false;
 	//	m_debug_assert(world->terrain_index < world->terrain_count);
 	//	terrain *terrain = &world->terrains[world->terrain_index];
 	//	d3d->context->VSSetShader(d3d->terrain_brush_vs, nullptr, 0);
@@ -2098,10 +2132,10 @@ int main(int argc, char** argv) {
 	// set_window_fullscreen(window, true);
 
 	d3d12* d3d12 = new struct d3d12();
-	d3d12_init(d3d12, window);
+	d3d12->init(window);
 
 	editor* editor = new struct editor();
-	editor_init(editor, d3d12, window);
+	editor->init(d3d12, window);
 
 	world* world = new struct world();
 	world_init(world, d3d12);
@@ -2110,7 +2144,7 @@ int main(int argc, char** argv) {
 		world_file = argv[1];
 	}
 	if (file_exists(world_file)) {
-		m_assert(editor_load_world(editor, world, d3d12, world_file));
+		m_assert(editor->load_world(world, d3d12, world_file));
 	}
 
 	window_message_channel.window = window;
@@ -2142,17 +2176,17 @@ int main(int argc, char** argv) {
 
 		ImGui::GetIO().DeltaTime = (float)editor->last_frame_time;
 		ImGui::NewFrame();
-		editor_check_quit(editor);
-		editor_check_toggle_fullscreen(window);
-		editor_check_popups(editor, world, d3d12);
-		editor_top_menu(editor, world, d3d12);
-		editor_bottom_menu(editor);
-		editor_objects_window(editor, world, d3d12);
-		editor_memories_window(editor, world, d3d12);
-		editor_frame_statistic_window(editor, window);
-		editor_update_camera(editor, window);
-		editor_tool_gizmo(editor, world, window);
-		editor_check_undo(editor, world);
+		editor->check_quit();
+		editor->check_toggle_fullscreen(window);
+		editor->check_popups(world, d3d12);
+		editor->top_menu(world, d3d12);
+		editor->bottom_menu();
+		editor->objects_window(world, d3d12);
+		editor->memories_window(world, d3d12);
+		editor->frame_statistic_window(window);
+		editor->update_camera(window);
+		editor->tool_gizmo(world, window);
+		editor->check_undo(world);
 		ImGui::Render();
 
 		d3d12->swap_chain_buffer_index = d3d12->swap_chain->GetCurrentBackBufferIndex();
@@ -2167,15 +2201,15 @@ int main(int argc, char** argv) {
 		};
 		world_render_commands(world, d3d12, &world_render_params);
 
-		editor_blit_imgui_render_commands(editor, world, d3d12, window);
+		editor->blit_imgui_render_commands(world, d3d12, window);
 
 		m_d3d_assert(d3d12->command_list->Close());
 		d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
-		d3d12_wait_command_list(d3d12);
+		d3d12->wait_command_list_completion();
 
 		m_d3d_assert(d3d12->swap_chain->Present(1, 0));
 	}
-	editor_save_settings(editor);
+	editor->save_settings();
 	ImGui::DestroyContext(editor->imgui_context);
 
 	// d3d12->dxgi_debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_IGNORE_INTERNAL);

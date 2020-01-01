@@ -104,8 +104,8 @@ T clamp(T n, T min, T max) {
 	return (n < min) ? min : ((n > max) ? max : n);
 }
 
-template <typename T>
-T round_up(T n, T multi) {
+template <typename T, typename T2>
+T round_up(T n, T2 multi) {
 	T remainder = n % multi;
 	if (remainder == 0) {
 		return n;
@@ -115,8 +115,8 @@ T round_up(T n, T multi) {
 	}
 }
 
-template <typename T>
-void round_up(T* n, T multi) {
+template <typename T, typename T2>
+void round_up(T* n, T2 multi) {
 	T remainder = *n % multi;
 	if (remainder != 0) {
 		*n = *n + (multi - remainder);

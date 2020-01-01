@@ -315,23 +315,23 @@ struct world_render_params {
 void world_init(world* world, d3d12* d3d12) {
 	m_assert(memory_arena_init(m_megabytes(16), &world->frame_memory_arena));
 
-	world->box_vertex_buffer = d3d12_create_buffer(d3d12, sizeof(box_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-	d3d12_copy_buffer(d3d12, world->box_vertex_buffer, box_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	world->box_vertex_buffer = d3d12->create_buffer(sizeof(box_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+	d3d12->copy_buffer(world->box_vertex_buffer, box_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
-	world->sphere_vertex_buffer = d3d12_create_buffer(d3d12, sizeof(sphere_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-	d3d12_copy_buffer(d3d12, world->sphere_vertex_buffer, sphere_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	world->sphere_vertex_buffer = d3d12->create_buffer(sizeof(sphere_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+	d3d12->copy_buffer(world->sphere_vertex_buffer, sphere_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
-	world->hemisphere_vertex_buffer = d3d12_create_buffer(d3d12, sizeof(hemisphere_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-	d3d12_copy_buffer(d3d12, world->hemisphere_vertex_buffer, hemisphere_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	world->hemisphere_vertex_buffer = d3d12->create_buffer(sizeof(hemisphere_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+	d3d12->copy_buffer(world->hemisphere_vertex_buffer, hemisphere_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
-	world->cylinder_vertex_buffer = d3d12_create_buffer(d3d12, sizeof(cylinder_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-	d3d12_copy_buffer(d3d12, world->cylinder_vertex_buffer, cylinder_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	world->cylinder_vertex_buffer = d3d12->create_buffer(sizeof(cylinder_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+	d3d12->copy_buffer(world->cylinder_vertex_buffer, cylinder_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
-	world->hollow_cylinder_vertex_buffer = d3d12_create_buffer(d3d12, sizeof(hollow_cylinder_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-	d3d12_copy_buffer(d3d12, world->hollow_cylinder_vertex_buffer, hollow_cylinder_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	world->hollow_cylinder_vertex_buffer = d3d12->create_buffer(sizeof(hollow_cylinder_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+	d3d12->copy_buffer(world->hollow_cylinder_vertex_buffer, hollow_cylinder_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
-	world->torus_vertex_buffer = d3d12_create_buffer(d3d12, sizeof(torus_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-	d3d12_copy_buffer(d3d12, world->torus_vertex_buffer, torus_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+	world->torus_vertex_buffer = d3d12->create_buffer(sizeof(torus_vertices), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+	d3d12->copy_buffer(world->torus_vertex_buffer, torus_vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
 	{ // reference grid
 		memory_arena_undo_alloc_scope_exit undo_frame_alloc(&world->frame_memory_arena);
@@ -359,16 +359,16 @@ void world_init(world* world, d3d12* d3d12) {
 			begin.x += gap;
 			end.x += gap;
 		}
-		world->reference_grid_vertex_buffer = d3d12_create_buffer(d3d12, vertex_count * 12, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		d3d12_copy_buffer(d3d12, world->reference_grid_vertex_buffer, vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		world->reference_grid_vertex_buffer = d3d12->create_buffer(vertex_count * 12, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		d3d12->copy_buffer(world->reference_grid_vertex_buffer, vertices, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 	}
 	{
-		world->default_diffuse_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_normal_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_roughness_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_metallic_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_emissive_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		world->default_height_texture = d3d12_create_texture_2d(d3d12, 2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_diffuse_texture = d3d12->create_texture_2d(2, 2, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_normal_texture = d3d12->create_texture_2d(2, 2, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_roughness_texture = d3d12->create_texture_2d(2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_metallic_texture = d3d12->create_texture_2d(2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_emissive_texture = d3d12->create_texture_2d(2, 2, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		world->default_height_texture = d3d12->create_texture_2d(2, 2, 1, 1, DXGI_FORMAT_R8_UNORM, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
 
 		world->default_diffuse_texture->SetName(L"default_diffuse_texture");
 		world->default_normal_texture->SetName(L"default_normal_texture");
@@ -383,18 +383,18 @@ void world_init(world* world, d3d12* d3d12) {
 		uint8 default_metallic_texture_data[] = { 255, 255, 255, 255 };
 		float default_emissive_texture_data[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 		uint8 default_height_texture_data[] = { 0, 0, 0, 0 };
-		d3d12_copy_texture_2d(d3d12, world->default_diffuse_texture, default_diffuse_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12_copy_texture_2d(d3d12, world->default_normal_texture, default_normal_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12_copy_texture_2d(d3d12, world->default_roughness_texture, default_roughness_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12_copy_texture_2d(d3d12, world->default_metallic_texture, default_metallic_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12_copy_texture_2d(d3d12, world->default_emissive_texture, (uint8*)default_emissive_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		d3d12_copy_texture_2d(d3d12, world->default_height_texture, default_height_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->copy_texture_2d(world->default_diffuse_texture, default_diffuse_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->copy_texture_2d(world->default_normal_texture, default_normal_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->copy_texture_2d(world->default_roughness_texture, default_roughness_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->copy_texture_2d(world->default_metallic_texture, default_metallic_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->copy_texture_2d(world->default_emissive_texture, (uint8*)default_emissive_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		d3d12->copy_texture_2d(world->default_height_texture, default_height_texture_data, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-		d3d12_append_srv_descriptor(d3d12, world->default_diffuse_texture, nullptr, &world->default_material_srv_descriptors);
-		d3d12_append_srv_descriptor(d3d12, world->default_normal_texture, nullptr, nullptr);
-		d3d12_append_srv_descriptor(d3d12, world->default_roughness_texture, nullptr, nullptr);
-		d3d12_append_srv_descriptor(d3d12, world->default_metallic_texture, nullptr, nullptr);
-		d3d12_append_srv_descriptor(d3d12, world->default_emissive_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(world->default_diffuse_texture, nullptr, &world->default_material_srv_descriptors);
+		d3d12->append_srv_descriptor(world->default_normal_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(world->default_roughness_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(world->default_metallic_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(world->default_emissive_texture, nullptr, nullptr);
 	}
 	{
 		static physx::PxDefaultAllocator allocator_callback;
@@ -536,12 +536,12 @@ bool world_add_model(world* world, d3d12* d3d12, const char* file_name, transfor
 			primitive->material_index = gpk_primitive->material_index;
 
 			m_assert(primitive->vertex_count > 0);
-			primitive->vertex_buffer = d3d12_create_buffer(d3d12, primitive->vertex_count * sizeof(struct gpk_model_vertex), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-			d3d12_copy_buffer(d3d12, primitive->vertex_buffer, model_file_mapping.ptr + gpk_primitive->vertices_offset, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+			primitive->vertex_buffer = d3d12->create_buffer(primitive->vertex_count * sizeof(struct gpk_model_vertex), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+			d3d12->copy_buffer(primitive->vertex_buffer, model_file_mapping.ptr + gpk_primitive->vertices_offset, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
 			if (primitive->index_count > 0) {
-				primitive->index_buffer = d3d12_create_buffer(d3d12, primitive->index_count * sizeof(uint16), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-				d3d12_copy_buffer(d3d12, primitive->index_buffer, model_file_mapping.ptr + gpk_primitive->indices_offset, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+				primitive->index_buffer = d3d12->create_buffer(primitive->index_count * sizeof(uint16), D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+				d3d12->copy_buffer(primitive->index_buffer, model_file_mapping.ptr + gpk_primitive->indices_offset, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 			}
 		}
 	}
@@ -589,8 +589,8 @@ bool world_add_model(world* world, d3d12* d3d12, const char* file_name, transfor
 	}
 	for (uint32 i = 0; i < model->texture_count; i += 1) {
 		gpk_model_image* gpk_model_image = ((struct gpk_model_image*)(model_file_mapping.ptr + gpk_model->image_offset)) + i;
-		model->textures[i].texture = d3d12_create_texture_2d(d3d12, gpk_model_image->width, gpk_model_image->height, 1, gpk_model_image->mips, (DXGI_FORMAT)gpk_model_image->format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-		d3d12_copy_texture_2d(d3d12, model->textures[i].texture, model_file_mapping.ptr + gpk_model_image->data_offset, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		model->textures[i].texture = d3d12->create_texture_2d(gpk_model_image->width, gpk_model_image->height, 1, gpk_model_image->mips, (DXGI_FORMAT)gpk_model_image->format, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+		d3d12->copy_texture_2d(model->textures[i].texture, model_file_mapping.ptr + gpk_model_image->data_offset, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	}
 	for (uint32 i = 0; i < model->material_count; i += 1) {
 		gpk_model_material* gpk_model_material = ((struct gpk_model_material*)(model_file_mapping.ptr + gpk_model->material_offset)) + i;
@@ -613,11 +613,11 @@ bool world_add_model(world* world, d3d12* d3d12, const char* file_name, transfor
 		ID3D12Resource* roughness_texture = model_material->roughness_texture_index < model->texture_count ? model->textures[model_material->roughness_texture_index].texture : world->default_roughness_texture;
 		ID3D12Resource* metallic_texture = model_material->metallic_texture_index < model->texture_count ? model->textures[model_material->metallic_texture_index].texture : world->default_metallic_texture;
 		ID3D12Resource* emissive_texture = model_material->emissive_texture_index < model->texture_count ? model->textures[model_material->emissive_texture_index].texture : world->default_emissive_texture;
-		d3d12_append_srv_descriptor(d3d12, diffuse_texture, nullptr, &model_material->texture_srv_descriptors);
-		d3d12_append_srv_descriptor(d3d12, normal_texture, nullptr, nullptr);
-		d3d12_append_srv_descriptor(d3d12, roughness_texture, nullptr, nullptr);
-		d3d12_append_srv_descriptor(d3d12, metallic_texture, nullptr, nullptr);
-		d3d12_append_srv_descriptor(d3d12, emissive_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(diffuse_texture, nullptr, &model_material->texture_srv_descriptors);
+		d3d12->append_srv_descriptor(normal_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(roughness_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(metallic_texture, nullptr, nullptr);
+		d3d12->append_srv_descriptor(emissive_texture, nullptr, nullptr);
 	}
 	for (uint32 i = 0; i < model->node_count; i += 1) {
 		if (model->nodes[i].mesh_index < model->mesh_count) {
@@ -824,7 +824,7 @@ void world_build_dxr_acceleration_buffers(world* world, d3d12* d3d12) {
 
 	uint32 node_transform_mats_offset = 0;
 	uint32 node_transform_mats_capacity = m_megabytes(16);
-	ID3D12Resource* node_transform_mats = d3d12_create_buffer(d3d12, node_transform_mats_capacity, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+	ID3D12Resource* node_transform_mats = d3d12->create_buffer(node_transform_mats_capacity, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 	D3D12_GPU_VIRTUAL_ADDRESS node_transform_mats_gpu_virtual_adress = node_transform_mats->GetGPUVirtualAddress();
 
 	uint8* node_transform_mats_ptr = nullptr;
@@ -899,8 +899,8 @@ void world_build_dxr_acceleration_buffers(world* world, d3d12* d3d12) {
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
 		d3d12->device->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
 
-		bottom_acceleration_scratch_buffers[i] = d3d12_create_buffer(d3d12, info.ScratchDataSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-		bottom_acceleration_buffers[i] = d3d12_create_buffer(d3d12, info.ResultDataMaxSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
+		bottom_acceleration_scratch_buffers[i] = d3d12->create_buffer(info.ScratchDataSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		bottom_acceleration_buffers[i] = d3d12->create_buffer(info.ResultDataMaxSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
 
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC as_desc = {};
 		as_desc.Inputs = inputs;
@@ -927,9 +927,9 @@ void world_build_dxr_acceleration_buffers(world* world, d3d12* d3d12) {
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
 		d3d12->device->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
 
-		top_acceleration_scratch_buffer = d3d12_create_buffer(d3d12, info.ScratchDataSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-		top_acceleration_buffer = d3d12_create_buffer(d3d12, info.ResultDataMaxSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
-		model_instance_descs_buffer = d3d12_create_buffer(d3d12, world->models.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
+		top_acceleration_scratch_buffer = d3d12->create_buffer(info.ScratchDataSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		top_acceleration_buffer = d3d12->create_buffer(info.ResultDataMaxSizeInBytes, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
+		model_instance_descs_buffer = d3d12->create_buffer(world->models.size * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		D3D12_RAYTRACING_INSTANCE_DESC* model_instance_descs = nullptr;
 		model_instance_descs_buffer->Map(0, nullptr, (void**)&model_instance_descs);
@@ -958,7 +958,7 @@ void world_build_dxr_acceleration_buffers(world* world, d3d12* d3d12) {
 
 	d3d12->command_list->Close();
 	d3d12->command_queue->ExecuteCommandLists(1, (ID3D12CommandList**)&d3d12->command_list);
-	d3d12_wait_command_list(d3d12);
+	d3d12->wait_command_list_completion();
 
 	for (auto b : bottom_acceleration_scratch_buffers) b->Release();
 	if (top_acceleration_scratch_buffer) top_acceleration_scratch_buffer->Release();
@@ -990,7 +990,7 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 			*offset = d3d12->frame_constants_buffer_size;
 		}
 		memcpy(frame_constants_buffer + d3d12->frame_constants_buffer_size, data, data_size);
-		d3d12->frame_constants_buffer_size += round_up(data_size, 256u);
+		d3d12->frame_constants_buffer_size += round_up(data_size, 256);
 	};
 
 	DXGI_SWAP_CHAIN_DESC swap_chain_desc = {};
@@ -1038,7 +1038,7 @@ void world_render_commands(world* world, d3d12* d3d12, world_render_params* para
 			float metallic_factor;
 			float roughness_factor;
 		};
-		uint32 material_constants_increment_size = round_up((uint32)sizeof(struct material_constants), 256u);
+		uint32 material_constants_increment_size = round_up((uint32)sizeof(struct material_constants), 256);
 		material_constants default_material_constants = { {1, 1, 1, 1}, {0, 0, 0, 0}, 1, 1 };
 		uint32 default_material_constants_offset = 0;
 		frame_constants_buffer_append(&default_material_constants, sizeof(default_material_constants), &default_material_constants_offset);
@@ -1276,7 +1276,6 @@ bool world_load_from_file(world* world, d3d12* d3d12, const char* file_name) {
 				!r.to_float(&fr) || !g.to_float(&fg) || !b.to_float(&fb)) {
 				return false;
 			}
-			printf("directional_light: %f %f %f %f %f %f\n", fx, fy, fz, fr, fg, fb);
 			direct_light l;
 			l.position = { 0, 0, 0 };
 			l.dir = vec3_normalize({ fx, fy, fz });
@@ -1296,7 +1295,6 @@ bool world_load_from_file(world* world, d3d12* d3d12, const char* file_name) {
 				!radius.to_float(&fradius)) {
 				return false;
 			}
-			printf("spherical_light: %f %f %f %f %f %f %f\n", fx, fy, fz, fr, fg, fb, fradius);
 			sphere_light l;
 			l.position = { fx, fy, fz };
 			l.color = { fr, fg, fb };
@@ -1308,7 +1306,6 @@ bool world_load_from_file(world* world, d3d12* d3d12, const char* file_name) {
 			if (!ft.get_token(&file)) {
 				return false;
 			}
-			printf("model: %.*s\n", file.len, file.ptr);
 			char c = file.ptr[file.len];
 			file.ptr[file.len] = '\0';
 			auto restore_char = scope_exit([&] { file.ptr[file.len] = c; });
