@@ -14,4 +14,3 @@ Simple ray tracing renderer project with DXR, limited support for scene editing
 
 <img src="https://github.com/yngccc/agby/blob/master/misc/spheres.png" width="300">
 
-<img src="https://github.com/yngccc/agby/blob/master/misc/fireplace.png" width="300">
