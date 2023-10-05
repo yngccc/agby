@@ -1,6 +1,6 @@
 ## What is this?
 
-Simple ray tracing renderer Project with DXR, limited support for scene editing
+Simple ray tracing renderer project with DXR, limited support for scene editing
 
 ## Build and installation
 
