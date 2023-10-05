@@ -1,6 +1,6 @@
 ## What is this?
 
-This is hybrid ray traced renderer using DXR with limited support for scene editing
+Simple ray tracing renderer Project with DXR, limited support for scene editing
 
 ## Build and installation
 
